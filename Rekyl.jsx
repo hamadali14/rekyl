@@ -8,17 +8,22 @@ import {
   Phone, Upload, CalendarClock, ListChecks, Send, Bell, CircleAlert, Blocks, Settings2, History,
   ShieldAlert, Pin, PinOff, Server, AtSign, Info, CheckCircle2, Settings, ThumbsUp, ThumbsDown,
   HelpCircle, BadgeCheck, PauseCircle, CalendarCheck, Menu as MenuIcon, PanelLeftClose,
-  RotateCw, Rocket, GripVertical, Lock, MousePointerClick, Share2, MessageCircle, Globe
+  RotateCw, Rocket, GripVertical, Lock, MousePointerClick, Share2, MessageCircle, Globe, LogOut
 } from "lucide-react";
 
 // ---- Supabase (via REST, inget paket kravs) ----
 const SB_URL = import.meta.env.VITE_SUPABASE_URL || "https://eaditrzamfhylmlrmkca.supabase.co";
 const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhZGl0cnphbWZoeWxtbHJta2NhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODA4NjgsImV4cCI6MjA5OTE1Njg2OH0.jFzfeVow0P-46Vj7G-yTVjA1IHp8UN-Ts8Us719rYmE";
 const sbEnabled = !!(SB_URL && SB_KEY);
-const sbHead = () => ({ apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, "Content-Type": "application/json" });
+let SB_TOKEN = SB_KEY;
+function sbSetToken(t) { SB_TOKEN = t || SB_KEY; }
+const sbHead = () => ({ apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN, "Content-Type": "application/json" });
 async function sbGet(path) { if (!sbEnabled) return null; try { const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: sbHead() }); if (!r.ok) return null; return await r.json(); } catch (e) { return null; } }
 async function sbUpsert(table, row) { if (!sbEnabled) return false; try { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: { ...sbHead(), Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(row) }); return r.ok; } catch (e) { return false; } }
 async function sbInsert(table, row) { if (!sbEnabled) return false; try { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: { ...sbHead(), Prefer: "return=minimal" }, body: JSON.stringify(row) }); return r.ok; } catch (e) { return false; } }
+async function sbUpload(bucket, path, file) { if (!sbEnabled || !file) return null; try { const r = await fetch(SB_URL + "/storage/v1/object/" + bucket + "/" + encodeURIComponent(path), { method: "POST", headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN, "x-upsert": "true" }, body: file }); if (!r.ok) return null; return SB_URL + "/storage/v1/object/public/" + bucket + "/" + encodeURIComponent(path); } catch (e) { return null; } }
+async function sbLogin(email, password) { const r = await fetch(SB_URL + "/auth/v1/token?grant_type=password", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const d = await r.json().catch(() => ({})); if (r.ok && d.access_token) return d; throw new Error(d.error_description || d.msg || (d.error && d.error.message) || "Fel e-post eller lösenord."); }
+async function sbSignup(email, password) { const r = await fetch(SB_URL + "/auth/v1/signup", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const d = await r.json().catch(() => ({})); if (r.ok) return d; throw new Error(d.error_description || d.msg || (d.error && d.error.message) || "Kunde inte skapa konto."); }
 
 
 /* ================================================================== *
@@ -245,7 +250,7 @@ function C(jobId, id, name, ans, o = {}) {
     timeline: [tl("application_received", "Ansökan mottagen via " + (o.source || "Direkt"), o.h ?? 6), tl("score_computed", "Matchning beräknad (regelverk v3)", (o.h ?? 6) - 0.01)] };
 }
 const CANDIDATES0 = [
-  C("j1", "c1", "Elin Sandberg", { experience: 7, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Engelska", "Presentationsteknik"], education: "Kandidatexamen", availability: "Inom 1 månad", salary: 40000, workmode: "Hybrid", license: true, motivation: "Sju är på SaaS-sidan, älskar langa säljcykler.", cv: "elin_cv.pdf" }, { h: 2, source: "LinkedIn", phone: "070-1112233", rating: 4, reviews: { u1: "yes", u2: "maybe", u3: "yes" }, comments: [{ id: "m1", by: "u1", text: "Stark på discovery. Boka intervju.", at: Date.now() - 5400e3 }] }),
+  C("j1", "c1", "Elin Sandberg", { experience: 7, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Engelska", "Presentationsteknik"], education: "Kandidatexamen", availability: "Inom 1 månad", salary: 40000, workmode: "Hybrid", license: true, motivation: "Sju är på SaaS-sidan, älskar långa säljcykler.", cv: "elin_cv.pdf" }, { h: 2, source: "LinkedIn", phone: "070-1112233", rating: 4, reviews: { u1: "yes", u2: "maybe", u3: "yes" }, comments: [{ id: "m1", by: "u1", text: "Stark på discovery. Boka intervju.", at: Date.now() - 5400e3 }] }),
   C("j1", "c2", "Omar Haddad", { experience: 5, skills: ["B2B-försäljning", "Förhandling", "Projektledning", "Engelska"], education: "Masterexamen", availability: "Omgående", salary: 43500, workmode: "Hybrid", license: true, motivation: "Redo att sätta igång direkt.", cv: "omar_cv.pdf" }, { h: 5, source: "Massa", phone: "073-4445566", reviews: { u1: "yes", u3: "maybe" } }),
   C("j1", "c3", "Sara Lindqvist", { experience: 9, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Projektledning", "Engelska", "Presentationsteknik"], education: "Kandidatexamen", availability: "1-3 månader", salary: 47000, workmode: "Hybrid", license: true, motivation: "Har byggt två säljteam.", cv: "sara_cv.pdf" }, { h: 13, source: "LinkedIn", email: "sara.lindqvist@mejl.se", phone: "070-9998877", rating: 5 }),
   C("j1", "c4", "Viktor Nystrom", { experience: 4, skills: ["CRM-system", "Förhandling", "Engelska"], education: "Kandidatexamen", availability: "Omgående", salary: 38500, workmode: "Distans", license: true, motivation: "Vill jobba på distans." }, { h: 17, source: "Hemsida" }),
@@ -430,6 +435,22 @@ function JobSwitch({ state, D }) { const job = state.jobs.find((j) => j.id === s
 function PageHeader({ title, meta, right }) { return <div className="ats-ph"><div className="ats-ph-l"><h1 className="ats-ph-title">{title}</h1>{meta && <div className="ats-ph-meta">{meta}</div>}</div>{right && <div className="ats-ph-r">{right}</div>}</div>; }
 function Dot() { return <span className="ats-ph-dot">·</span>; }
 
+function LoginScreen({ onAuthed }) {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState(""); const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const submit = async () => { setErr(""); if (!email || !pw) { setErr("Fyll i e-post och lösenord."); return; } if (pw.length < 6) { setErr("Lösenordet måste vara minst 6 tecken."); return; } setBusy(true); try { if (mode === "signup") await sbSignup(email, pw); const d = await sbLogin(email, pw); onAuthed({ token: d.access_token, email }); } catch (e) { setErr(e.message || "Något gick fel."); setBusy(false); } };
+  return <div className="ats-root"><Style /><div className="ats-login"><div className="ats-login-card">
+    <div className="ats-login-brand"><span className="ats-logo">R</span> Rekyl</div>
+    <h2>{mode === "login" ? "Logga in" : "Skapa konto"}</h2>
+    <p className="ats-login-sub">Rekryterarvyn är skyddad — bara ni på företaget kommer åt ansökningarna.</p>
+    <label className="ats-field"><span className="ats-field-l">E-post</span><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="du@företaget.se" /></label>
+    <label className="ats-field"><span className="ats-field-l">Lösenord</span><input type="password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="minst 6 tecken" /></label>
+    {err && <div className="ats-login-err"><CircleAlert size={13} /> {err}</div>}
+    <button className="ats-btn-primary ats-login-btn" disabled={busy} onClick={submit}>{busy ? "Loggar in…" : mode === "login" ? "Logga in" : "Skapa konto & logga in"}</button>
+    <button className="ats-login-switch" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setErr(""); }}>{mode === "login" ? "Har du inget konto? Skapa ett" : "Har du redan konto? Logga in"}</button>
+  </div></div></div>;
+}
 function PublicApply({ slug, localJobs, localOrg }) {
   const [remote, setRemote] = useState(undefined);
   useEffect(() => { let alive = true; (async () => { if (sbEnabled) { const rows = await sbGet("jobs?slug=eq." + encodeURIComponent(slug) + "&published=eq.true&select=*"); if (alive) setRemote(rows && rows.length ? rows[0] : null); } else setRemote(null); })(); return () => { alive = false; }; }, [slug]);
@@ -457,6 +478,9 @@ export default function App() {
   const [compareIds, setCompareIds] = useState([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [printDoc, setPrintDoc] = useState(null);
+  const [session, setSession] = useState(() => { const sv = store.get("rekyl_session", null); if (sv && sv.token) sbSetToken(sv.token); return sv; });
+  const login = (sv) => { store.set("rekyl_session", sv); sbSetToken(sv.token); setSession(sv); };
+  const logout = () => { store.set("rekyl_session", null); sbSetToken(null); setSession(null); };
 
   const job = state.jobs.find((j) => j.id === state.activeJobId);
   const me = REVIEWERS.find((r) => r.id === state.currentUserId);
@@ -471,11 +495,12 @@ export default function App() {
 
   useEffect(() => { if (!sbEnabled || !job) return; let alive = true; const pull = async () => { const rows = await sbGet("applications?job_slug=eq." + encodeURIComponent(job.slug) + "&select=*&order=created_at.desc"); if (alive && rows) D({ type: "SYNC_APPLICATIONS", slug: job.slug, rows }); }; pull(); const t = setInterval(pull, 20000); return () => { alive = false; clearInterval(t); }; }, [job && job.slug]);
 
-  const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, allScored, dupIndex };
+  const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, allScored, dupIndex, onLogout: logout, session };
   const primary = NAV.slice(0, 5), more = NAV.slice(5);
 
   const pubMatch = typeof window !== "undefined" ? window.location.pathname.match(/^\/j\/([^/]+)/) : null;
   if (pubMatch) return <PublicApply slug={decodeURIComponent(pubMatch[1])} localJobs={state.jobs} localOrg={state.org} />;
+  if (sbEnabled && !session) return <LoginScreen onAuthed={login} />;
 
   return (
     <div className="ats-root">
@@ -484,7 +509,7 @@ export default function App() {
         <aside className="ats-side">
           <div className="ats-side-top"><div className="ats-brand"><span className="ats-logo">R</span><span className="ats-lbl ats-brandtxt">Rekyl</span></div><button className="ats-pin" onClick={togglePin} title={pinned ? "Las upp meny" : "Las fast meny"}>{pinned ? <Pin size={15} /> : <PinOff size={15} />}</button></div>
           <nav className="ats-nav">{NAV.map((n) => <button key={n.id} className={"ats-side-item" + (view === n.id ? " is-active" : "")} onClick={() => go(n.id)}><n.icon size={18} strokeWidth={2} /><span className="ats-lbl">{n.label}</span></button>)}</nav>
-          <div className="ats-side-foot"><Menu trigger={<button className="ats-side-user"><span className="ats-avatar is-sm">{me.initials}</span><span className="ats-lbl ats-side-userinfo"><b>{me.name}</b><small>{ROLE_LABEL[me.role]}</small></span></button>}><div className="ats-menu-label">Visa som roll</div>{REVIEWERS.map((r) => <button key={r.id} className={"ats-menu-item" + (r.id === state.currentUserId ? " is-active" : "")} onClick={() => D({ type: "SET_USER", id: r.id })}><span className="ats-avatar is-xs">{r.initials}</span>{r.name} · {ROLE_LABEL[r.role]}</button>)}</Menu></div>
+          <div className="ats-side-foot"><Menu trigger={<button className="ats-side-user"><span className="ats-avatar is-sm">{me.initials}</span><span className="ats-lbl ats-side-userinfo"><b>{me.name}</b><small>{ROLE_LABEL[me.role]}</small></span></button>}><div className="ats-menu-label">Visa som roll</div>{REVIEWERS.map((r) => <button key={r.id} className={"ats-menu-item" + (r.id === state.currentUserId ? " is-active" : "")} onClick={() => D({ type: "SET_USER", id: r.id })}><span className="ats-avatar is-xs">{r.initials}</span>{r.name} · {ROLE_LABEL[r.role]}</button>)}{sbEnabled && session && <><div className="ats-menu-sep" /><button className="ats-menu-item is-danger" onClick={logout}><LogOut size={14} /> Logga ut</button></>}</Menu></div>
         </aside>
 
         <main className="ats-main">
@@ -616,7 +641,7 @@ function QueueView({ cands, D, me, job, state, showToast, setReasonFor, setDetai
   const onMove = (e) => { if (!drag.active || !startRef.current) return; setDrag({ dx: e.clientX - startRef.current.x, dy: e.clientY - startRef.current.y, active: true }); };
   const onUp = () => { if (!drag.active) return; const { dx, dy } = drag; if (Math.abs(dx) > Math.abs(dy)) { if (dx > 120) commit("right"); else if (dx < -120) commit("left"); else setDrag({ dx: 0, dy: 0, active: false }); } else { if (dy < -110) commit("up"); else if (dy > 110) commit("down"); else setDrag({ dx: 0, dy: 0, active: false }); } startRef.current = null; };
 
-  const header = <PageHeader title="Kö" meta={<><JobSwitch state={state} D={D} /><Dot /><span>{deck.length} väntar</span></>} right={<div className="ats-queue-filters"><div className="ats-search"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Sok…" /></div><button className={"ats-chip" + (sort === "score" ? " is-on" : "")} onClick={() => setSort("score")}>Bast</button><button className={"ats-chip" + (sort === "new" ? " is-on" : "")} onClick={() => setSort("new")}>Senaste</button><button className={"ats-chip" + (hideKO ? " is-on" : "")} onClick={() => setHideKO((v) => !v)}>Dolj diskade</button></div>} />;
+  const header = <PageHeader title="Kö" meta={<><JobSwitch state={state} D={D} /><Dot /><span>{deck.length} väntar</span></>} right={<div className="ats-queue-filters"><div className="ats-search"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Sök…" /></div><button className={"ats-chip" + (sort === "score" ? " is-on" : "")} onClick={() => setSort("score")}>Bast</button><button className={"ats-chip" + (sort === "new" ? " is-on" : "")} onClick={() => setSort("new")}>Senaste</button><button className={"ats-chip" + (hideKO ? " is-on" : "")} onClick={() => setHideKO((v) => !v)}>Dolj diskade</button></div>} />;
 
   if (!top) return <div className="ats-view">{header}<div className="ats-empty"><div className="ats-empty-badge"><Check size={22} /></div><h3>Kön är tömd</h3><p>Alla {total} ansökningar är genomgångna. Nya kandidater dyker upp här direkt när de skickar formuläret.</p></div></div>;
   const dir = Math.abs(drag.dx) > Math.abs(drag.dy) ? (drag.dx > 60 ? "right" : drag.dx < -60 ? "left" : null) : (drag.dy < -60 ? "up" : drag.dy > 60 ? "down" : null);
@@ -675,7 +700,7 @@ function CandidatesView({ cands, D, me, job, state, showToast, setDetailId, comp
     <div className="ats-view">
       <PageHeader title="Kandidater" meta={<><JobSwitch state={state} D={D} /><Dot /><span>{cands.length} totalt</span></>} right={<>{compareIds.length >= 2 && <button className="ats-ghost is-accent" onClick={openCompare}><GitCompare size={15} /> Jämför ({compareIds.length})</button>}<button className="ats-ghost" onClick={exportCSV}><Download size={15} /> CSV</button></>} />
       <div className="ats-tabs">{[{ id: "all", label: "Alla" }, ...STAGES].map((s) => <button key={s.id} className={"ats-tab" + (tab === s.id ? " is-on" : "") + (s.tone ? " tone-" + s.tone : "")} onClick={() => setTab(s.id)}>{s.label}<span className="ats-tab-n">{counts[s.id] || 0}</span></button>)}</div>
-      <div className="ats-cand-tools"><div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sok kandidat…" /></div>
+      <div className="ats-cand-tools"><div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sök kandidat…" /></div>
         <select value={source} onChange={(e) => setSource(e.target.value)} className="ats-select">{sources.map((s) => <option key={s} value={s}>{s === "all" ? "Alla källor" : s}</option>)}</select>
         <select value={sort} onChange={(e) => setSort(e.target.value)} className="ats-select"><option value="score">Matchning</option><option value="new">Senaste</option><option value="name">Namn</option></select>
         {compareIds.length > 0 && <span className="ats-cmp-hint"><GitCompare size={13} /> {compareIds.length} valda för jämförelse (2–4)</span>}
@@ -707,7 +732,7 @@ function CandidateDrawer({ cand, state, D, me, job, onClose, showToast, setPrint
       <div className="ats-drawer-h"><div><h3>{c.name}</h3><span>{c.email || "e-post saknas"} · {c.phone || "telefon saknas"}</span></div><button onClick={onClose}><X size={18} /></button></div>
       <div className="ats-drawer-body">
         <div className="ats-drawer-score"><ScoreDial value={c.total} knockout={c.knockout} size={84} /><div><span className={"ats-statuspill is-" + c.status}>{statusLabel(c.status)}</span>{c.knockout ? <div className="ats-ko is-mini"><ShieldAlert size={13} /> {c.knockoutReasons.join(", ")}</div> : <div className="ats-below is-ok"><Check size={13} /> Uppfyller obligatoriska krav</div>}<TagPills tags={c.tags} /><MissingChips items={c.missing} /></div></div>
-        {dupOf.length > 0 && <div className="ats-dupbox"><History size={13} /> Har sokt {dupOf.length + 1} gånger. {dupOf.map((d) => { const j = state.jobs.find((x) => x.id === d.jobId); return <span key={d.id} className="ats-dup-item">{j ? j.title : d.jobId} · {statusLabel(d.status)}</span>; })}</div>}
+        {dupOf.length > 0 && <div className="ats-dupbox"><History size={13} /> Har sökt {dupOf.length + 1} gånger. {dupOf.map((d) => { const j = state.jobs.find((x) => x.id === d.jobId); return <span key={d.id} className="ats-dup-item">{j ? j.title : d.jobId} · {statusLabel(d.status)}</span>; })}</div>}
 
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><UserCheck size={12} /> Team review</div><div className="ats-verdicts">{[["yes", "Ja", ThumbsUp], ["maybe", "Osäker", HelpCircle], ["no", "Nej", ThumbsDown]].map(([v, label, Ic]) => <button key={v} disabled={!canVote} className={"ats-verdict is-" + v + (c.reviews[me.id] === v ? " is-on" : "")} onClick={() => D({ type: "REVIEW", id: c.id, verdict: v })}><Ic size={14} /> {label}</button>)}</div>{Object.keys(c.reviews).length > 0 && <div className="ats-cons-pills">{REVIEWERS.filter((r) => c.reviews[r.id]).map((r) => <span key={r.id} className={"ats-cons is-" + c.reviews[r.id]}>{r.initials}: {c.reviews[r.id] === "yes" ? "Ja" : c.reviews[r.id] === "no" ? "Nej" : "Osäker"}</span>)}</div>}</div>
 
@@ -715,6 +740,7 @@ function CandidateDrawer({ cand, state, D, me, job, onClose, showToast, setPrint
 
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><Gauge size={12} /> Poängunderlag</div>{c.parts.filter((p) => p.kind === "scored").map((p) => <div key={p.id} className="ats-break-row"><div className="ats-break-main"><div className="ats-break-label"><span>{p.label}</span><span className="ats-break-detail">{p.detail}</span></div><div className="ats-break-bar"><div className="ats-break-bar-fill" style={{ width: Math.round(p.frac * 100) + "%" }} /></div></div><span className="ats-break-pts">+{Math.round(p.earned)}</span></div>)}</div>
 
+        {c.parts.filter((p) => p.kind === "file" || p.kind === "text").length > 0 && <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><FileText size={12} /> Svar & bilagor</div>{c.parts.filter((p) => p.kind === "file" || p.kind === "text").map((p) => { const fv = p.kind === "file" ? fileVal(p.value) : null; return <div key={p.id} className="ats-answer-row"><span className="ats-answer-l">{p.label}</span>{p.kind === "file" ? (fv ? (fv.url ? <a className="ats-answer-file" href={fv.url} target="_blank" rel="noreferrer"><FileText size={13} /> {fv.name} <Download size={12} /></a> : <span className="ats-answer-file is-nolink"><FileText size={13} /> {fv.name}</span>) : <span className="ats-answer-empty">Ingen fil</span>) : <span className="ats-answer-v">{p.value || "—"}</span>}</div>; })}</div>}
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><Star size={12} /> Betyg</div><Stars value={c.rating} readOnly={!canComment} onSet={(n) => D({ type: "RATE", id: c.id, rating: n })} /></div>
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><FileText size={12} /> Kommentarer</div>{c.comments.map((m) => { const a = REVIEWERS.find((r) => r.id === m.by); return <div key={m.id} className="ats-cmt"><span className="ats-avatar is-xs">{a?.initials || "?"}</span><div><b>{a?.name}</b> <small>{timeAgo(m.at)}</small><p>{m.text}</p></div></div>; })}{canComment && <CommentBox onAdd={(t) => D({ type: "COMMENT", id: c.id, text: t })} />}</div>
 
@@ -965,12 +991,28 @@ function FormView({ job, D, me, state, showToast }) {
     </div>
   );
 }
+function fileVal(v) { return v && typeof v === "object" ? v : (v ? { name: v, url: null } : null); }
 function FileDrop({ value, onChange }) {
   const [over, setOver] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(false);
   const inputRef = useRef(null);
-  const pick = (file) => { if (file) onChange(file.name); };
-  return <div className={"ats-filedrop" + (over ? " is-over" : "") + (value ? " is-set" : "")} onClick={() => inputRef.current && inputRef.current.click()} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); pick(e.dataTransfer.files && e.dataTransfer.files[0]); }}>
-    {value ? <><FileText size={18} /><div className="ats-filedrop-info"><b>{value}</b><span>Klicka för att byta fil</span></div><button className="ats-filedrop-x" onClick={(e) => { e.stopPropagation(); onChange(""); }}><X size={14} /></button></> : <><Upload size={18} /><div className="ats-filedrop-info"><b>Släpp fil eller klicka</b><span>PDF, Word, PNG, JPG</span></div></>}
+  const val = fileVal(value);
+  const pick = async (file) => {
+    if (!file) return; setErr(false);
+    if (sbEnabled) {
+      setBusy(true);
+      const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = Date.now() + "_" + Math.random().toString(36).slice(2, 8) + "_" + safe;
+      const url = await sbUpload("cv", path, file);
+      setBusy(false); if (!url) setErr(true);
+      onChange({ name: file.name, url: url || null, size: file.size });
+    } else { onChange({ name: file.name, url: null, size: file.size }); }
+  };
+  return <div className={"ats-filedrop" + (over ? " is-over" : "") + (val ? " is-set" : "") + (busy ? " is-busy" : "")} onClick={() => !busy && inputRef.current && inputRef.current.click()} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); pick(e.dataTransfer.files && e.dataTransfer.files[0]); }}>
+    {busy ? <><div className="ats-spinner is-sm" /><div className="ats-filedrop-info"><b>Laddar upp…</b><span>{val ? val.name : ""}</span></div></>
+      : val ? <><FileText size={18} /><div className="ats-filedrop-info"><b>{val.name}</b><span>{err ? "Uppladdning misslyckades — klicka och försök igen" : val.url ? "Uppladdad ✓ · klicka för att byta" : "Klicka för att byta fil"}</span></div><button className="ats-filedrop-x" onClick={(e) => { e.stopPropagation(); onChange(null); }}><X size={14} /></button></>
+        : <><Upload size={18} /><div className="ats-filedrop-info"><b>Släpp fil eller klicka</b><span>PDF, Word, PNG, JPG</span></div></>}
     <input ref={inputRef} type="file" style={{ display: "none" }} onChange={(e) => pick(e.target.files && e.target.files[0])} />
   </div>;
 }
@@ -1057,7 +1099,7 @@ function TeamView({ state, me }) {
 
 /* ===================== INSTALLNINGAR ===================== */
 const VAR_CHIPS = ["candidateName", "jobTitle", "companyName", "hrName", "hrEmail", "missingField", "interviewTime", "rejectionReason"];
-function SettingsView({ state, D, me, job, cands, showToast }) {
+function SettingsView({ state, D, me, job, cands, showToast, onLogout, session }) {
   const canEdit = can(me.role, "edit");
   const [selId, setSelId] = useState(state.templates[0]?.id);
   const [prevId, setPrevId] = useState(cands[0]?.id);
@@ -1071,6 +1113,7 @@ function SettingsView({ state, D, me, job, cands, showToast }) {
   return (
     <div className="ats-view">
       <PageHeader title="Inställningar" meta={<><span>e-post</span><Dot /><span>mallar</span><Dot /><span>företag</span></>} />
+      <div className="ats-panel"><div className="ats-panel-h"><h2>Visa som roll</h2><span className="ats-summono">förhandsvisa behörigheter</span></div><div className="ats-rolepick">{REVIEWERS.map((r) => <button key={r.id} className={"ats-rolepick-btn" + (r.id === state.currentUserId ? " is-on" : "")} onClick={() => D({ type: "SET_USER", id: r.id })}><span className="ats-avatar is-xs">{r.initials}</span><div className="ats-rolepick-t"><b>{r.name}</b><small>{ROLE_LABEL[r.role]}</small></div>{r.id === state.currentUserId && <Check size={14} />}</button>)}</div>{sbEnabled && session && <button className="ats-ghost is-danger" style={{ marginTop: 12 }} onClick={onLogout}><LogOut size={14} /> Logga ut{session.email ? " (" + session.email + ")" : ""}</button>}</div>
       <div className="ats-grid-2">
         <div className="ats-panel"><div className="ats-panel-h"><h2>Företag & avsändare</h2></div>
           <label className="ats-field"><span className="ats-field-l">Företagsnamn</span><input value={org.companyName} disabled={!canEdit} onChange={(e) => setOrg({ companyName: e.target.value })} /></label>
@@ -1779,6 +1822,35 @@ function Style() {
 .ats-pub-card p{color:var(--sub);font-size:14px;line-height:1.6}
 .ats-spinner{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--petrol);border-radius:50%;animation:atsSpin .7s linear infinite}
 @keyframes atsSpin{to{transform:rotate(360deg)}}
+.ats-side-foot .ats-menu-pop{position:fixed;left:12px;bottom:62px;top:auto;width:224px;max-height:62vh;overflow:auto}
+.ats-spinner.is-sm{width:18px;height:18px;border-width:2px}
+.ats-filedrop.is-busy{cursor:default;opacity:.92}
+.ats-answer-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line2)}
+.ats-answer-row:last-child{border-bottom:none}
+.ats-answer-l{font-size:12.5px;color:var(--sub);font-weight:500;flex-shrink:0;max-width:45%}
+.ats-answer-v{font-size:13px;text-align:right;word-break:break-word}
+.ats-answer-empty{font-size:12.5px;color:var(--muted)}
+.ats-answer-file{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;color:var(--petrol);background:var(--petrol-soft);padding:5px 9px;border-radius:8px;text-decoration:none}
+.ats-answer-file:hover{background:var(--petrol);color:#fff}
+.ats-answer-file.is-nolink{color:var(--muted);background:var(--paper2);cursor:default}
+.ats-rolepick{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.ats-rolepick-btn{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:var(--surface);text-align:left;transition:.13s}
+.ats-rolepick-btn:hover{border-color:var(--petrol)}
+.ats-rolepick-btn.is-on{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-rolepick-t{flex:1;min-width:0}.ats-rolepick-t b{display:block;font-size:13.5px}.ats-rolepick-t small{font-size:11px;color:var(--muted)}
+.ats-login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(120% 120% at 50% 0%, var(--petrol-soft) 0%, var(--paper) 55%)}
+.ats-login-card{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:30px 28px;box-shadow:0 30px 70px -30px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:12px}
+.ats-login-brand{display:flex;align-items:center;gap:10px;font-family:'Bricolage Grotesque';font-weight:700;font-size:20px;margin-bottom:4px}
+.ats-login-brand .ats-logo{width:34px;height:34px}
+.ats-login-card h2{font-family:'Bricolage Grotesque';font-size:22px}
+.ats-login-sub{font-size:13px;color:var(--sub);line-height:1.55;margin-bottom:4px}
+.ats-login .ats-field{display:flex;flex-direction:column;gap:5px}
+.ats-login .ats-field-l{font-size:12px;font-weight:600;color:var(--sub)}
+.ats-login .ats-field input{border:1px solid var(--line);border-radius:10px;padding:11px 13px;background:var(--paper2);width:100%;font-size:15px}
+.ats-login .ats-field input:focus{border-color:var(--petrol);outline:none;background:var(--surface)}
+.ats-login-err{display:flex;align-items:center;gap:7px;background:var(--brick-soft);color:var(--brick);padding:9px 12px;border-radius:9px;font-size:12.5px;font-weight:500}
+.ats-login-btn{width:100%;justify-content:center;padding:12px;font-size:14px;margin-top:4px}
+.ats-login-switch{font-size:12.5px;color:var(--petrol);font-weight:600;padding:6px;text-align:center}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
