@@ -11,6 +11,16 @@ import {
   RotateCw, Rocket, GripVertical, Lock, MousePointerClick, Share2, MessageCircle, Globe
 } from "lucide-react";
 
+// ---- Supabase (via REST, inget paket kravs) ----
+const SB_URL = import.meta.env.VITE_SUPABASE_URL;
+const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const sbEnabled = !!(SB_URL && SB_KEY);
+const sbHead = () => ({ apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, "Content-Type": "application/json" });
+async function sbGet(path) { if (!sbEnabled) return null; try { const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: sbHead() }); if (!r.ok) return null; return await r.json(); } catch (e) { return null; } }
+async function sbUpsert(table, row) { if (!sbEnabled) return false; try { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: { ...sbHead(), Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(row) }); return r.ok; } catch (e) { return false; } }
+async function sbInsert(table, row) { if (!sbEnabled) return false; try { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: { ...sbHead(), Prefer: "return=minimal" }, body: JSON.stringify(row) }); return r.ok; } catch (e) { return false; } }
+
+
 /* ================================================================== *
  *  REKYL v4 — deterministisk ATS, produktpolerad. En fil.
  *  Motorn (scoring/knockout/conditional) är oforändrad från v3.
@@ -382,6 +392,7 @@ function reducer(state, ac) {
     case "UPDATE_TEMPLATE": return { ...state, templates: state.templates.map((t) => t.id === ac.id ? { ...t, ...ac.patch } : t) };
     case "REMOVE_TEMPLATE": return { ...state, templates: state.templates.filter((t) => t.id !== ac.id) };
     case "SET_ORG": return { ...state, org: { ...state.org, ...ac.patch } };
+    case "SYNC_APPLICATIONS": { const job = state.jobs.find((j) => j.slug === ac.slug); if (!job) return state; const existing = new Set(state.candidates.map((c) => c.id)); const add = (ac.rows || []).filter((r) => !existing.has("sb_" + r.id)).map((r) => ({ id: "sb_" + r.id, jobId: job.id, name: r.name || "Namnlös", email: r.email || null, phone: r.phone || null, answers: r.answers || {}, source: r.source || "Länk", status: "new", managerStatus: null, starred: false, rating: 0, comments: [], reviews: {}, reason: null, interviewTime: null, formVersion: job.version, appliedAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(), timeline: [{ id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + (r.source || "länk"), at: Date.now(), actor: "System" }] })); if (!add.length) return state; return { ...state, candidates: [...add, ...state.candidates], jobs: state.jobs.map((j) => j.id === job.id ? { ...j, stats: { started: j.stats.started + add.length, submitted: j.stats.submitted + add.length } } : j) }; }
     default: return state;
   }
 }
@@ -419,6 +430,20 @@ function JobSwitch({ state, D }) { const job = state.jobs.find((j) => j.id === s
 function PageHeader({ title, meta, right }) { return <div className="ats-ph"><div className="ats-ph-l"><h1 className="ats-ph-title">{title}</h1>{meta && <div className="ats-ph-meta">{meta}</div>}</div>{right && <div className="ats-ph-r">{right}</div>}</div>; }
 function Dot() { return <span className="ats-ph-dot">·</span>; }
 
+function PublicApply({ slug, localJobs, localOrg }) {
+  const [remote, setRemote] = useState(undefined);
+  useEffect(() => { let alive = true; (async () => { if (sbEnabled) { const rows = await sbGet("jobs?slug=eq." + encodeURIComponent(slug) + "&published=eq.true&select=*"); if (alive) setRemote(rows && rows.length ? rows[0] : null); } else setRemote(null); })(); return () => { alive = false; }; }, [slug]);
+  const localJob = localJobs.find((j) => j.slug === slug);
+  let job = null, org = localOrg;
+  if (remote && remote.form) { job = { id: "remote", slug, title: remote.title, version: remote.form.version || 1, criteria: remote.form.criteria || [], pages: remote.form.pages, pageLabels: remote.form.pageLabels || {}, profiles: [{ id: "std", name: "Standard" }], activeProfileId: "std", autoRejectBelow: 0, rules: [], autoRules: [], stats: { started: 0, submitted: 0 } }; org = remote.org || localOrg; }
+  else if (localJob) job = localJob;
+  const submitFn = async (cand) => { if (sbEnabled) await sbInsert("applications", { job_slug: slug, name: cand.name, email: cand.email, phone: cand.phone, answers: cand.answers, source: "Länk", created_at: new Date().toISOString() }); };
+  return <div className="ats-root"><Style /><div className="ats-pub">
+    {remote === undefined ? <div className="ats-pub-card"><div className="ats-spinner" /><span>Laddar formulär…</span></div>
+      : !job ? <div className="ats-pub-card"><h2>Formuläret hittades inte</h2><p>Länken kan vara felaktig, eller så är formuläret inte publicerat än. Kontrollera länken med den som skickade den.</p></div>
+        : <div className="ats-pub-inner"><ApplyForm job={job} D={() => {}} org={org} showToast={() => {}} onSubmit={sbEnabled ? submitFn : undefined} /><p className="ats-pub-foot">Drivs av Rekyl{!sbEnabled && " · förhandsläge"}</p></div>}
+  </div></div>;
+}
 export default function App() {
   const [state, dispatch] = useReducer(reducer, INITIAL);
   const D = dispatch;
@@ -444,8 +469,13 @@ export default function App() {
   const detail = detailId ? cands.find((c) => c.id === detailId) || allScored.flatMap((a) => a.list).find((c) => c.id === detailId) : null;
   const go = (v) => { setView(v); setMoreOpen(false); };
 
+  useEffect(() => { if (!sbEnabled || !job) return; let alive = true; const pull = async () => { const rows = await sbGet("applications?job_slug=eq." + encodeURIComponent(job.slug) + "&select=*&order=created_at.desc"); if (alive && rows) D({ type: "SYNC_APPLICATIONS", slug: job.slug, rows }); }; pull(); const t = setInterval(pull, 20000); return () => { alive = false; clearInterval(t); }; }, [job && job.slug]);
+
   const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, allScored, dupIndex };
   const primary = NAV.slice(0, 5), more = NAV.slice(5);
+
+  const pubMatch = typeof window !== "undefined" ? window.location.pathname.match(/^\/j\/([^/]+)/) : null;
+  if (pubMatch) return <PublicApply slug={decodeURIComponent(pubMatch[1])} localJobs={state.jobs} localOrg={state.org} />;
 
   return (
     <div className="ats-root">
@@ -806,7 +836,7 @@ function FieldInput({ c, value, onChange }) {
   const opts = c.type === "ordinal" ? c.scale : c.options; return <div className="ats-chipset">{(opts||[]).map((o) => <button key={o} className={"ats-selchip" + (value === o ? " is-on" : "")} onClick={() => onChange(o)}>{value === o && <Check size={12} />}{o}</button>)}</div>;
 }
 
-function ApplyForm({ job, D, org, showToast }) {
+function ApplyForm({ job, D, org, showToast, onSubmit }) {
   const [answers, setAnswers] = useState({}); const [base, setBase] = useState({ name: "", email: "", phone: "" }); const [consent, setConsent] = useState(false); const [step, setStep] = useState(0); const [sent, setSent] = useState(false); const [touched, setTouched] = useState(false);
   const set = (id, v) => setAnswers((a) => ({ ...a, [id]: v }));
   const visible = job.criteria.filter((c) => isVisible(c, answers));
@@ -820,7 +850,7 @@ function ApplyForm({ job, D, org, showToast }) {
 
   if (sent) return <div className="ats-applied"><div className="ats-empty-badge"><CheckCircle2 size={22} /></div><h3>Tack {base.name.split(" ")[0]}!</h3><p>Din ansökan till {job.title} är mottagen. En bekräftelse har köats till {base.email}. Ansökan syns nu i kön med {live.total}% matchning.</p><button className="ats-ghost" onClick={() => { setSent(false); setAnswers({}); setBase({ name: "", email: "", phone: "" }); setConsent(false); setStep(0); setTouched(false); }}>Fyll i en till</button></div>;
 
-  const submit = () => { if (!nameOk || !emailOk || !consent) { setTouched(true); return; } D({ type: "APPLY", cand: { id: "c" + uid(), name: base.name.trim(), email: base.email.trim(), phone: base.phone.trim() || null, source: "Förhandsvisning", answers, rating: 0, comments: [], reviews: {}, status: "new", starred: false, appliedAt: Date.now(), reason: null, formVersion: job.version } }); setSent(true); showToast && showToast({ kind: "ok", msg: "Ansökan inskickad · bekräftelsemejl köat" }); };
+  const submit = () => { if (!nameOk || !emailOk || !consent) { setTouched(true); return; } const cand = { id: "c" + uid(), name: base.name.trim(), email: base.email.trim(), phone: base.phone.trim() || null, source: onSubmit ? "Länk" : "Förhandsvisning", answers, rating: 0, comments: [], reviews: {}, status: "new", starred: false, appliedAt: Date.now(), reason: null, formVersion: job.version }; if (onSubmit) onSubmit(cand); else D({ type: "APPLY", cand }); setSent(true); showToast && showToast({ kind: "ok", msg: "Ansökan inskickad · bekräftelsemejl köat" }); };
 
   return (
     <div className="ats-apply">
@@ -859,10 +889,10 @@ function FormView({ job, D, me, state, showToast }) {
   const duplicateField = (id) => { const f = job.criteria.find((c) => c.id === id); if (!f) return; const clone = { ...JSON.parse(JSON.stringify(f)), id: f.block + "_" + uid(), label: f.label + " (kopia)" }; snap(); const idx = job.criteria.findIndex((c) => c.id === id); const nc = [...job.criteria]; nc.splice(idx + 1, 0, clone); D({ type: "SET_FORM", patch: { criteria: flatten(nc) } }); setDirty(true); setSelId(clone.id); };
   const placeAt = (payload, step, index) => { if (!payload) return; snap(); let field, base = job.criteria; if (payload.slice(0, 6) === "block:") field = { ...buildField(payload.slice(6)), step }; else { const id = payload.slice(6); const found = base.find((c) => c.id === id); if (!found) return; field = { ...found, step }; base = base.filter((c) => c.id !== id); } const pageItems = base.filter((c) => c.step === step); pageItems.splice(index, 0, field); const out = []; const used = new Set(); pages.forEach((p) => { const items = p === step ? pageItems : base.filter((c) => c.step === p); items.forEach((it) => { if (!used.has(it.id)) { used.add(it.id); out.push(it); } }); }); [field, ...base].forEach((c) => { if (!used.has(c.id)) { used.add(c.id); out.push(c); } }); D({ type: "SET_FORM", patch: { criteria: out } }); setDirty(true); if (payload.slice(0, 6) === "block:") setSelId(field.id); };
   const addPage = () => { setPages([...pages, Math.max(1, ...pages) + 1]); };
-  const publish = () => { D({ type: "SET_FORM", patch: {}, bump: true }); setDirty(false); showToast({ kind: "ok", msg: "Formulär publicerat · v" + (job.version + 1) }); };
+  const publish = () => { D({ type: "SET_FORM", patch: {}, bump: true }); setDirty(false); if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1 }, published: true }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Publicerat lokalt · molnet svarade inte" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); } };
   const skills = job.criteria.find((c) => c.id === "skills");
   const scored = job.criteria.filter((c) => c.scored && c.type !== "text" && c.type !== "file");
-  const link = `${state.org.appUrl}/j/${job.slug}`; const embed = `<iframe src="${link}/inbäddad" width="100%" height="720" style="border:0" title="${job.title}"></iframe>`;
+  const link = (typeof window !== "undefined" ? window.location.origin : state.org.appUrl) + "/j/" + job.slug; const embed = `<iframe src="${link}/inbäddad" width="100%" height="720" style="border:0" title="${job.title}"></iframe>`;
   const [advScore, setAdvScore] = useState(false);
   const addDefaults = () => { D({ type: "ADD_AUTORULE", rule: { field: "total", op: ">=", value: 85, then: "shortlist" } }); D({ type: "ADD_AUTORULE", rule: { field: "total", op: "<", value: 45, then: "reject" } }); showToast({ kind: "ok", msg: "Smarta standardregler tillagda" }); };
 
@@ -945,7 +975,7 @@ function FileDrop({ value, onChange }) {
   </div>;
 }
 function ShareModal({ job, state, onClose, showToast }) {
-  const link = state.org.appUrl + "/j/" + job.slug;
+  const link = (typeof window !== "undefined" ? window.location.origin : state.org.appUrl) + "/j/" + job.slug;
   const embed = '<iframe src="' + link + '/inbaddad" width="100%" height="760" style="border:0" title="' + job.title + '"></iframe>';
   const cp = (t, m) => { copyText(t); showToast({ kind: "ok", msg: m }); };
   const open = (u) => window.open(u, "_blank");
@@ -1741,6 +1771,14 @@ function Style() {
 .ats-filedrop-x{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted);flex-shrink:0}
 .ats-filedrop-x:hover{color:var(--brick);background:var(--brick-soft)}
 @media(max-width:1080px){.ats-fb{grid-template-columns:1fr}.ats-fb-palette{position:static;flex-direction:row;flex-wrap:wrap}.ats-fb-pal{flex:1 1 45%}.ats-fb-insp{position:static}}
+.ats-pub{min-height:100vh;background:var(--paper);display:flex;align-items:flex-start;justify-content:center;padding:34px 16px 60px}
+.ats-pub-inner{width:100%;max-width:660px}
+.ats-pub-foot{text-align:center;margin-top:16px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.05em;color:var(--muted)}
+.ats-pub-card{max-width:440px;margin:70px auto;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:34px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px}
+.ats-pub-card h2{font-family:'Bricolage Grotesque';font-size:20px}
+.ats-pub-card p{color:var(--sub);font-size:14px;line-height:1.6}
+.ats-spinner{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--petrol);border-radius:50%;animation:atsSpin .7s linear infinite}
+@keyframes atsSpin{to{transform:rotate(360deg)}}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
