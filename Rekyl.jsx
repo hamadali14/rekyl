@@ -24,6 +24,9 @@ async function sbInsert(table, row) { if (!sbEnabled) return false; try { const 
 async function sbUpload(bucket, path, file) { if (!sbEnabled || !file) return null; try { const r = await fetch(SB_URL + "/storage/v1/object/" + bucket + "/" + encodeURIComponent(path), { method: "POST", headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN, "x-upsert": "true" }, body: file }); if (!r.ok) return null; return SB_URL + "/storage/v1/object/public/" + bucket + "/" + encodeURIComponent(path); } catch (e) { return null; } }
 async function sbLogin(email, password) { const r = await fetch(SB_URL + "/auth/v1/token?grant_type=password", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const d = await r.json().catch(() => ({})); if (r.ok && d.access_token) return d; throw new Error(d.error_description || d.msg || (d.error && d.error.message) || "Fel e-post eller lösenord."); }
 async function sbSignup(email, password) { const r = await fetch(SB_URL + "/auth/v1/signup", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const d = await r.json().catch(() => ({})); if (r.ok) return d; throw new Error(d.error_description || d.msg || (d.error && d.error.message) || "Kunde inte skapa konto."); }
+let SB_UID = null;
+function sbSetUid(u) { SB_UID = u || null; }
+async function sbRefresh(refresh_token) { try { const r = await fetch(SB_URL + "/auth/v1/token?grant_type=refresh_token", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token }) }); const d = await r.json().catch(() => ({})); if (r.ok && d.access_token) return d; return null; } catch (e) { return null; } }
 
 
 /* ================================================================== *
@@ -230,20 +233,7 @@ function makeJob(id, title, team, slug, tmplId, extra = {}) {
     annons: { location: "Stockholm", workmode: "Hybrid", employment: "Heltid · tillsvidare", salary: "", start: "Enligt överenskommelse", deadline: "", pitch: "", description: "", requirements: [], meriter: [], benefits: ["Kollektivavtal", "Tjänstepension", "Friskvårdsbidrag", "Flexibla arbetstider"], process: ["Ansökan via formuläret", "Urval & telefonavstämning", "Intervju", "Referenstagning", "Erbjudande"], contact: { name: "", email: "" }, faq: [], ...(extra.annons || {}) },
   };
 }
-const JOBS0 = [
-  makeJob("j1", "Account Manager · B2B", "Kommersiella teamet", "account-manager-b2b", "säljare", {
-    profiles: [{ id: "junior", name: "Junior", weights: { experience: 12, skills: 30, availability: 16 } }, { id: "senior", name: "Senior", weights: { experience: 32, skills: 26, salary: 16 } }],
-    rules: [{ id: "r1", field: "experience", op: ">", value: 8, tag: "Senior" }, { id: "r2", field: "total", op: ">=", value: 84, tag: "Toppmatch" }],
-    autoRules: [{ id: "a1", field: "total", op: ">=", value: 85, then: "shortlist" }, { id: "a2", field: "total", op: "<", value: 45, then: "reject" }],
-    autoRejectBelow: 50, stats: { started: 61, submitted: 42 },
-    annons: { location: "Göteborg", salary: "38 000–48 000 kr/mån + provision", pitch: "Driv nya affärer mot mellanstora B2B-kunder i ett team som älskar att vinna.", description: "Som Account Manager äger du hela säljcykeln – från prospektering till avslut och långsiktig kundvård. Du jobbar nära marknad och Customer Success och har stort eget ansvar för din pipeline och dina resultat.", requirements: ["Minst 3 års erfarenhet av B2B-försäljning", "Vana att driva hela säljcykeln själv", "Flytande svenska och engelska", "B-körkort"], meriter: ["Erfarenhet av SaaS eller techförsäljning", "Van vid CRM (HubSpot eller Salesforce)", "Eget nätverk inom branschen"], contact: { name: "Mona Berg", email: "mona@nordpuls.se" }, faq: [{ q: "Är rollen på plats eller hybrid?", a: "Hybrid – 2–3 dagar i veckan på kontoret i Göteborg." }, { q: "Hur ser lönemodellen ut?", a: "Fast grundlön plus en provisionsmodell utan tak." }] },
-  }),
-  makeJob("j2", "Lagerarbetare · truck", "Logistik Torsvik", "lagerarbetare-truck", "lager", {
-    autoRules: [{ id: "a1", field: "total", op: ">=", value: 80, then: "shortlist" }], stats: { started: 88, submitted: 54 },
-    annons: { location: "Jönköping (Torsvik)", salary: "28 000–33 000 kr/mån", employment: "Heltid · tvåskift", pitch: "Bli en nyckelperson i högt tempo på ett av regionens modernaste lager.", description: "Du arbetar med plock, pack, in- och utleverans samt truckkörning i ett välorganiserat lager. Vi kör tvåskift med möjlighet till helgpass.", requirements: ["Giltigt truckkort (A+B)", "Van vid fysiskt arbete i högt tempo", "Noggrann och pålitlig"], meriter: ["Erfarenhet av WMS-system", "Tidigare lagererfarenhet"], contact: { name: "Josef Falk", email: "jobb@nordpuls.se" } },
-  }),
-  makeJob("j3", "Sjuksköterska · natt", "Vårdavdelning 3", "sjuksköterska-natt", "sköterska", { autoRejectBelow: 45, stats: { started: 40, submitted: 29 }, annons: { location: "Stockholm", employment: "Heltid · natt", pitch: "Var med och ge trygg vård på en avdelning med stark teamkänsla.", description: "Du ansvarar för omvårdnad och läkemedelshantering under natten tillsammans med ett erfaret team.", requirements: ["Legitimerad sjuksköterska", "Erfarenhet av slutenvård"], contact: { name: "Karin Ek", email: "vard@nordpuls.se" } } }),
-];
+const JOBS0 = [];
 
 function tl(kind, detail, h, actor = "System") { return { id: uid(), kind, detail, at: Date.now() - h * 3600e3, actor }; }
 function C(jobId, id, name, ans, o = {}) {
@@ -252,29 +242,7 @@ function C(jobId, id, name, ans, o = {}) {
     appliedAt, status: "new", managerStatus: null, starred: false, answers: ans, rating: o.rating || 0, comments: o.comments || [], reviews: o.reviews || {}, source: o.source || "Direkt", reason: null, formVersion: o.fv ?? 3,
     timeline: [tl("application_received", "Ansökan mottagen via " + (o.source || "Direkt"), o.h ?? 6), tl("score_computed", "Matchning beräknad (regelverk v3)", (o.h ?? 6) - 0.01)] };
 }
-const CANDIDATES0 = [
-  C("j1", "c1", "Elin Sandberg", { experience: 7, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Engelska", "Presentationsteknik"], education: "Kandidatexamen", availability: "Inom 1 månad", salary: 40000, workmode: "Hybrid", license: true, motivation: "Sju är på SaaS-sidan, älskar långa säljcykler.", cv: "elin_cv.pdf" }, { h: 2, source: "LinkedIn", phone: "070-1112233", rating: 4, reviews: { u1: "yes", u2: "maybe", u3: "yes" }, comments: [{ id: "m1", by: "u1", text: "Stark på discovery. Boka intervju.", at: Date.now() - 5400e3 }] }),
-  C("j1", "c2", "Omar Haddad", { experience: 5, skills: ["B2B-försäljning", "Förhandling", "Projektledning", "Engelska"], education: "Masterexamen", availability: "Omgående", salary: 43500, workmode: "Hybrid", license: true, motivation: "Redo att sätta igång direkt.", cv: "omar_cv.pdf" }, { h: 5, source: "Massa", phone: "073-4445566", reviews: { u1: "yes", u3: "maybe" } }),
-  C("j1", "c3", "Sara Lindqvist", { experience: 9, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Projektledning", "Engelska", "Presentationsteknik"], education: "Kandidatexamen", availability: "1-3 månader", salary: 47000, workmode: "Hybrid", license: true, motivation: "Har byggt två säljteam.", cv: "sara_cv.pdf" }, { h: 13, source: "LinkedIn", email: "sara.lindqvist@mejl.se", phone: "070-9998877", rating: 5 }),
-  C("j1", "c4", "Viktor Nystrom", { experience: 4, skills: ["CRM-system", "Förhandling", "Engelska"], education: "Kandidatexamen", availability: "Omgående", salary: 38500, workmode: "Distans", license: true, motivation: "Vill jobba på distans." }, { h: 17, source: "Hemsida" }),
-  C("j1", "c5", "Lucas Berg", { experience: 3, skills: ["Presentationsteknik", "Engelska"], education: "Gymnasium", availability: "Omgående", salary: 34000, workmode: "På plats", license: false, motivation: "Bor granne med kontoret." }, { h: 26, source: "Direkt" }),
-  C("j1", "c6", "Nadia Khan", { experience: 8, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Engelska"], education: "Kandidatexamen", availability: "Inom 1 månad", salary: 44000, workmode: "Hybrid", license: true, motivation: "Nyckelkundsansvarig med starkt nätverk.", cv: "nadia_cv.pdf" }, { h: 30, source: "Massa", phone: "076-1234567", rating: 4 }),
-  C("j1", "c7", "Erik Wallin", { experience: 1, skills: ["CRM-system"], education: "Yrkeshögskola", availability: "Omgående", salary: 33000, workmode: "På plats", license: true, motivation: "Precis klar med utbildning." }, { h: 34, source: "Platsbanken" }),
-  C("j1", "c8", "Filippa Strom", { experience: 11, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Projektledning", "Presentationsteknik", "Engelska"], education: "Masterexamen", availability: "Mer än 3 månader", salary: 52000, workmode: "Distans", license: true, motivation: "Senior med stora affärer.", cv: "filippa_cv.pdf" }, { h: 38, source: "LinkedIn" }),
-  // j2 — Lager (conditional truck)
-  C("j2", "d1", "Josef Andersson", { experience: 4, truck: true, truck_beh: ["A2", "B1", "B2"], skills: ["Plockning", "Inleverans", "WMS-system", "Ordersystem"], weekend: true, availability: "Omgående", salary: 31000, motivation: "Kort truck i sex är.", cv: "josef_cv.pdf" }, { h: 3, source: "Platsbanken", phone: "070-2223344", rating: 4 }),
-  C("j2", "d2", "Sara Lindqvist", { experience: 2, truck: true, truck_beh: ["A2", "B1"], skills: ["Plockning", "WMS-system"], weekend: true, availability: "Inom 1 månad", salary: 30000, motivation: "Bytt bransch, van vid högt tempo." }, { h: 7, source: "LinkedIn", email: "sara.lindqvist@mejl.se", phone: "070-9998877" }),
-  C("j2", "d3", "Marcus Ek", { experience: 6, truck: false, skills: ["Plockning", "Inleverans"], weekend: true, availability: "Omgående", salary: 30000, motivation: "Kan ta truckkort snabbt." }, { h: 12, source: "Massa" }),
-  C("j2", "d4", "Aisha Ali", { experience: 3, truck: true, truck_beh: ["A2", "B1", "B2"], skills: ["Plockning", "Inleverans", "WMS-system", "Ordersystem", "Engelska"], weekend: false, availability: "Omgående", salary: 31000, motivation: "Erfaren men kan ej helg.", cv: "aisha_cv.pdf" }, { h: 20, source: "Hemsida", phone: "073-5556677" }),
-  C("j2", "d5", "Tobias Falk", { experience: 8, truck: true, truck_beh: ["A2", "B1", "B2"], skills: ["Plockning", "Inleverans", "WMS-system", "Ordersystem", "Engelska"], weekend: true, availability: "Inom 1 månad", salary: 33000, motivation: "Teamledarerfarenhet från lager.", cv: "tobias_cv.pdf" }, { h: 28, source: "Platsbanken", rating: 5 }),
-  C("j2", "d6", "Lova Berg", { experience: 1, truck: true, truck_beh: ["A2"], skills: ["Plockning"], weekend: true, availability: "Omgående", salary: 29500, motivation: "Nybörjare, snabblard." }, { h: 33, source: "Direkt" }),
-  // j3 — Sjuksköterska
-  C("j3", "e1", "Hanna Strom", { experience: 5, legitimation: true, skills: ["Akutsjukvård", "Journalsystem", "Läkemedelshantering", "Handledning"], weekend: true, availability: "Inom 1 månad", salary: 37000, motivation: "Van vid nattpass." }, { h: 4, source: "Platsbanken", phone: "070-8887766", rating: 4 }),
-  C("j3", "e2", "Yusuf Demir", { experience: 8, legitimation: true, skills: ["Akutsjukvård", "Journalsystem", "Läkemedelshantering", "Handledning", "Engelska"], weekend: true, availability: "Omgående", salary: 39000, motivation: "Handleder garna nyexade.", cv: "yusuf_cv.pdf" }, { h: 10, source: "Direkt" }),
-  C("j3", "e3", "Lova Berglund", { experience: 2, legitimation: true, skills: ["Journalsystem", "Läkemedelshantering"], weekend: true, availability: "Inom 1 månad", salary: 34000, motivation: "Nyexad men driven." }, { h: 18, source: "Hemsida" }),
-  C("j3", "e4", "Sandra Ek", { experience: 6, legitimation: false, skills: ["Akutsjukvård", "Journalsystem", "Läkemedelshantering"], weekend: true, availability: "Omgående", salary: 36000, motivation: "Legitimation under registrering." }, { h: 25, source: "Direkt" }),
-  C("j3", "e5", "Mikael Norin", { experience: 11, legitimation: true, skills: ["Akutsjukvård", "Journalsystem", "Läkemedelshantering", "Handledning", "Engelska"], weekend: false, availability: "1-3 månader", salary: 42000, motivation: "Lång erfarenhet, vill gå ner i tempo." }, { h: 33, source: "LinkedIn", phone: "076-9990011" }),
-];
+const CANDIDATES0 = [];
 
 /* ---------- Säkert localStorage (fallback in-memory så artifact ej kraschar) ---------- */
 const _mem = {};
@@ -400,12 +368,13 @@ function reducer(state, ac) {
     case "UPDATE_TEMPLATE": return { ...state, templates: state.templates.map((t) => t.id === ac.id ? { ...t, ...ac.patch } : t) };
     case "REMOVE_TEMPLATE": return { ...state, templates: state.templates.filter((t) => t.id !== ac.id) };
     case "SET_ORG": return { ...state, org: { ...state.org, ...ac.patch } };
+    case "LOAD_STATE": { const d = ac.data || {}; return { ...state, jobs: d.jobs || [], candidates: d.candidates || [], org: d.org || state.org, templates: d.templates || state.templates, messages: d.messages || [], log: d.log || state.log, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
     case "SYNC_APPLICATIONS": { const job = state.jobs.find((j) => j.slug === ac.slug); if (!job) return state; const existing = new Set(state.candidates.map((c) => c.id)); const add = (ac.rows || []).filter((r) => !existing.has("sb_" + r.id)).map((r) => ({ id: "sb_" + r.id, jobId: job.id, name: r.name || "Namnlös", email: r.email || null, phone: r.phone || null, answers: r.answers || {}, source: r.source || "Länk", status: "new", managerStatus: null, starred: false, rating: 0, comments: [], reviews: {}, reason: null, interviewTime: null, formVersion: job.version, appliedAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(), timeline: [{ id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + (r.source || "länk"), at: Date.now(), actor: "System" }] })); if (!add.length) return state; return { ...state, candidates: [...add, ...state.candidates], jobs: state.jobs.map((j) => j.id === job.id ? { ...j, stats: { started: j.stats.started + add.length, submitted: j.stats.submitted + add.length } } : j) }; }
     default: return state;
   }
 }
 const INITIAL = {
-  jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: "j1", candidates: CANDIDATES0, currentUserId: "u1",
+  jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: null, candidates: CANDIDATES0, currentUserId: "u1",
   history: [], templates: DEFAULT_TEMPLATES, messages: [],
   org: { companyName: "Nordpuls AB", hrName: "Mona Berg", hrEmail: "mona.berg@nordpuls.se", fromEmail: "noreply@nordpuls.se", appUrl: "https://rekyl.app", defaultInterviewTime: "onsdag 14:00" },
   log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjänst öppnad", detail: "Account Manager · B2B" }],
@@ -434,15 +403,28 @@ const NAV = [
 ];
 
 /* ---------- Inline sidrubrik + jobbväljare ---------- */
-function JobSwitch({ state, D }) { const job = state.jobs.find((j) => j.id === state.activeJobId); return <Menu trigger={<button className="ats-jobswitch">{job.title} <ChevronDown size={13} /></button>}>{state.jobs.map((j) => <button key={j.id} className={"ats-menu-item" + (j.id === state.activeJobId ? " is-active" : "")} onClick={() => D({ type: "SET_ACTIVE_JOB", id: j.id })}><Briefcase size={13} /> {j.title}</button>)}</Menu>; }
+function JobSwitch({ state, D }) { const job = state.jobs.find((j) => j.id === state.activeJobId) || state.jobs[0]; if (!job) return null; return <Menu trigger={<button className="ats-jobswitch">{job.title} <ChevronDown size={13} /></button>}>{state.jobs.map((j) => <button key={j.id} className={"ats-menu-item" + (j.id === state.activeJobId ? " is-active" : "")} onClick={() => D({ type: "SET_ACTIVE_JOB", id: j.id })}><Briefcase size={13} /> {j.title}</button>)}</Menu>; }
 function PageHeader({ title, meta, right }) { return <div className="ats-ph"><div className="ats-ph-l"><h1 className="ats-ph-title">{title}</h1>{meta && <div className="ats-ph-meta">{meta}</div>}</div>{right && <div className="ats-ph-r">{right}</div>}</div>; }
 function Dot() { return <span className="ats-ph-dot">·</span>; }
 
+function FirstJobScreen({ onCreate, onLogout, email }) {
+  const [title, setTitle] = useState(""); const [tmpl, setTmpl] = useState(TEMPLATES[0].id);
+  return <div className="ats-root"><Style /><div className="ats-first"><div className="ats-first-card">
+    <div className="ats-login-brand"><span className="ats-logo">R</span> Rekyl</div>
+    <h2>Välkommen! Skapa din första tjänst</h2>
+    <p className="ats-first-sub">Välj en mall så laddas scoring, knockout och kandidatkort automatiskt. Du kan ändra allt sedan.</p>
+    <label className="ats-field"><span className="ats-field-l">Jobbtitel</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="t.ex. Innesäljare Göteborg" /></label>
+    <div className="ats-field-l" style={{ marginTop: 6 }}>Starta från mall</div>
+    <div className="ats-tmplgrid">{TEMPLATES.map((t) => { const Ic = ICONS[t.icon] || Briefcase; return <button key={t.id} className={"ats-tmpl" + (tmpl === t.id ? " is-on" : "")} onClick={() => setTmpl(t.id)}><span className="ats-tmpl-ic"><Ic size={16} /></span><b>{t.name}</b><span>{t.desc}</span></button>; })}</div>
+    <button className={"ats-send" + (title.trim().length > 1 ? "" : " is-off")} onClick={() => title.trim().length > 1 && onCreate(title.trim(), tmpl)}>Skapa tjänst <ArrowRight size={16} /></button>
+    <button className="ats-login-switch" onClick={onLogout}>Logga ut{email ? " (" + email + ")" : ""}</button>
+  </div></div></div>;
+}
 function LoginScreen({ onAuthed }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState(""); const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
-  const submit = async () => { setErr(""); if (!email || !pw) { setErr("Fyll i e-post och lösenord."); return; } if (pw.length < 6) { setErr("Lösenordet måste vara minst 6 tecken."); return; } setBusy(true); try { if (mode === "signup") await sbSignup(email, pw); const d = await sbLogin(email, pw); onAuthed({ token: d.access_token, email }); } catch (e) { setErr(e.message || "Något gick fel."); setBusy(false); } };
+  const submit = async () => { setErr(""); if (!email || !pw) { setErr("Fyll i e-post och lösenord."); return; } if (pw.length < 6) { setErr("Lösenordet måste vara minst 6 tecken."); return; } setBusy(true); try { if (mode === "signup") await sbSignup(email, pw); const d = await sbLogin(email, pw); onAuthed({ token: d.access_token, refresh: d.refresh_token, userId: d.user && d.user.id, email, exp: Date.now() + (d.expires_in || 3600) * 1000 }); } catch (e) { setErr(e.message || "Något gick fel."); setBusy(false); } };
   return <div className="ats-root"><Style /><div className="ats-login"><div className="ats-login-card">
     <div className="ats-login-brand"><span className="ats-logo">R</span> Rekyl</div>
     <h2>{mode === "login" ? "Logga in" : "Skapa konto"}</h2>
@@ -462,7 +444,7 @@ function PublicApply({ slug, localJobs, localOrg }) {
   let job = null, org = localOrg, company = localOrg.companyName;
   if (remote && remote.form) { job = { id: "remote", slug, title: remote.title, version: remote.form.version || 1, criteria: remote.form.criteria || [], pages: remote.form.pages, pageLabels: remote.form.pageLabels || {}, annons: remote.form.annons || {}, profiles: [{ id: "std", name: "Standard" }], activeProfileId: "std", autoRejectBelow: 0, rules: [], autoRules: [], stats: { started: 0, submitted: 0 } }; org = remote.org || localOrg; company = remote.company || (remote.org && remote.org.companyName) || company; }
   else if (localJob) { job = localJob; company = localJob.company || company; }
-  const submitFn = async (cand) => { if (sbEnabled) await sbInsert("applications", { job_slug: slug, name: cand.name, email: cand.email, phone: cand.phone, answers: cand.answers, source: cand.source, created_at: new Date().toISOString() }); };
+  const submitFn = async (cand) => { if (sbEnabled) await sbInsert("applications", { job_slug: slug, org_id: remote ? remote.org_id : null, name: cand.name, email: cand.email, phone: cand.phone, answers: cand.answers, source: cand.source, created_at: new Date().toISOString() }); };
   if (remote === undefined) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>Laddar…</span></div></div></div>;
   if (!job) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><h2>Tjänsten hittades inte</h2><p>Länken kan vara felaktig eller så är annonsen inte publicerad än.</p></div></div></div>;
   const a = job.annons || {};
@@ -504,12 +486,16 @@ export default function App() {
   const [compareIds, setCompareIds] = useState([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [printDoc, setPrintDoc] = useState(null);
-  const [session, setSession] = useState(() => { const sv = store.get("rekyl_session", null); if (sv && sv.token) sbSetToken(sv.token); return sv; });
-  const login = (sv) => { store.set("rekyl_session", sv); sbSetToken(sv.token); setSession(sv); };
-  const logout = () => { store.set("rekyl_session", null); sbSetToken(null); setSession(null); };
+  const [session, setSession] = useState(() => { const sv = store.get("rekyl_session", null); if (sv && sv.token) { sbSetToken(sv.token); sbSetUid(sv.userId); } return sv; });
+  const [loaded, setLoaded] = useState(false);
+  const login = (sv) => { store.set("rekyl_session", sv); sbSetToken(sv.token); sbSetUid(sv.userId); setSession(sv); };
+  const logout = () => { store.set("rekyl_session", null); store.set("rekyl_state", null); sbSetToken(null); sbSetUid(null); setLoaded(false); setSession(null); dispatch({ type: "LOAD_STATE", data: {} }); };
+  useEffect(() => { if (!sbEnabled || !session || !session.refresh) return; let alive = true; const doRefresh = async () => { const d = await sbRefresh(session.refresh); if (d && alive) { const ns = { ...session, token: d.access_token, refresh: d.refresh_token, exp: Date.now() + (d.expires_in || 3600) * 1000 }; store.set("rekyl_session", ns); sbSetToken(ns.token); sbSetUid(ns.userId); setSession(ns); } }; if (session.exp && session.exp < Date.now() + 5 * 60000) doRefresh(); const t = setInterval(doRefresh, 45 * 60000); return () => { alive = false; clearInterval(t); }; }, [session && session.userId]);
+  useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + session.userId + "&select=data"); if (alive) { if (rows && rows.length && rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); setLoaded(true); } })(); return () => { alive = false; }; }, [session && session.userId]);
+  useEffect(() => { if (!sbEnabled || !session || !loaded) return; const t = setTimeout(() => { sbUpsert("org_state", { org_id: session.userId, data: state, updated_at: new Date().toISOString() }); }, 1600); return () => clearTimeout(t); }, [state, loaded]);
   useEffect(() => { store.set("rekyl_state", state); }, [state]);
 
-  const job = state.jobs.find((j) => j.id === state.activeJobId);
+  const job = state.jobs.find((j) => j.id === state.activeJobId) || state.jobs[0];
   const me = REVIEWERS.find((r) => r.id === state.currentUserId);
   const cands = useMemo(() => state.candidates.filter((c) => c.jobId === state.activeJobId).map((c) => ({ ...c, ...scoreCandidate(job, c.answers), missing: missingInfo(job, c) })), [state.candidates, job]);
   const allScored = useMemo(() => state.jobs.map((j) => ({ job: j, list: state.candidates.filter((c) => c.jobId === j.id).map((c) => ({ ...c, ...scoreCandidate(j, c.answers) })) })), [state.candidates, state.jobs]);
@@ -528,6 +514,8 @@ export default function App() {
   const pubMatch = typeof window !== "undefined" ? window.location.pathname.match(/^\/j\/([^/]+)/) : null;
   if (pubMatch) return <PublicApply slug={decodeURIComponent(pubMatch[1])} localJobs={state.jobs} localOrg={state.org} />;
   if (sbEnabled && !session) return <LoginScreen onAuthed={login} />;
+  if (sbEnabled && session && !loaded) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>Synkar din data…</span></div></div></div>;
+  if (session && loaded && !state.jobs.length) return <FirstJobScreen onCreate={(t, tmpl) => dispatch({ type: "ADD_JOB", title: t, tmplId: tmpl })} onLogout={logout} email={session && session.email} />;
 
   return (
     <div className="ats-root">
@@ -944,7 +932,7 @@ function FormView({ job, D, me, state, showToast }) {
   const addPage = () => { setPages([...pages, Math.max(1, ...pages) + 1]); };
   const A = job.annons || {};
   const setA = (patch) => { D({ type: "SET_FORM", patch: { annons: { ...(job.annons || {}), ...patch } } }); setDirty(true); };
-  const publish = () => { D({ type: "SET_FORM", patch: {}, bump: true }); setDirty(false); if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1, annons: job.annons }, published: true }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Publicerat lokalt · molnet svarade inte" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); } };
+  const publish = () => { D({ type: "SET_FORM", patch: {}, bump: true }); setDirty(false); if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1, annons: job.annons }, published: true, org_id: SB_UID }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Publicerat lokalt · molnet svarade inte" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); } };
   const skills = job.criteria.find((c) => c.id === "skills");
   const scored = job.criteria.filter((c) => c.scored && c.type !== "text" && c.type !== "file");
   const link = (typeof window !== "undefined" ? window.location.origin : state.org.appUrl) + "/j/" + job.slug; const embed = `<iframe src="${link}/inbäddad" width="100%" height="720" style="border:0" title="${job.title}"></iframe>`;
@@ -1998,6 +1986,10 @@ function Style() {
 .ats-anned-faq{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px;position:relative}
 .ats-anned-faq .ats-optdel{position:absolute;top:7px;right:7px}
 @media(max-width:720px){.ats-anned-grid,.ats-anned-lists{grid-template-columns:1fr}}
+.ats-first{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(120% 120% at 50% 0%, var(--petrol-soft) 0%, var(--paper) 55%)}
+.ats-first-card{width:100%;max-width:640px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:30px;box-shadow:0 30px 70px -30px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:12px}
+.ats-first-card h2{font-family:'Bricolage Grotesque';font-size:24px}
+.ats-first-sub{font-size:13.5px;color:var(--sub);line-height:1.55}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
