@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 
 // ---- Supabase (via REST, inget paket kravs) ----
-const SB_URL = import.meta.env.VITE_SUPABASE_URL;
-const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SB_URL = import.meta.env.VITE_SUPABASE_URL || "https://eaditrzamfhylmlrmkca.supabase.co";
+const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhZGl0cnphbWZoeWxtbHJta2NhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODA4NjgsImV4cCI6MjA5OTE1Njg2OH0.jFzfeVow0P-46Vj7G-yTVjA1IHp8UN-Ts8Us719rYmE";
 const sbEnabled = !!(SB_URL && SB_KEY);
 const sbHead = () => ({ apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, "Content-Type": "application/json" });
 async function sbGet(path) { if (!sbEnabled) return null; try { const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: sbHead() }); if (!r.ok) return null; return await r.json(); } catch (e) { return null; } }
