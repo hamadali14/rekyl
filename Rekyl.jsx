@@ -293,7 +293,7 @@ const DEFAULT_TEMPLATES = [
   { id: "t_reminder", name: "Paminnelse", trigger: "reminder", active: true, subject: "Paminnelse - {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn liten paminnelse angående din ansökan till {{jobTitle}}. Hör av dig till {{hrName}} ({{hrEmail}}) om du har frågor.\n\nVänliga hälsningar,\n{{hrName}}" },
 ];
 function renderTpl(str, vars) { return (str || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k) => (vars[k] == null || vars[k] === "" ? `{{${k}}}` : vars[k])); }
-function tplVars(state, cand, job) { return { candidateName: cand.name, jobTitle: job.title, companyName: state.org.companyName, hrName: state.org.hrName, hrEmail: state.org.hrEmail, missingField: (missingInfo(job, cand)[0] || "efterfrågad uppgift"), interviewTime: state.org.defaultInterviewTime, rejectionReason: cand.reason ? cand.reason.toLowerCase() : "andra kandidater gick vidare" }; }
+function tplVars(state, cand, job) { return { candidateName: cand.name, jobTitle: job.title, companyName: state.org.companyName, hrName: state.org.hrName, hrEmail: state.org.hrEmail, missingField: (missingInfo(job, cand)[0] || "efterfrågad uppgift"), interviewTime: cand.interviewTime || state.org.defaultInterviewTime, rejectionReason: cand.reason ? cand.reason.toLowerCase() : "andra kandidater gick vidare" }; }
 const TRIGGER_FOR = { shortlist: "shortlist", interview: "interview", reserve: "reserve", reject: "reject", hired: "offer" };
 
 /* ---------- Reducer-hjalpare ---------- */
@@ -308,8 +308,9 @@ function buildMessage(state, cand, job, trigger, who) {
   const ok = validEmail(cand.email);
   return { id: uid(), candidateId: cand.id, candidateName: cand.name, jobId: job.id, to: cand.email || "(saknar e-post)", subject: tpl ? renderTpl(tpl.subject, vars) : "Angående din ansökan", body: tpl ? renderTpl(tpl.body, vars) : "", trigger, tplName: tpl?.name || trigger, status: ok ? "queued" : "failed", error: ok ? null : "Saknar giltig e-post", at: Date.now(), by: who };
 }
-function applyDecision(state, cand, job, status, reason, who) {
-  let c2 = addTL({ ...cand, status, reason: reason ?? cand.reason }, status === "hired" ? "hired" : "status_change", statusLabel(status) + (reason ? " · " + reason : ""), who);
+function applyDecision(state, cand, job, status, reason, who, extra) {
+  const _note = statusLabel(status) + (reason ? " · " + reason : "") + (extra && extra.interviewTime ? " · " + extra.interviewTime : "");
+  let c2 = addTL({ ...cand, status, reason: reason ?? cand.reason, ...(extra || {}) }, status === "hired" ? "hired" : "status_change", _note, who);
   const trigger = TRIGGER_FOR[status];
   let msg = null;
   if (trigger) { msg = buildMessage(state, c2, job, trigger, who); c2 = addTL(c2, "message_sent", `${msg.subject}${msg.status === "failed" ? " · FEL: saknar e-post" : " · köad för utskick"}`, who); }
@@ -322,7 +323,7 @@ function reducer(state, ac) {
     case "DECIDE": {
       const cand = state.candidates.find((c) => c.id === ac.id); if (!cand) return state;
       const job = state.jobs.find((j) => j.id === cand.jobId);
-      const { c2, msg } = applyDecision(state, cand, job, ac.status, ac.reason, who);
+      const { c2, msg } = applyDecision(state, cand, job, ac.status, ac.reason, who, ac.interviewTime ? { interviewTime: ac.interviewTime } : null);
       const s2 = mapCand(state, ac.id, () => c2);
       return { ...s2, messages: msg ? [msg, ...state.messages] : state.messages, history: [...state.history, { id: ac.id, prev: cand.status }], log: withLog(s2, "Beslut", `${statusLabel(ac.status)} · ${cand.name}`) };
     }
@@ -562,17 +563,22 @@ function CardFace({ c, onStar, onOpen, showActions }) {
 function QueueView({ cands, D, me, job, state, showToast, setReasonFor, setDetailId }) {
   const [sort, setSort] = useState("score"); const [hideKO, setHideKO] = useState(false); const [query, setQuery] = useState("");
   const [drag, setDrag] = useState({ dx: 0, dy: 0, active: false }); const [exit, setExit] = useState(null); const [last, setLast] = useState(null);
+  const [rejectId, setRejectId] = useState(null); const [interviewId, setInterviewId] = useState(null);
   const allowed = can(me.role, "decide"); const startRef = useRef(null);
   const deck = useMemo(() => { let d = cands.filter((c) => c.status === "new"); if (query.trim()) d = d.filter((c) => c.name.toLowerCase().includes(query.toLowerCase())); if (hideKO) d = d.filter((c) => !c.knockout); d.sort((a, b) => sort === "score" ? (a.knockout !== b.knockout ? (a.knockout ? 1 : -1) : b.total - a.total) : b.appliedAt - a.appliedAt); return d; }, [cands, sort, hideKO, query]);
   const reviewed = cands.filter((c) => c.status !== "new").length, total = cands.length; const top = deck[0];
   const DIRS = { right: { status: "shortlist", label: "Shortlist", toast: "intressemejl" }, up: { status: "interview", label: "Intervju", toast: "intervjumejl" }, down: { status: "reserve", label: "Reservlista", toast: "reservmejl" }, left: { status: "reject", label: "Avslag", toast: "avslagsmejl" } };
 
+  const runExit = useCallback((dir, extra, cand) => {
+    const d = DIRS[dir]; setExit({ dir });
+    setTimeout(() => { D({ type: "DECIDE", id: cand.id, status: d.status, ...(extra || {}) }); setExit(null); setDrag({ dx: 0, dy: 0, active: false }); setLast({ id: cand.id, name: cand.name, email: cand.email }); showToast({ kind: cand.email ? "ok" : "warn", msg: cand.email ? `${d.label} · ${d.toast} köat` : `${d.label} · mejl EJ köat (saknar e-post)` }); }, 300);
+  }, [D, showToast]);
   const commit = useCallback((dir) => {
     if (!top || exit || !allowed) return;
-    if (dir === "left") { setReasonFor({ id: top.id }); return; }
-    const d = DIRS[dir]; setExit({ dir }); const snap = { id: top.id, name: top.name, label: d.label, toast: d.toast, email: top.email };
-    setTimeout(() => { D({ type: "DECIDE", id: top.id, status: d.status }); setExit(null); setDrag({ dx: 0, dy: 0, active: false }); setLast(snap); showToast({ kind: snap.email ? "ok" : "warn", msg: snap.email ? `${d.label} · ${d.toast} köat` : `${d.label} · mejl EJ köat (saknar e-post)` }); }, 300);
-  }, [top, exit, allowed, D, setReasonFor, showToast]);
+    if (dir === "left") { setRejectId(top.id); return; }
+    if (dir === "up") { setInterviewId(top.id); return; }
+    runExit(dir, null, top);
+  }, [top, exit, allowed, runExit]);
   useEffect(() => { const onKey = (e) => { if (e.key === "ArrowRight") commit("right"); else if (e.key === "ArrowLeft") commit("left"); else if (e.key === "ArrowUp") commit("up"); else if (e.key === "ArrowDown") commit("down"); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, [commit]);
   const onDown = (e) => { if (exit || !allowed) return; startRef.current = { x: e.clientX, y: e.clientY }; setDrag({ dx: 0, dy: 0, active: true }); e.currentTarget.setPointerCapture?.(e.pointerId); };
   const onMove = (e) => { if (!drag.active || !startRef.current) return; setDrag({ dx: e.clientX - startRef.current.x, dy: e.clientY - startRef.current.y, active: true }); };
@@ -597,10 +603,30 @@ function QueueView({ cands, D, me, job, state, showToast, setReasonFor, setDetai
       </div>
       <div className="ats-actions"><button className="ats-act is-reject" disabled={!allowed} onClick={() => commit("left")} title="Avslå (vänster)"><X size={20} /></button><button className="ats-act is-reserve" disabled={!allowed} onClick={() => commit("down")} title="Reserv (ner)"><PauseCircle size={18} /></button><button className="ats-act is-interview" disabled={!allowed} onClick={() => commit("up")} title="Intervju (upp)"><CalendarCheck size={18} /></button><button className="ats-act is-yes" disabled={!allowed} onClick={() => commit("right")} title="Shortlist (höger)"><Check size={22} /></button></div>
       <p className="ats-hint"><ArrowRight size={12} /> shortlist · <span className="ats-hint-up">upp</span> intervju · <span className="ats-hint-dn">ner</span> reserv · <ArrowLeftIcon /> avslag — rätt mejl skickas automatiskt</p>
+      {rejectId && <ReasonModal onClose={() => setRejectId(null)} onPick={(reason) => { const c = cands.find((x) => x.id === rejectId); setRejectId(null); if (c) runExit("left", { reason }, c); }} />}
+      {interviewId && <InterviewModal cand={cands.find((x) => x.id === interviewId)} onClose={() => setInterviewId(null)} onConfirm={(time) => { const c = cands.find((x) => x.id === interviewId); setInterviewId(null); if (c) runExit("up", { interviewTime: time }, c); }} />}
     </div>
   );
 }
 function ArrowLeftIcon() { return <ChevronLeft size={12} style={{ display: "inline", verticalAlign: "-2px" }} />; }
+function InterviewModal({ cand, onClose, onConfirm }) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const isoLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const init = () => { const d = new Date(); d.setDate(d.getDate() + 2); d.setHours(10, 0, 0, 0); return isoLocal(d); };
+  const [dt, setDt] = useState(init);
+  const DAYS = ["söndag", "måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag"];
+  const fmt = (v) => { if (!v) return ""; const d = new Date(v); return `${DAYS[d.getDay()]} ${pad(d.getDate())}/${pad(d.getMonth() + 1)} kl ${pad(d.getHours())}.${pad(d.getMinutes())}`; };
+  const preset = (days, hour) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(hour, 0, 0, 0); setDt(isoLocal(d)); };
+  return <Modal title="Boka intervjutid" onClose={onClose}>
+    <div className="ats-intv">
+      <p className="ats-intv-sub">Välj tid för <b>{cand?.name}</b>. Tiden läggs automatiskt i intervjumejlet ({"{{interviewTime}}"}) och i kandidatens timeline.</p>
+      <div className="ats-intv-presets"><button className="ats-chip" onClick={() => preset(1, 10)}>I morgon 10.00</button><button className="ats-chip" onClick={() => preset(2, 14)}>Om 2 dagar 14.00</button><button className="ats-chip" onClick={() => preset(3, 9)}>Om 3 dagar 09.00</button></div>
+      <label className="ats-field"><span className="ats-field-l">Datum och tid</span><input type="datetime-local" value={dt} onChange={(e) => setDt(e.target.value)} /></label>
+      <div className="ats-intv-preview"><CalendarCheck size={15} /> {fmt(dt) || "Ingen tid vald"}</div>
+      <div className="ats-intv-actions"><button className="ats-ghost" onClick={onClose}>Avbryt</button><button className="ats-btn-primary" disabled={!dt} onClick={() => onConfirm(fmt(dt))}><CalendarCheck size={15} /> Boka och skicka</button></div>
+    </div>
+  </Modal>;
+}
 
 /* ===================== KANDIDATER ===================== */
 function toCSV(list) { const head = ["Namn", "E-post", "Telefon", "Matchning", "Status", "Källa", "Betyg", "Diskvalificerad", "Saknar", "Avslagsanledning"]; const rows = list.map((c) => [c.name, c.email || "", c.phone || "", c.total + "%", statusLabel(c.status), c.source, c.rating || "", c.knockout ? "Ja" : "Nej", (c.missing || []).join("|"), c.reason || ""]); return [head, ...rows].map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n"); }
@@ -1152,9 +1178,9 @@ function Style() {
 .ats-progress-track{flex:1;height:6px;background:var(--line2);border-radius:4px;overflow:hidden}
 .ats-progress-fill{height:100%;background:var(--petrol);border-radius:4px;transition:width .4s}
 .ats-progress-txt{font-family:'IBM Plex Mono';font-size:11.5px;color:var(--muted);white-space:nowrap}
-.ats-deck{position:relative;height:540px;max-width:560px;margin:0 auto;width:100%}
+.ats-deck{position:relative;height:540px;max-width:560px;margin:0 auto;width:100%;touch-action:none;overscroll-behavior:contain}
 .ats-card{position:absolute;inset:0;background:var(--surface);border:1px solid var(--line);border-radius:20px;box-shadow:0 8px 30px -14px rgba(0,0,0,.2);overflow:hidden}
-.ats-card.is-top{cursor:grab;box-shadow:0 20px 50px -18px rgba(0,0,0,.32)}
+.ats-card.is-top{cursor:grab;box-shadow:0 20px 50px -18px rgba(0,0,0,.32);touch-action:none}
 .ats-card.is-top:active{cursor:grabbing}
 .ats-card.is-behind{pointer-events:none}
 .ats-stamp{position:absolute;top:24px;z-index:8;font-family:'Bricolage Grotesque';font-weight:700;font-size:22px;padding:6px 15px;border-radius:11px;border:3px solid;text-transform:uppercase}
@@ -1546,17 +1572,21 @@ function Style() {
 .ats-optdel:hover{color:var(--brick)}
 .ats-fset-actions{display:flex;gap:8px;margin-top:2px}
 .ats-fieldhelp{font-size:11.5px;color:var(--muted);margin-top:2px}
-)
-.ats-optedit{display:flex;flex-direction:column;gap:6px;background:var(--paper2);border-radius:10px;padding:10px}
-.ats-optedit-h{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--sub)}
-.ats-optrow{display:flex;align-items:center;gap:6px}
-.ats-optrow input{flex:1;border:1px solid var(--line);border-radius:7px;padding:6px 9px;background:var(--surface);font-size:12.5px}
-.ats-optmust{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);display:grid;place-items:center;color:var(--muted);flex-shrink:0}
-.ats-optmust.is-on{background:var(--amber);color:#fff;border-color:var(--amber)}
-.ats-optdel{width:30px;height:30px;border-radius:7px;display:grid;place-items:center;color:var(--muted);flex-shrink:0}
-.ats-optdel:hover{color:var(--brick)}
-.ats-fset-actions{display:flex;gap:8px;margin-top:2px}
-.ats-fieldhelp{font-size:11.5px;color:var(--muted);margin-top:2px}
+/* Intervju-modal + primär-knapp + view-animation */
+.ats-btn-primary{display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:10px;background:var(--petrol);color:#fff;font-weight:600;font-size:13.5px;transition:background .15s,transform .12s,box-shadow .15s;box-shadow:0 6px 18px -8px rgba(12,92,82,.7)}
+.ats-btn-primary:hover:not(:disabled){background:var(--petrol-deep);transform:translateY(-1px);box-shadow:0 10px 22px -8px rgba(12,92,82,.75)}
+.ats-btn-primary:active:not(:disabled){transform:translateY(0)}
+.ats-btn-primary:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
+.ats-intv{display:flex;flex-direction:column;gap:13px;padding:18px 22px 20px}
+.ats-intv-sub{font-size:13px;color:var(--sub);line-height:1.55}
+.ats-intv-presets{display:flex;gap:8px;flex-wrap:wrap}
+.ats-intv .ats-field input{border:1px solid var(--line);border-radius:10px;padding:11px 13px;background:var(--surface);width:100%}
+.ats-intv-preview{display:flex;align-items:center;gap:8px;background:var(--petrol-soft);color:var(--petrol-deep);border-radius:10px;padding:11px 14px;font-weight:600;font-size:14px}
+.ats-intv-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:2px}
+@keyframes atsViewIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.ats-view{animation:atsViewIn .34s cubic-bezier(.4,0,.2,1)}
+@keyframes atsModalIn{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+.ats-modal{animation:atsModalIn .22s cubic-bezier(.4,0,.2,1)}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
@@ -1573,6 +1603,20 @@ function Style() {
   .ats-ph-title{font-size:20px}
   .ats-msglog-head{display:none}.ats-msglog-row{grid-template-columns:60px 1fr;gap:6px}.ats-msglog-row>span:nth-child(3),.ats-msglog-row>span:nth-child(4),.ats-msglog-row>span:nth-child(5){display:none}
   .ats-flagcols{grid-template-columns:1fr}
+  /* Inställningssidan – luftigare på mobil */
+  .ats-grid-2{gap:14px}
+  .ats-tpl-two{grid-template-columns:1fr;gap:11px}
+  .ats-tpl3{gap:16px}
+  .ats-tpllist{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px}
+  .ats-tpllist>button{flex:0 0 auto}
+  .ats-tplitem{min-width:150px}
+  .ats-varchips{flex-wrap:wrap;gap:6px}
+  .ats-envbox pre{font-size:11px;white-space:pre-wrap;word-break:break-word;line-height:1.6}
+  .ats-panel{padding:16px}
+  .ats-field input,.ats-field textarea,.ats-field select,.ats-inp,.ats-select{font-size:16px;padding:11px 12px}
+  .ats-mailprev-body{font-size:13px}
+  .ats-intv-actions{flex-direction:column-reverse}
+  .ats-intv-actions>button{width:100%;justify-content:center}
 }
 @media print{.ats-app,.ats-bottomnav,.ats-fab,.ats-print-toolbar{display:none!important}.ats-printwrap{position:static}.ats-pr{border:none}}
 @media(prefers-reduced-motion:reduce){.ats-root *{animation-duration:.01ms!important;transition-duration:.01ms!important}}
