@@ -7,7 +7,8 @@ import {
   Copy, Tag, UserCheck, Activity, Sparkles, Building2, Gauge, Filter, Mail, GitCompare, Workflow,
   Phone, Upload, CalendarClock, ListChecks, Send, Bell, CircleAlert, Blocks, Settings2, History,
   ShieldAlert, Pin, PinOff, Server, AtSign, Info, CheckCircle2, Settings, ThumbsUp, ThumbsDown,
-  HelpCircle, BadgeCheck, PauseCircle, CalendarCheck, Menu as MenuIcon, PanelLeftClose
+  HelpCircle, BadgeCheck, PauseCircle, CalendarCheck, Menu as MenuIcon, PanelLeftClose,
+  RotateCw, Rocket, GripVertical, Lock, MousePointerClick, Share2, MessageCircle, Globe
 } from "lucide-react";
 
 /* ================================================================== *
@@ -355,6 +356,7 @@ function reducer(state, ac) {
     case "ADD_FIELD": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: [...job.criteria.filter((c) => c.block !== "text"), ac.field, ...job.criteria.filter((c) => c.block === "text")] }, "La till fält: " + ac.field.label, REVIEWERS.find((r) => r.id === who)?.name));
     case "REMOVE_FIELD": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: job.criteria.filter((c) => c.id !== ac.critId) }, "Tog bort fält", REVIEWERS.find((r) => r.id === who)?.name));
     case "MOVE_FIELD": return updateActiveJob(state, (job) => { const arr = [...job.criteria]; const i = arr.findIndex((c) => c.id === ac.critId); const j = i + ac.dir; if (i < 0 || j < 0 || j >= arr.length) return job; [arr[i], arr[j]] = [arr[j], arr[i]]; return { ...job, criteria: arr }; });
+    case "SET_FORM": return updateActiveJob(state, (job) => { const j = { ...job, ...(ac.patch || {}) }; return ac.bump ? bumpVersion(j, "Formulär publicerat", REVIEWERS.find((r) => r.id === who)?.name) : j; });
     case "SET_PROFILE": return updateActiveJob(state, (job) => ({ ...job, activeProfileId: ac.id }));
     case "SAVE_PROFILE": return updateActiveJob(state, (job) => { const weights = {}; job.criteria.forEach((c) => { if (c.scored && c.weight != null) weights[c.id] = weightOf(job, c); }); const id = "p" + uid(); return { ...job, profiles: [...job.profiles, { id, name: ac.name, weights }], activeProfileId: id }; });
     case "ADD_RULE": return updateActiveJob(state, (job) => ({ ...job, rules: [...job.rules, { ...ac.rule, id: uid() }] }));
@@ -746,43 +748,46 @@ function buildField(block) {
 }
 const ADDABLE = [["experience", "Erfarenhet"], ["skills", "Kompetenser"], ["availability", "Tillgänglighet"], ["salary", "Lön"], ["cert", "Certifikat (knockout)"], ["yesno", "Ja/nej"], ["choice", "Flerval"], ["rating", "Skattning 1-5"], ["date", "Datum"], ["phone", "Telefon"], ["url", "Länk"], ["text", "Fritext"], ["file", "Bilaga"]];
 const STEP_LABEL = { 2: "Bakgrund", 3: "Kompetens & krav", 4: "Praktiskt", 5: "Om dig" };
+const getPages = (job) => { const present = Array.from(new Set(job.criteria.map((c) => c.step))).sort((a, b) => a - b); const explicit = job.pages && job.pages.length ? job.pages : null; if (explicit) return Array.from(new Set([...explicit, ...present])).sort((a, b) => a - b); return present.length ? present : [2]; };
+const pageLabel = (job, n) => (job.pageLabels && job.pageLabels[n]) || STEP_LABEL[n] || ("Sida " + n);
 
 function optLabel(o){ return typeof o === "string" ? o : o.value; }
-function FieldSettings({ c, job, D }) {
+function FieldInspector({ field: c, pages, allFields, onPatch, onDelete, onDuplicate }) {
   const [adv, setAdv] = useState(false);
-  const setC = (patch) => D({ type: "SET_CRIT", critId: c.id, patch });
-  const setF = (patch) => D({ type: "SET_FIELD_FLAG", critId: c.id, patch });
-  const condCandidates = job.criteria.filter((x) => x.id !== c.id && (x.type === "boolean" || x.type === "select"));
+  const [condSel, setCondSel] = useState("");
+  const condCandidates = allFields.filter((x) => x.id !== c.id && (x.type === "boolean" || x.type === "select"));
   const hasOptions = c.type === "multiselect" || c.type === "select" || c.type === "ordinal";
   const optArr = c.type === "ordinal" ? (c.scale || []) : (c.options || []);
-  const writeOpts = (arr) => { if (c.type === "ordinal") setC({ scale: arr }); else setC({ options: arr }); };
+  const writeOpts = (arr) => onPatch(c.type === "ordinal" ? { scale: arr } : { options: arr });
   const renameOpt = (i, val) => writeOpts(optArr.map((o, k) => k === i ? (c.type === "multiselect" ? { ...o, value: val } : val) : o));
   const removeOpt = (i) => writeOpts(optArr.filter((_, k) => k !== i));
   const addOpt = () => writeOpts([...optArr, c.type === "multiselect" ? { value: "Nytt alternativ", must: false } : "Nytt alternativ"]);
   const toggleMust = (i) => writeOpts(optArr.map((o, k) => k === i ? { ...o, must: !o.must } : o));
-  const duplicate = () => { const clone = { ...JSON.parse(JSON.stringify(c)), id: c.block + "_" + uid(), label: c.label + " (kopia)" }; D({ type: "ADD_FIELD", field: clone }); };
+  const TypeIc = ICONS[c.icon] || FileText;
+  const canPlace = c.type === "text" || c.type === "phone" || c.type === "url" || c.type === "number" || c.type === "budget";
   return (
-    <div className="ats-fset">
-      <label className="ats-fset-row"><span>Etikett</span><input value={c.label} onChange={(e) => setC({ label: e.target.value })} /></label>
-      <label className="ats-fset-row"><span>Hjälptext (visas för kandidaten)</span><input value={c.help || ""} onChange={(e) => setC({ help: e.target.value })} placeholder="t.ex. Ange antal hela år" /></label>
+    <div className="ats-insp">
+      <div className="ats-insp-head"><span className="ats-insp-ic"><TypeIc size={15} /></span><div className="ats-insp-head-t"><b>{TYPE_LABEL[c.type] || c.type}</b><span>Fältinställningar</span></div><div className="ats-insp-head-acts"><button title="Duplicera" onClick={onDuplicate}><Copy size={14} /></button><button title="Ta bort" className="is-danger" onClick={onDelete}><Trash2 size={14} /></button></div></div>
+      <label className="ats-fset-row"><span>Etikett</span><input value={c.label} onChange={(e) => onPatch({ label: e.target.value })} /></label>
+      <label className="ats-fset-row"><span>Hjälptext</span><input value={c.help || ""} onChange={(e) => onPatch({ help: e.target.value })} placeholder="Visas för kandidaten" /></label>
+      {canPlace && <label className="ats-fset-row"><span>Platshållare</span><input value={c.placeholder || ""} onChange={(e) => onPatch({ placeholder: e.target.value })} /></label>}
       <div className="ats-fset-toggles">
-        {c.type !== "text" && c.type !== "file" && c.type !== "date" && c.type !== "phone" && c.type !== "url" && <button className={"ats-toggle" + (c.scored ? " is-on" : "")} onClick={() => setF({ scored: !c.scored })}><Gauge size={12} /> Påverkar poäng</button>}
-        <button className={"ats-toggle" + (c.required ? " is-on" : "")} onClick={() => setF({ required: !c.required })}><CircleAlert size={12} /> Obligatorisk</button>
-        {c.type === "boolean" && <button className={"ats-toggle is-ko" + (c.knockout ? " is-on" : "")} onClick={() => setF({ knockout: !c.knockout })}><ShieldAlert size={12} /> Knockout</button>}
+        {c.type !== "text" && c.type !== "file" && c.type !== "date" && c.type !== "phone" && c.type !== "url" && <button className={"ats-toggle" + (c.scored ? " is-on" : "")} onClick={() => onPatch({ scored: !c.scored })}><Gauge size={12} /> Poäng</button>}
+        <button className={"ats-toggle" + (c.required ? " is-on" : "")} onClick={() => onPatch({ required: !c.required })}><CircleAlert size={12} /> Obligatorisk</button>
+        {c.type === "boolean" && <button className={"ats-toggle is-ko" + (c.knockout ? " is-on" : "")} onClick={() => onPatch({ knockout: !c.knockout })}><ShieldAlert size={12} /> Knockout</button>}
       </div>
-      {c.scored && c.type !== "text" && c.type !== "file" && <label className="ats-fset-row"><span>Vikt {weightOf(job, c)}</span><input type="range" min="0" max="40" value={weightOf(job, c)} onChange={(e) => D({ type: "SET_WEIGHT", critId: c.id, weight: Number(e.target.value) })} /></label>}
-      {c.type === "number" && <label className="ats-fset-row"><span>Målvärde</span><input type="number" value={c.ideal} onChange={(e) => setC({ ideal: Number(e.target.value) })} /></label>}
-      {c.type === "budget" && <label className="ats-fset-row"><span>Lönetak</span><input type="number" value={c.budget} onChange={(e) => setC({ budget: Number(e.target.value) })} /></label>}
-      {hasOptions && <div className="ats-optedit"><div className="ats-optedit-h"><ListChecks size={12} /> Alternativ</div>{optArr.map((o, i) => <div key={i} className="ats-optrow"><input value={optLabel(o)} onChange={(e) => renameOpt(i, e.target.value)} />{c.type === "multiselect" && <button className={"ats-optmust" + (o.must ? " is-on" : "")} onClick={() => toggleMust(i)} title="Obligatoriskt (knockout)"><ShieldAlert size={12} /></button>}<button className="ats-optdel" onClick={() => removeOpt(i)}><X size={13} /></button></div>)}<button className="ats-ghost is-sm" onClick={addOpt}><Plus size={12} /> Lägg till alternativ</button></div>}
-      <div className="ats-fset-actions"><button className="ats-ghost is-sm" onClick={duplicate}><Copy size={12} /> Duplicera fält</button></div>
+      {c.scored && c.type !== "text" && c.type !== "file" && <label className="ats-fset-row"><span>Vikt {c.weight ?? 10}</span><input type="range" min="0" max="40" value={c.weight ?? 10} onChange={(e) => onPatch({ weight: Number(e.target.value) })} /></label>}
+      {c.type === "number" && <label className="ats-fset-row"><span>Målvärde</span><input type="number" value={c.ideal} onChange={(e) => onPatch({ ideal: Number(e.target.value) })} /></label>}
+      {c.type === "budget" && <label className="ats-fset-row"><span>Lönetak (kr/mån)</span><input type="number" value={c.budget} onChange={(e) => onPatch({ budget: Number(e.target.value) })} /></label>}
+      {hasOptions && <div className="ats-optedit"><div className="ats-optedit-h"><ListChecks size={12} /> Alternativ</div>{optArr.map((o, i) => <div key={i} className="ats-optrow"><input value={optLabel(o)} onChange={(e) => renameOpt(i, e.target.value)} />{c.type === "multiselect" && <button className={"ats-optmust" + (o.must ? " is-on" : "")} onClick={() => toggleMust(i)} title="Krav (knockout)"><ShieldAlert size={12} /></button>}<button className="ats-optdel" onClick={() => removeOpt(i)}><X size={13} /></button></div>)}<button className="ats-ghost is-sm" onClick={addOpt}><Plus size={12} /> Lägg till alternativ</button></div>}
       <button className="ats-advtoggle" onClick={() => setAdv((v) => !v)}>{adv ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Avancerat</button>
       {adv && <div className="ats-adv">
-        <label className="ats-fset-row"><span>Steg i formuläret</span><select value={c.step} onChange={(e) => setF({ step: Number(e.target.value) })}>{[2, 3, 4, 5].map((s) => <option key={s} value={s}>{STEP_LABEL[s] || ("Steg " + s)}</option>)}</select></label>
-        <button className={"ats-toggle" + (c.display ? " is-on" : "")} onClick={() => setF({ display: !c.display })}><Eye size={12} /> Syns på kandidatkort</button>
-        {c.type === "boolean" && c.knockout && <label className="ats-fset-row"><span>Diskvalificera om svar</span><select value={String(c.koValue)} onChange={(e) => setF({ koValue: e.target.value === "true" })}><option value="false">Nej</option><option value="true">Ja</option></select></label>}
-        <div className="ats-fset-cond"><div className="ats-fset-cond-h"><Workflow size={12} /> Visa endast om (villkor)</div>
-          {c.showIf ? <div className="ats-fset-condrow"><span>{job.criteria.find((x) => x.id === c.showIf.field)?.label || c.showIf.field} = <b>{String(c.showIf.equals)}</b></span><button onClick={() => setF({ showIf: null })}><X size={12} /></button></div>
-            : condCandidates.length > 0 ? <div className="ats-fset-condadd"><select id={"cond-" + c.id} className="ats-select is-sm" defaultValue=""><option value="" disabled>Välj fält…</option>{condCandidates.map((x) => x.type === "boolean" ? [<option key={x.id + "t"} value={x.id + "::true"}>{x.label} = Ja</option>, <option key={x.id + "f"} value={x.id + "::false"}>{x.label} = Nej</option>] : (x.options || []).map((o) => { const val = typeof o === "string" ? o : o.value; return <option key={x.id + val} value={x.id + "::" + val}>{x.label} = {val}</option>; }))}</select><button className="ats-ghost is-sm" onClick={() => { const el = document.getElementById("cond-" + c.id); if (!el || !el.value) return; const [field, raw] = el.value.split("::"); const equals = raw === "true" ? true : raw === "false" ? false : raw; setF({ showIf: { field, equals } }); }}><Plus size={12} /></button></div>
+        <label className="ats-fset-row"><span>Sida</span><select value={c.step} onChange={(e) => onPatch({ step: Number(e.target.value) })}>{pages.map((s, i) => <option key={s} value={s}>{"Sida " + (i + 2) + " – " + pageLabel({ pageLabels: {} }, s)}</option>)}</select></label>
+        <button className={"ats-toggle" + (c.display ? " is-on" : "")} onClick={() => onPatch({ display: !c.display })}><Eye size={12} /> Syns på kandidatkort</button>
+        {c.type === "boolean" && c.knockout && <label className="ats-fset-row"><span>Diskvalificera om svar</span><select value={String(c.koValue)} onChange={(e) => onPatch({ koValue: e.target.value === "true" })}><option value="false">Nej</option><option value="true">Ja</option></select></label>}
+        <div className="ats-fset-cond"><div className="ats-fset-cond-h"><Workflow size={12} /> Visa endast om</div>
+          {c.showIf ? <div className="ats-fset-condrow"><span>{allFields.find((x) => x.id === c.showIf.field)?.label || c.showIf.field} = <b>{String(c.showIf.equals)}</b></span><button onClick={() => onPatch({ showIf: null })}><X size={12} /></button></div>
+            : condCandidates.length > 0 ? <div className="ats-fset-condadd"><select className="ats-select is-sm" value={condSel} onChange={(e) => setCondSel(e.target.value)}><option value="">Välj fält…</option>{condCandidates.map((x) => x.type === "boolean" ? [<option key={x.id + "t"} value={x.id + "::true"}>{x.label} = Ja</option>, <option key={x.id + "f"} value={x.id + "::false"}>{x.label} = Nej</option>] : (x.options || []).map((o) => { const val = optLabel(o); return <option key={x.id + val} value={x.id + "::" + val}>{x.label} = {val}</option>; }))}</select><button className="ats-ghost is-sm" disabled={!condSel} onClick={() => { const [field, raw] = condSel.split("::"); const equals = raw === "true" ? true : raw === "false" ? false : raw; onPatch({ showIf: { field, equals } }); setCondSel(""); }}><Plus size={12} /></button></div>
               : <span className="ats-muted" style={{ fontSize: 12 }}>Lägg till ett ja/nej- eller flervalsfält först.</span>}
         </div>
       </div>}
@@ -795,7 +800,7 @@ function FieldInput({ c, value, onChange }) {
   if (c.type === "phone") return <input type="tel" className="ats-inp" value={value ?? ""} onChange={(e) => onChange(e.target.value)} placeholder={c.placeholder || "070-…"} />;
   if (c.type === "url") return <input type="url" className="ats-inp" value={value ?? ""} onChange={(e) => onChange(e.target.value)} placeholder={c.placeholder || "https://"} />;
   if (c.type === "text") return <textarea className="ats-inp" rows={3} value={value ?? ""} onChange={(e) => onChange(e.target.value)} placeholder={c.placeholder} />;
-  if (c.type === "file") return <label className="ats-fileinp"><Upload size={14} /> {value ? value : "Välj fil…"}<input type="file" style={{ display: "none" }} onChange={(e) => onChange(e.target.files?.[0]?.name || "")} /></label>;
+  if (c.type === "file") return <FileDrop value={value} onChange={onChange} />;
   if (c.type === "boolean") return <div className="ats-yn"><button className={value === true ? "is-on" : ""} onClick={() => onChange(true)}>Ja</button><button className={value === false ? "is-on" : ""} onClick={() => onChange(false)}>Nej</button></div>;
   if (c.type === "multiselect") { const sel = Array.isArray(value) ? value : []; return <div className="ats-chipset">{(c.options||[]).map((o) => { const v = o.value; const on = sel.includes(v); return <button key={v} className={"ats-selchip" + (on ? " is-on" : "") + (o.must ? " is-must" : "")} onClick={() => onChange(on ? sel.filter((x) => x !== v) : [...sel, v])}>{on && <Check size={12} />}{v}{o.must && <span className="ats-mustdot">krav</span>}</button>; })}</div>; }
   const opts = c.type === "ordinal" ? c.scale : c.options; return <div className="ats-chipset">{(opts||[]).map((o) => <button key={o} className={"ats-selchip" + (value === o ? " is-on" : "")} onClick={() => onChange(o)}>{value === o && <Check size={12} />}{o}</button>)}</div>;
@@ -805,8 +810,8 @@ function ApplyForm({ job, D, org, showToast }) {
   const [answers, setAnswers] = useState({}); const [base, setBase] = useState({ name: "", email: "", phone: "" }); const [consent, setConsent] = useState(false); const [step, setStep] = useState(0); const [sent, setSent] = useState(false); const [touched, setTouched] = useState(false);
   const set = (id, v) => setAnswers((a) => ({ ...a, [id]: v }));
   const visible = job.criteria.filter((c) => isVisible(c, answers));
-  const stepNums = Array.from(new Set(visible.map((c) => c.step))).sort((a, b) => a - b);
-  const steps = [{ key: "base", label: "Grunduppgifter" }, ...stepNums.map((n) => ({ key: n, label: STEP_LABEL[n] || "Frågor" })), { key: "gdpr", label: "Skicka in" }];
+  const pageNums = getPages(job).filter((n) => visible.some((c) => c.step === n));
+  const steps = [{ key: "base", label: "Grunduppgifter" }, ...pageNums.map((n) => ({ key: n, label: pageLabel(job, n) })), { key: "gdpr", label: "Skicka in" }];
   const cur = steps[step];
   const live = useMemo(() => scoreCandidate(job, answers), [job, answers]);
   const stepFields = typeof cur.key === "number" ? visible.filter((c) => c.step === cur.key) : [];
@@ -839,6 +844,22 @@ function FormView({ job, D, me, state, showToast }) {
   const [tab, setTab] = useState("bygg"); const [selId, setSelId] = useState(job.criteria[0]?.id);
   const canEdit = can(me.role, "edit");
   const sel = job.criteria.find((c) => c.id === selId);
+  const pages = getPages(job);
+  const [undo, setUndo] = useState([]); const [redo, setRedo] = useState([]);
+  const [overKey, setOverKey] = useState(null); const [dragging, setDragging] = useState(false);
+  const [showPreview, setShowPreview] = useState(false); const [showShare, setShowShare] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const snap = () => { setUndo((u) => [...u.slice(-40), job.criteria]); setRedo([]); };
+  const setPages = (np) => { D({ type: "SET_FORM", patch: { pages: np } }); setDirty(true); };
+  const doUndo = () => { if (!undo.length) return; setRedo((r) => [job.criteria, ...r]); const prev = undo[undo.length - 1]; setUndo((u) => u.slice(0, -1)); D({ type: "SET_FORM", patch: { criteria: prev } }); setDirty(true); };
+  const doRedo = () => { if (!redo.length) return; setUndo((u) => [...u, job.criteria]); const nxt = redo[0]; setRedo((r) => r.slice(1)); D({ type: "SET_FORM", patch: { criteria: nxt } }); setDirty(true); };
+  const flatten = (crit) => { const out = []; const used = new Set(); pages.forEach((p) => crit.forEach((c) => { if (c.step === p && !used.has(c.id)) { used.add(c.id); out.push(c); } })); crit.forEach((c) => { if (!used.has(c.id)) { used.add(c.id); out.push(c); } }); return out; };
+  const patchField = (id, patch) => { snap(); D({ type: "SET_FORM", patch: { criteria: flatten(job.criteria.map((c) => c.id === id ? { ...c, ...patch } : c)) } }); setDirty(true); };
+  const deleteField = (id) => { snap(); const nc = job.criteria.filter((c) => c.id !== id); D({ type: "SET_FORM", patch: { criteria: nc } }); setDirty(true); if (selId === id) setSelId(nc[0]?.id); };
+  const duplicateField = (id) => { const f = job.criteria.find((c) => c.id === id); if (!f) return; const clone = { ...JSON.parse(JSON.stringify(f)), id: f.block + "_" + uid(), label: f.label + " (kopia)" }; snap(); const idx = job.criteria.findIndex((c) => c.id === id); const nc = [...job.criteria]; nc.splice(idx + 1, 0, clone); D({ type: "SET_FORM", patch: { criteria: flatten(nc) } }); setDirty(true); setSelId(clone.id); };
+  const placeAt = (payload, step, index) => { if (!payload) return; snap(); let field, base = job.criteria; if (payload.slice(0, 6) === "block:") field = { ...buildField(payload.slice(6)), step }; else { const id = payload.slice(6); const found = base.find((c) => c.id === id); if (!found) return; field = { ...found, step }; base = base.filter((c) => c.id !== id); } const pageItems = base.filter((c) => c.step === step); pageItems.splice(index, 0, field); const out = []; const used = new Set(); pages.forEach((p) => { const items = p === step ? pageItems : base.filter((c) => c.step === p); items.forEach((it) => { if (!used.has(it.id)) { used.add(it.id); out.push(it); } }); }); [field, ...base].forEach((c) => { if (!used.has(c.id)) { used.add(c.id); out.push(c); } }); D({ type: "SET_FORM", patch: { criteria: out } }); setDirty(true); if (payload.slice(0, 6) === "block:") setSelId(field.id); };
+  const addPage = () => { setPages([...pages, Math.max(1, ...pages) + 1]); };
+  const publish = () => { D({ type: "SET_FORM", patch: {}, bump: true }); setDirty(false); showToast({ kind: "ok", msg: "Formulär publicerat · v" + (job.version + 1) }); };
   const skills = job.criteria.find((c) => c.id === "skills");
   const scored = job.criteria.filter((c) => c.scored && c.type !== "text" && c.type !== "file");
   const link = `${state.org.appUrl}/j/${job.slug}`; const embed = `<iframe src="${link}/inbäddad" width="100%" height="720" style="border:0" title="${job.title}"></iframe>`;
@@ -850,16 +871,37 @@ function FormView({ job, D, me, state, showToast }) {
       <PageHeader title="Formulär" meta={<><JobSwitch state={state} D={D} /><Dot /><span>formulär v{job.version}</span></>} right={<button className="ats-ghost is-accent" onClick={() => setTab("dela")}><Eye size={15} /> Förhandsvisa</button>} />
       <div className="ats-subtabs">{[["bygg", "Formulär", Blocks], ["scoring", "Scoring & krav", Gauge], ["auto", "Automation", Workflow], ["dela", "Dela & förhandsvisa", Link2]].map(([id, label, Ic]) => <button key={id} className={"ats-subtab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}><Ic size={14} /> {label}</button>)}</div>
 
-      {tab === "bygg" && <div className="ats-grid-builder">
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Struktur</h2>{canEdit && <Menu align="right" trigger={<button className="ats-ghost is-sm"><Plus size={13} /> Lägg till block</button>}>{ADDABLE.map(([b, label]) => <button key={b} className="ats-menu-item" onClick={() => { const f = buildField(b); D({ type: "ADD_FIELD", field: f }); setSelId(f.id); }}><Blocks size={13} /> {label}</button>)}</Menu>}</div>
-          <p className="ats-builder-note"><Sparkles size={12} /> Formuläret <b>är</b> scoringmotorn. Scoring, knockout och kandidatkort skapas automatiskt från fälten.</p>
-          <div className="ats-blocklist">{job.criteria.map((c, i) => { const Ic = ICONS[c.icon] || FileText; return <button key={c.id} className={"ats-blockrow" + (selId === c.id ? " is-sel" : "")} onClick={() => setSelId(c.id)}>
-            <span className="ats-blockrow-ic"><Ic size={15} /></span><div className="ats-blockrow-txt"><b>{c.label}</b><span className="ats-blockrow-meta">{TYPE_LABEL[c.type]}{c.scored ? ` · vikt ${weightOf(job, c)}` : " · info"}{c.knockout ? " · knockout" : ""}{c.showIf ? " · villkorad" : ""}</span></div>
-            {canEdit && <span className="ats-blockrow-acts"><span onClick={(e) => { e.stopPropagation(); D({ type: "MOVE_FIELD", critId: c.id, dir: -1 }); }} className={i === 0 ? "is-off" : ""}><ArrowUp size={14} /></span><span onClick={(e) => { e.stopPropagation(); D({ type: "MOVE_FIELD", critId: c.id, dir: 1 }); }} className={i === job.criteria.length - 1 ? "is-off" : ""}><ArrowDown size={14} /></span><span className="is-danger" onClick={(e) => { e.stopPropagation(); D({ type: "REMOVE_FIELD", critId: c.id }); if (selId === c.id) setSelId(job.criteria[0]?.id); }}><Trash2 size={14} /></span></span>}
-          </button>; })}</div>
+      {tab === "bygg" && <>
+        <div className="ats-fb-toolbar">
+          <div className="ats-fb-tgroup"><button className="ats-ghost is-sm" disabled={!undo.length} onClick={doUndo}><RotateCcw size={13} /> Ångra</button><button className="ats-ghost is-sm" disabled={!redo.length} onClick={doRedo}><RotateCw size={13} /> Gör om</button></div>
+          <div className="ats-fb-tgroup"><span className={"ats-fb-saved" + (dirty ? " is-dirty" : "")}>{dirty ? "Osparade ändringar" : "Allt sparat"}</span><button className="ats-ghost is-sm" onClick={() => setShowPreview(true)}><Eye size={13} /> Förhandsvisa</button><button className="ats-ghost is-sm" onClick={() => setShowShare(true)}><Share2 size={13} /> Dela</button>{canEdit && <button className="ats-btn-primary" onClick={publish}><Rocket size={14} /> Publicera v{job.version + 1}</button>}</div>
         </div>
-        <div className="ats-panel"><div className="ats-panel-h"><h2>{sel ? "Fältinställningar" : "Sammanfattning"}</h2></div>{sel && canEdit ? <FieldSettings c={sel} job={job} D={D} /> : <div className="ats-buildsum"><div><span>Fält</span><b>{job.criteria.length}</b></div><div><span>Poängsätta</span><b>{job.criteria.filter((c) => c.scored).length}</b></div><div><span>Knockout</span><b>{job.criteria.filter((c) => c.knockout).length}</b></div><div><span>Villkorade</span><b>{job.criteria.filter((c) => c.showIf).length}</b></div></div>}</div>
-      </div>}
+        <div className="ats-fb">
+          <div className="ats-fb-palette"><div className="ats-fb-palette-h"><Blocks size={13} /> Fält</div><p className="ats-fb-palette-note">Dra ut till formuläret &rarr;</p>{ADDABLE.map(([b, label]) => { const Ic = ICONS[buildField(b).icon] || FileText; return <div key={b} className={"ats-fb-pal" + (canEdit ? "" : " is-off")} draggable={canEdit} onDragStart={(e) => { e.dataTransfer.setData("text/plain", "block:" + b); setDragging(true); }} onDragEnd={() => { setDragging(false); setOverKey(null); }}><span className="ats-fb-pal-ic"><Ic size={15} /></span><span className="ats-fb-pal-l">{label}</span><GripVertical size={13} className="ats-fb-pal-grip" /></div>; })}</div>
+          <div className={"ats-fb-canvas" + (dragging ? " is-dragging" : "")}>
+            <div className="ats-fb-page is-locked"><div className="ats-fb-page-h"><span className="ats-fb-page-badge">1</span><b>Grunduppgifter</b><span className="ats-fb-page-lock"><Lock size={11} /> alltid först</span></div><div className="ats-fb-basefields"><div className="ats-fb-basef"><Users size={13} /> Namn <i>*</i></div><div className="ats-fb-basef"><AtSign size={13} /> E-post <i>*</i></div><div className="ats-fb-basef"><Phone size={13} /> Telefon</div></div></div>
+            {pages.map((p, pi) => { const items = job.criteria.filter((c) => c.step === p); return <div key={p} className="ats-fb-page"><div className="ats-fb-page-h"><span className="ats-fb-page-badge">{pi + 2}</span><input className="ats-fb-page-title" value={pageLabel(job, p)} disabled={!canEdit} onChange={(e) => { D({ type: "SET_FORM", patch: { pageLabels: { ...(job.pageLabels || {}), [p]: e.target.value } } }); setDirty(true); }} />{items.length === 0 && pages.length > 1 && canEdit && <button className="ats-fb-page-del" title="Ta bort tom sida" onClick={() => setPages(pages.filter((x) => x !== p))}><Trash2 size={12} /></button>}</div>
+              <div className="ats-fb-zone">
+                {items.length === 0 && <div className={"ats-fb-empty" + (overKey === p + ":0" ? " is-over" : "")} onDragOver={(e) => { e.preventDefault(); setOverKey(p + ":0"); }} onDragLeave={() => setOverKey(null)} onDrop={(e) => { e.preventDefault(); placeAt(e.dataTransfer.getData("text/plain"), p, 0); setOverKey(null); }}><Plus size={15} /> Släpp fält här</div>}
+                {items.map((c, i) => { const Ic = ICONS[c.icon] || FileText; return <Fragment key={c.id}>
+                  {overKey === p + ":" + i && <div className="ats-fb-ind" />}
+                  <div className={"ats-fb-card" + (selId === c.id ? " is-sel" : "")} draggable={canEdit} onDragStart={(e) => { e.dataTransfer.setData("text/plain", "field:" + c.id); setDragging(true); }} onDragEnd={() => { setDragging(false); setOverKey(null); }} onDragOver={(e) => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); setOverKey(p + ":" + (e.clientY < r.top + r.height / 2 ? i : i + 1)); }} onDrop={(e) => { e.preventDefault(); const r = e.currentTarget.getBoundingClientRect(); placeAt(e.dataTransfer.getData("text/plain"), p, e.clientY < r.top + r.height / 2 ? i : i + 1); setOverKey(null); }} onClick={() => setSelId(c.id)}>
+                    <span className="ats-fb-card-grip"><GripVertical size={15} /></span>
+                    <div className="ats-fb-card-main"><div className="ats-fb-card-top"><span className="ats-fb-card-ic"><Ic size={13} /></span><b>{c.label || "(namnlöst)"}</b>{c.required && <span className="ats-fb-tag is-req">obligatorisk</span>}{c.knockout && <span className="ats-fb-tag is-ko">knockout</span>}{c.scored && <span className="ats-fb-tag is-score">vikt {weightOf(job, c)}</span>}{c.showIf && <span className="ats-fb-tag is-cond">villkorad</span>}</div><div className="ats-fb-card-prev"><FieldInput c={c} value={undefined} onChange={() => {}} /></div>{c.help && <small className="ats-fieldhelp">{c.help}</small>}</div>
+                    {canEdit && <div className="ats-fb-card-acts"><button title="Duplicera" onClick={(e) => { e.stopPropagation(); duplicateField(c.id); }}><Copy size={13} /></button><button title="Ta bort" className="is-danger" onClick={(e) => { e.stopPropagation(); deleteField(c.id); }}><Trash2 size={13} /></button></div>}
+                  </div>
+                  {i === items.length - 1 && overKey === p + ":" + (i + 1) && <div className="ats-fb-ind" />}
+                </Fragment>; })}
+              </div>
+            </div>; })}
+            {canEdit && <button className="ats-fb-addpage" onClick={addPage}><Plus size={14} /> Lägg till sida</button>}
+            <div className="ats-fb-page is-locked"><div className="ats-fb-page-h"><span className="ats-fb-page-badge"><Check size={12} /></span><b>Skicka in</b><span className="ats-fb-page-lock"><ShieldCheck size={11} /> GDPR-samtycke</span></div></div>
+          </div>
+          <div className="ats-fb-insp">{sel && canEdit ? <FieldInspector field={sel} pages={pages} allFields={job.criteria} onPatch={(patch) => patchField(sel.id, patch)} onDelete={() => deleteField(sel.id)} onDuplicate={() => duplicateField(sel.id)} /> : <div className="ats-fb-insp-empty"><MousePointerClick size={22} /><p>Klicka på ett fält för att redigera — eller dra ut ett nytt fält från paletten.</p><div className="ats-buildsum"><div><span>Fält</span><b>{job.criteria.length}</b></div><div><span>Poäng</span><b>{job.criteria.filter((c) => c.scored).length}</b></div><div><span>Knockout</span><b>{job.criteria.filter((c) => c.knockout).length}</b></div><div><span>Sidor</span><b>{pages.length}</b></div></div></div>}</div>
+        </div>
+        {showPreview && <Modal title="Förhandsvisning — så ser kandidaten formuläret" onClose={() => setShowPreview(false)} wide><div className="ats-fb-prevwrap"><ApplyForm job={job} D={() => {}} org={state.org} showToast={() => {}} /></div></Modal>}
+        {showShare && <ShareModal job={job} state={state} onClose={() => setShowShare(false)} showToast={showToast} />}
+      </>}
 
       {tab === "scoring" && <div className="ats-grid-2">
         <div className="ats-panel"><div className="ats-panel-h"><h2>Vikter</h2><Menu align="right" trigger={<button className="ats-profilebtn">{job.profiles.find((p) => p.id === job.activeProfileId)?.name} <ChevronDown size={13} /></button>}>{job.profiles.map((p) => <button key={p.id} className={"ats-menu-item" + (p.id === job.activeProfileId ? " is-active" : "")} onClick={() => D({ type: "SET_PROFILE", id: p.id })}>{p.name}</button>)}{canEdit && <><div className="ats-menu-sep" /><button className="ats-menu-item is-accent" onClick={() => D({ type: "SAVE_PROFILE", name: "Profil " + job.profiles.length })}><Plus size={13} /> Spara som profil</button></>}</Menu></div>
@@ -892,6 +934,30 @@ function FormView({ job, D, me, state, showToast }) {
       </div>}
     </div>
   );
+}
+function FileDrop({ value, onChange }) {
+  const [over, setOver] = useState(false);
+  const inputRef = useRef(null);
+  const pick = (file) => { if (file) onChange(file.name); };
+  return <div className={"ats-filedrop" + (over ? " is-over" : "") + (value ? " is-set" : "")} onClick={() => inputRef.current && inputRef.current.click()} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); pick(e.dataTransfer.files && e.dataTransfer.files[0]); }}>
+    {value ? <><FileText size={18} /><div className="ats-filedrop-info"><b>{value}</b><span>Klicka för att byta fil</span></div><button className="ats-filedrop-x" onClick={(e) => { e.stopPropagation(); onChange(""); }}><X size={14} /></button></> : <><Upload size={18} /><div className="ats-filedrop-info"><b>Släpp fil eller klicka</b><span>PDF, Word, PNG, JPG</span></div></>}
+    <input ref={inputRef} type="file" style={{ display: "none" }} onChange={(e) => pick(e.target.files && e.target.files[0])} />
+  </div>;
+}
+function ShareModal({ job, state, onClose, showToast }) {
+  const link = state.org.appUrl + "/j/" + job.slug;
+  const embed = '<iframe src="' + link + '/inbaddad" width="100%" height="760" style="border:0" title="' + job.title + '"></iframe>';
+  const cp = (t, m) => { copyText(t); showToast({ kind: "ok", msg: m }); };
+  const open = (u) => window.open(u, "_blank");
+  const enc = encodeURIComponent;
+  return <Modal title="Dela och publicera formuläret" onClose={onClose}>
+    <div className="ats-share">
+      <div className="ats-share-link"><Link2 size={15} /><input readOnly value={link} onFocus={(e) => e.target.select()} /><button className="ats-btn-primary" onClick={() => cp(link, "Länk kopierad")}><Copy size={14} /> Kopiera</button></div>
+      <div className="ats-share-plat"><button onClick={() => open("https://www.linkedin.com/sharing/share-offsite/?url=" + enc(link))}><Share2 size={15} /> LinkedIn</button><button onClick={() => open("https://www.facebook.com/sharer/sharer.php?u=" + enc(link))}><Share2 size={15} /> Facebook</button><button onClick={() => open("https://twitter.com/intent/tweet?url=" + enc(link) + "&text=" + enc(job.title))}><Share2 size={15} /> X</button><button onClick={() => open("mailto:?subject=" + enc(job.title) + "&body=" + enc(link))}><Mail size={15} /> Mejl</button><button onClick={() => open("https://wa.me/?text=" + enc(job.title + " " + link))}><MessageCircle size={15} /> WhatsApp</button><button onClick={() => cp(link, "Länk kopierad")}><Globe size={15} /> Kopiera</button></div>
+      <label className="ats-field"><span className="ats-field-l">Bädda in på er hemsida</span><div className="ats-envbox"><pre>{embed}</pre></div></label>
+      <button className="ats-ghost" onClick={() => cp(embed, "Inbäddningskod kopierad")}><Copy size={14} /> Kopiera inbäddningskod</button>
+    </div>
+  </Modal>;
 }
 function RuleAdder({ criteria, onAdd }) { const [field, setField] = useState("total"); const [op, setOp] = useState(">="); const [value, setValue] = useState(80); const [tag, setTag] = useState("Toppmatch"); const numeric = [["total", "Matchning"], ...criteria.filter((c) => c.type === "number").map((c) => [c.id, c.label])]; return <div className="ats-ruleadd"><select className="ats-select is-sm" value={field} onChange={(e) => setField(e.target.value)}>{numeric.map((f) => <option key={f[0]} value={f[0]}>{f[1]}</option>)}</select><select className="ats-select is-sm" value={op} onChange={(e) => setOp(e.target.value)}>{[">=", ">", "<=", "<"].map((o) => <option key={o}>{o}</option>)}</select><input className="ats-inp is-sm" type="number" value={value} onChange={(e) => setValue(Number(e.target.value))} /><input className="ats-inp is-sm" value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Tagg" /><button className="ats-ghost is-sm" onClick={() => tag.trim() && onAdd({ field, op, value, tag: tag.trim() })}><Plus size={13} /></button></div>; }
 function AutoRuleAdder({ onAdd }) { const [field, setField] = useState("total"); const [op, setOp] = useState(">="); const [value, setValue] = useState(85); const [then, setThen] = useState("shortlist"); return <><select className="ats-select is-sm" value={field} onChange={(e) => setField(e.target.value)}><option value="total">Matchning</option><option value="knockout">Diskvalificerad</option></select><select className="ats-select is-sm" value={op} onChange={(e) => setOp(e.target.value)}>{[">=", ">", "<=", "<", "="].map((o) => <option key={o}>{o}</option>)}</select><input className="ats-inp is-sm" type="number" value={value} onChange={(e) => setValue(Number(e.target.value))} /><ArrowRight size={14} /><select className="ats-select is-sm" value={then} onChange={(e) => setThen(e.target.value)}>{["shortlist", "interview", "reserve", "reject", "flag"].map((t) => <option key={t} value={t}>{statusLabel(t) === t ? "Flagga" : statusLabel(t)}</option>)}</select><button className="ats-ghost is-sm" onClick={() => onAdd({ field, op, value, then })}><Plus size={13} /></button></>; }
@@ -1587,6 +1653,94 @@ function Style() {
 .ats-view{animation:atsViewIn .34s cubic-bezier(.4,0,.2,1)}
 @keyframes atsModalIn{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
 .ats-modal{animation:atsModalIn .22s cubic-bezier(.4,0,.2,1)}
+/* ===== Formbuilder (WYSIWYG) ===== */
+.ats-fb-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.ats-fb-tgroup{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ats-fb-saved{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--petrol);display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:20px;background:var(--petrol-soft)}
+.ats-fb-saved:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--petrol)}
+.ats-fb-saved.is-dirty{color:var(--amber);background:var(--amber-soft)}.ats-fb-saved.is-dirty:before{background:var(--amber)}
+.ats-fb{display:grid;grid-template-columns:212px 1fr 322px;gap:14px;align-items:start}
+.ats-fb-palette{position:sticky;top:14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:7px}
+.ats-fb-palette-h{display:flex;align-items:center;gap:7px;font-family:'Bricolage Grotesque';font-weight:600;font-size:14px}
+.ats-fb-palette-note{font-size:11px;color:var(--muted);margin:-2px 0 4px}
+.ats-fb-pal{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--paper2);font-size:12.5px;font-weight:600;color:var(--sub);cursor:grab;transition:transform .13s,border-color .13s,color .13s,background .13s;user-select:none}
+.ats-fb-pal:hover{border-color:var(--petrol);color:var(--petrol);background:var(--surface);transform:translateX(3px)}
+.ats-fb-pal:active{cursor:grabbing;transform:scale(.98)}
+.ats-fb-pal.is-off{opacity:.5;cursor:default}
+.ats-fb-pal-ic{width:26px;height:26px;border-radius:7px;background:var(--surface);border:1px solid var(--line);display:grid;place-items:center;color:var(--petrol);flex-shrink:0}
+.ats-fb-pal-l{flex:1}
+.ats-fb-pal-grip{color:var(--muted);opacity:0;transition:opacity .13s}
+.ats-fb-pal:hover .ats-fb-pal-grip{opacity:1}
+.ats-fb-canvas{display:flex;flex-direction:column;gap:12px;min-width:0}
+.ats-fb-canvas.is-dragging .ats-fb-zone{outline:2px dashed var(--line2);outline-offset:4px;border-radius:12px}
+.ats-fb-page{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px 16px}
+.ats-fb-page.is-locked{background:var(--paper2);border-style:dashed}
+.ats-fb-page-h{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.ats-fb-page-badge{width:24px;height:24px;border-radius:8px;background:var(--petrol);color:#fff;display:grid;place-items:center;font-family:'Bricolage Grotesque';font-weight:700;font-size:12px;flex-shrink:0}
+.ats-fb-page.is-locked .ats-fb-page-badge{background:var(--muted)}
+.ats-fb-page-title{flex:1;min-width:0;border:1px solid transparent;border-radius:8px;padding:5px 8px;font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;background:transparent;transition:.13s}
+.ats-fb-page-title:hover:not(:disabled){border-color:var(--line)}
+.ats-fb-page-title:focus{border-color:var(--petrol);background:var(--paper2);outline:none}
+.ats-fb-page-h b{font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;flex:1}
+.ats-fb-page-lock{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);font-weight:500;white-space:nowrap}
+.ats-fb-page-del{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--muted);flex-shrink:0}
+.ats-fb-page-del:hover{color:var(--brick);background:var(--brick-soft)}
+.ats-fb-basefields{display:flex;flex-wrap:wrap;gap:8px}
+.ats-fb-basef{display:inline-flex;align-items:center;gap:7px;padding:8px 11px;border-radius:9px;background:var(--surface);border:1px solid var(--line);font-size:12.5px;font-weight:600;color:var(--sub)}
+.ats-fb-basef i{color:var(--brick);font-style:normal}
+.ats-fb-zone{display:flex;flex-direction:column;gap:9px;min-height:10px}
+.ats-fb-empty{display:flex;align-items:center;justify-content:center;gap:8px;padding:22px;border:1.5px dashed var(--line);border-radius:11px;color:var(--muted);font-size:13px;font-weight:600}
+.ats-fb-empty.is-over{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol)}
+.ats-fb-ind{height:3px;border-radius:3px;background:var(--petrol);margin:1px 0;box-shadow:0 0 0 3px var(--petrol-soft)}
+.ats-fb-card{display:flex;align-items:stretch;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;transition:border-color .13s,box-shadow .13s}
+.ats-fb-card:hover{border-color:var(--petrol-soft);box-shadow:0 6px 18px -12px rgba(0,0,0,.3)}
+.ats-fb-card.is-sel{border-color:var(--petrol);box-shadow:0 0 0 3px var(--petrol-soft)}
+.ats-fb-card-grip{display:flex;align-items:center;color:var(--muted);cursor:grab;flex-shrink:0}
+.ats-fb-card:active .ats-fb-card-grip{cursor:grabbing}
+.ats-fb-card-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:7px}
+.ats-fb-card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ats-fb-card-ic{width:24px;height:24px;border-radius:7px;background:var(--petrol-soft);color:var(--petrol);display:grid;place-items:center;flex-shrink:0}
+.ats-fb-card-top b{font-size:13.5px;font-weight:600}
+.ats-fb-tag{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.03em;text-transform:uppercase;padding:2px 6px;border-radius:5px;font-weight:500}
+.ats-fb-tag.is-req{background:var(--brick-soft);color:var(--brick)}
+.ats-fb-tag.is-ko{background:var(--ink);color:#fff}
+.ats-fb-tag.is-score{background:var(--petrol-soft);color:var(--petrol)}
+.ats-fb-tag.is-cond{background:var(--blue-soft);color:var(--blue)}
+.ats-fb-card-prev{pointer-events:none;opacity:.92}
+.ats-fb-card-acts{display:flex;flex-direction:column;gap:5px;flex-shrink:0}
+.ats-fb-card-acts button{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted);border:1px solid transparent}
+.ats-fb-card-acts button:hover{background:var(--paper2);border-color:var(--line)}
+.ats-fb-card-acts button.is-danger:hover{color:var(--brick);background:var(--brick-soft);border-color:transparent}
+.ats-fb-addpage{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border:1.5px dashed var(--line);border-radius:11px;color:var(--sub);font-weight:600;font-size:13px;transition:.13s}
+.ats-fb-addpage:hover{border-color:var(--petrol);color:var(--petrol);background:var(--petrol-soft)}
+.ats-fb-insp{position:sticky;top:14px;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.ats-fb-insp-empty{padding:30px 22px;text-align:center;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:10px}
+.ats-fb-insp-empty p{font-size:13px;line-height:1.55}
+.ats-insp{display:flex;flex-direction:column;gap:11px;padding:14px}
+.ats-insp-head{display:flex;align-items:center;gap:10px;padding-bottom:11px;border-bottom:1px solid var(--line2)}
+.ats-insp-ic{width:32px;height:32px;border-radius:9px;background:var(--petrol-soft);color:var(--petrol);display:grid;place-items:center;flex-shrink:0}
+.ats-insp-head-t{flex:1;min-width:0}.ats-insp-head-t b{display:block;font-size:14px;font-family:'Bricolage Grotesque';font-weight:600}.ats-insp-head-t span{font-size:11px;color:var(--muted)}
+.ats-insp-head-acts{display:flex;gap:6px}
+.ats-insp-head-acts button{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--muted);border:1px solid var(--line)}
+.ats-insp-head-acts button:hover{background:var(--paper2)}
+.ats-insp-head-acts button.is-danger:hover{color:var(--brick);background:var(--brick-soft);border-color:transparent}
+.ats-fb-prevwrap{padding:8px;max-height:78vh;overflow:auto}
+.ats-share{display:flex;flex-direction:column;gap:13px;padding:18px 22px 22px}
+.ats-share-link{display:flex;align-items:center;gap:8px;background:var(--paper2);border:1px solid var(--line);border-radius:11px;padding:8px 8px 8px 12px;color:var(--petrol)}
+.ats-share-link input{flex:1;border:none;background:transparent;font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--ink)}
+.ats-share-plat{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ats-share-plat button{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px;border:1px solid var(--line);border-radius:10px;font-weight:600;font-size:12.5px;color:var(--sub);transition:.13s}
+.ats-share-plat button:hover{border-color:var(--petrol);color:var(--petrol);background:var(--petrol-soft)}
+.ats-filedrop{display:flex;align-items:center;gap:11px;padding:13px 14px;border:1.5px dashed var(--line);border-radius:11px;background:var(--paper2);cursor:pointer;transition:.13s;color:var(--sub)}
+.ats-filedrop:hover{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-filedrop.is-over{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol)}
+.ats-filedrop.is-set{border-style:solid;border-color:var(--petrol-soft);background:var(--surface)}
+.ats-filedrop-info{flex:1;min-width:0;display:flex;flex-direction:column}
+.ats-filedrop-info b{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ats-filedrop-info span{font-size:11px;color:var(--muted)}
+.ats-filedrop-x{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted);flex-shrink:0}
+.ats-filedrop-x:hover{color:var(--brick);background:var(--brick-soft)}
+@media(max-width:1080px){.ats-fb{grid-template-columns:1fr}.ats-fb-palette{position:static;flex-direction:row;flex-wrap:wrap}.ats-fb-pal{flex:1 1 45%}.ats-fb-insp{position:static}}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
