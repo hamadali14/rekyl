@@ -12,13 +12,13 @@ import {
 
 /* ================================================================== *
  *  REKYL v4 — deterministisk ATS, produktpolerad. En fil.
- *  Motorn (scoring/knockout/conditional) ar oforandrad fran v3.
+ *  Motorn (scoring/knockout/conditional) är oforändrad från v3.
  * ================================================================== */
 
 
 /* ================================================================== *
  *  REKYL v3 — deterministisk ATS: form builder, scoring, swipe,
- *  timeline, meddelanden, jamforelse, auto-pipeline. Ingen AI, en fil.
+ *  timeline, meddelanden, jämförelse, auto-pipeline. Ingen AI, en fil.
  * ================================================================== */
 
 /* ---------- Verifierad QR-generator (v3-M, mask 0, byte) ---------- */
@@ -69,55 +69,55 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 /* ---------- Blocktyper ---------- */
 const BLOCKS = {
-  experience: "Erfarenhet", skills: "Kompetenser", availability: "Tillganglighet", salary: "Lon",
+  experience: "Erfarenhet", skills: "Kompetenser", availability: "Tillgänglighet", salary: "Lön",
   cert: "Certifikat", yesno: "Ja/nej", choice: "Flerval", ranking: "Rangordning", text: "Fritext",
   file: "Filuppladdning", schedule: "Kalender/tider",
 };
-const TYPE_LABEL = { number: "Tal", budget: "Belopp", ordinal: "Niva", multiselect: "Flerval", match: "Matchning", boolean: "Ja/nej", select: "Val", ranking: "Rangordning", text: "Fritext", file: "Fil", schedule: "Tider" };
+const TYPE_LABEL = { number: "Tal", budget: "Belopp", ordinal: "Nivå", multiselect: "Flerval", match: "Matchning", boolean: "Ja/nej", select: "Val", ranking: "Rangordning", text: "Fritext", file: "Fil", schedule: "Tider" };
 
-/* Faltfabriker. Varje falt: scored (paverkar poang), display (syns pa kort),
+/* Fältfabriker. Varje fält: scored (påverkar poäng), display (syns på kort),
    required, knockout (+koValue), showIf (villkor), step. */
 function mk(o) { return { scored: o.weight != null, display: true, required: false, knockout: false, koValue: false, showIf: null, step: 2, ...o }; }
 const FIELD = {
-  years: (w = 24, ideal = 4) => mk({ id: "experience", label: "Ars erfarenhet", block: "experience", type: "number", icon: "Briefcase", weight: w, ideal, unit: "ar", step: 2 }),
-  salary: (w = 13, budget = 42000) => mk({ id: "salary", label: "Loneansprak", block: "salary", type: "budget", icon: "Wallet", weight: w, budget, unit: "kr/man", step: 4, display: true }),
-  edu: (w = 9) => mk({ id: "education", label: "Utbildningsniva", block: "experience", type: "ordinal", icon: "GraduationCap", weight: w, direction: "asc", scale: ["Gymnasium", "Yrkeshogskola", "Kandidatexamen", "Masterexamen"], step: 2 }),
-  avail: (w = 12) => mk({ id: "availability", label: "Kan borja", block: "availability", type: "ordinal", icon: "Clock", weight: w, direction: "desc", scale: ["Omgaende", "Inom 1 manad", "1-3 manader", "Mer an 3 manader"], step: 4 }),
-  mode: (w = 6, preferred = "Hybrid") => mk({ id: "workmode", label: "Arbetsform", block: "availability", type: "match", icon: "MapPin", weight: w, preferred, options: ["Pa plats", "Hybrid", "Distans"], step: 4 }),
+  years: (w = 24, ideal = 4) => mk({ id: "experience", label: "Års erfarenhet", block: "experience", type: "number", icon: "Briefcase", weight: w, ideal, unit: "år", step: 2 }),
+  salary: (w = 13, budget = 42000) => mk({ id: "salary", label: "Löneanspråk", block: "salary", type: "budget", icon: "Wallet", weight: w, budget, unit: "kr/mån", step: 4, display: true }),
+  edu: (w = 9) => mk({ id: "education", label: "Utbildningsnivå", block: "experience", type: "ordinal", icon: "GraduationCap", weight: w, direction: "asc", scale: ["Gymnasium", "Yrkeshögskola", "Kandidatexamen", "Masterexamen"], step: 2 }),
+  avail: (w = 12) => mk({ id: "availability", label: "Kan börja", block: "availability", type: "ordinal", icon: "Clock", weight: w, direction: "desc", scale: ["Omgående", "Inom 1 månad", "1-3 månader", "Mer än 3 månader"], step: 4 }),
+  mode: (w = 6, preferred = "Hybrid") => mk({ id: "workmode", label: "Arbetsform", block: "availability", type: "match", icon: "MapPin", weight: w, preferred, options: ["På plats", "Hybrid", "Distans"], step: 4 }),
   skills: (w, opts) => mk({ id: "skills", label: "Nyckelkompetenser", block: "skills", type: "multiselect", icon: "Zap", weight: w, options: opts.map((o) => typeof o === "string" ? { value: o, must: false } : o), step: 3 }),
-  license: () => mk({ id: "license", label: "Har B-korkort", block: "yesno", type: "boolean", icon: "ShieldCheck", knockout: true, koValue: false, required: true, scored: false, step: 3 }),
+  license: () => mk({ id: "license", label: "Har B-körkort", block: "yesno", type: "boolean", icon: "ShieldCheck", knockout: true, koValue: false, required: true, scored: false, step: 3 }),
   cert: (id, label) => mk({ id, label, block: "cert", type: "boolean", icon: "ShieldCheck", knockout: true, koValue: false, required: true, scored: false, step: 3 }),
   weekend: () => mk({ id: "weekend", label: "Kan jobba helg", block: "yesno", type: "boolean", icon: "CalendarClock", knockout: true, koValue: false, scored: false, required: true, step: 4 }),
-  motivation: () => mk({ id: "motivation", label: "Motivering", block: "text", type: "text", icon: "FileText", scored: false, step: 5, placeholder: "Kort om varfor du passar..." }),
+  motivation: () => mk({ id: "motivation", label: "Motivering", block: "text", type: "text", icon: "FileText", scored: false, step: 5, placeholder: "Kort om varför du passar..." }),
   cv: () => mk({ id: "cv", label: "Ladda upp CV", block: "file", type: "file", icon: "Upload", scored: false, display: false, step: 5 }),
 };
 
 const TEMPLATES = [
-  { id: "saljare", name: "Saljare / Account Manager", icon: "Briefcase", desc: "B2B-salj, provision, relationer",
-    build: () => [FIELD.years(24, 4), FIELD.skills(28, ["B2B-forsaljning", "CRM-system", "Forhandling", "Presentationsteknik", "Engelska", "Projektledning"]), FIELD.edu(9), FIELD.avail(12), FIELD.salary(13, 42000), FIELD.mode(6, "Hybrid"), FIELD.license(), FIELD.motivation(), FIELD.cv()] },
-  { id: "lager", name: "Lagerarbetare / Truckforare", icon: "Briefcase", desc: "Truckkort, skift, conditional logic",
+  { id: "säljare", name: "Säljare / Account Manager", icon: "Briefcase", desc: "B2B-sälj, provision, relationer",
+    build: () => [FIELD.years(24, 4), FIELD.skills(28, ["B2B-försäljning", "CRM-system", "Förhandling", "Presentationsteknik", "Engelska", "Projektledning"]), FIELD.edu(9), FIELD.avail(12), FIELD.salary(13, 42000), FIELD.mode(6, "Hybrid"), FIELD.license(), FIELD.motivation(), FIELD.cv()] },
+  { id: "lager", name: "Lagerarbetare / Truckförare", icon: "Briefcase", desc: "Truckkort, skift, conditional logic",
     build: () => [
       FIELD.years(18, 2),
       mk({ id: "truck", label: "Har truckkort", block: "yesno", type: "boolean", icon: "ShieldCheck", knockout: true, koValue: false, required: true, scored: false, step: 3 }),
-      mk({ id: "truck_beh", label: "Truckbehorigheter", block: "choice", type: "multiselect", icon: "ListChecks", weight: 20, options: [{ value: "A1", must: false }, { value: "A2", must: false }, { value: "B1", must: false }, { value: "B2", must: false }], showIf: { field: "truck", equals: true }, step: 3 }),
+      mk({ id: "truck_beh", label: "Truckbehörigheter", block: "choice", type: "multiselect", icon: "ListChecks", weight: 20, options: [{ value: "A1", must: false }, { value: "A2", must: false }, { value: "B1", must: false }, { value: "B2", must: false }], showIf: { field: "truck", equals: true }, step: 3 }),
       FIELD.skills(16, ["Plockning", "Inleverans", "WMS-system", "Ordersystem", "Engelska"]),
       FIELD.weekend(), FIELD.avail(16), FIELD.salary(12, 32000), FIELD.motivation(), FIELD.cv()] },
   { id: "lss", name: "LSS-personal", icon: "ShieldCheck", desc: "Omsorg, delegering, conditional",
     build: () => [
       FIELD.years(18, 3),
-      mk({ id: "omrade", label: "Omrade", block: "choice", type: "select", icon: "ListChecks", weight: 10, options: ["LSS-boende", "Personlig assistans", "Daglig verksamhet"], step: 3 }),
-      mk({ id: "delegering", label: "Har delegering for lakemedel", block: "yesno", type: "boolean", icon: "ShieldCheck", weight: 14, scored: true, koValue: false, showIf: { field: "omrade", equals: "LSS-boende" }, step: 3 }),
-      FIELD.skills(18, ["Omvardnad", "Dokumentation", "Hantering av utatagerande", "Handledning", "Korkort"]),
-      mk({ id: "license", label: "Har B-korkort", block: "yesno", type: "boolean", icon: "ShieldCheck", knockout: true, koValue: false, required: true, scored: false, step: 4 }),
+      mk({ id: "område", label: "Område", block: "choice", type: "select", icon: "ListChecks", weight: 10, options: ["LSS-boende", "Personlig assistans", "Daglig verksamhet"], step: 3 }),
+      mk({ id: "delegering", label: "Har delegering för läkemedel", block: "yesno", type: "boolean", icon: "ShieldCheck", weight: 14, scored: true, koValue: false, showIf: { field: "område", equals: "LSS-boende" }, step: 3 }),
+      FIELD.skills(18, ["Omvårdnad", "Dokumentation", "Hantering av utåtagerande", "Handledning", "Körkort"]),
+      mk({ id: "license", label: "Har B-körkort", block: "yesno", type: "boolean", icon: "ShieldCheck", knockout: true, koValue: false, required: true, scored: false, step: 4 }),
       FIELD.avail(16), FIELD.salary(12, 31000), FIELD.motivation(), FIELD.cv()] },
-  { id: "skoterska", name: "Sjukskoterska", icon: "ShieldCheck", desc: "Legitimation kravs",
-    build: () => [FIELD.years(20, 3), FIELD.cert("legitimation", "Legitimerad sjukskoterska"), FIELD.skills(24, ["Akutsjukvard", "Journalsystem", "Lakemedelshantering", "Handledning", "Engelska"]), FIELD.weekend(), FIELD.avail(16), FIELD.salary(14, 38000), FIELD.motivation(), FIELD.cv()] },
+  { id: "sköterska", name: "Sjuksköterska", icon: "ShieldCheck", desc: "Legitimation kravs",
+    build: () => [FIELD.years(20, 3), FIELD.cert("legitimation", "Legitimerad sjuksköterska"), FIELD.skills(24, ["Akutsjukvård", "Journalsystem", "Läkemedelshantering", "Handledning", "Engelska"]), FIELD.weekend(), FIELD.avail(16), FIELD.salary(14, 38000), FIELD.motivation(), FIELD.cv()] },
   { id: "utvecklare", name: "Utvecklare (Frontend)", icon: "Code2", desc: "React, TypeScript, distans",
     build: () => [FIELD.years(26, 5), FIELD.skills(30, ["React", "TypeScript", "Node.js", "CSS/Tailwind", "Testning", "Git"]), FIELD.edu(7), FIELD.avail(11), FIELD.salary(14, 52000), FIELD.mode(6, "Distans"), FIELD.motivation(), FIELD.cv()] },
-  { id: "kundtjanst", name: "Kundtjanst", icon: "Users", desc: "Service, system, skift",
-    build: () => [FIELD.years(16, 2), FIELD.skills(28, ["Arendesystem", "Telefonvana", "Skriftlig kommunikation", "Merforsaljning", "Engelska"]), FIELD.avail(18), FIELD.weekend(), FIELD.salary(12, 30000), FIELD.motivation(), FIELD.cv()] },
-  { id: "butik", name: "Butikssaljare", icon: "Users", desc: "Kassa, service, helger",
-    build: () => [FIELD.years(16, 2), FIELD.skills(30, ["Kassasystem", "Merforsaljning", "Kundservice", "Lagerhantering", "Engelska"]), FIELD.avail(20), FIELD.weekend(), FIELD.salary(14, 30000), FIELD.motivation(), FIELD.cv()] },
+  { id: "kundtjänst", name: "Kundtjänst", icon: "Users", desc: "Service, system, skift",
+    build: () => [FIELD.years(16, 2), FIELD.skills(28, ["Ärendesystem", "Telefonvana", "Skriftlig kommunikation", "Merförsäljning", "Engelska"]), FIELD.avail(18), FIELD.weekend(), FIELD.salary(12, 30000), FIELD.motivation(), FIELD.cv()] },
+  { id: "butik", name: "Butikssäljare", icon: "Users", desc: "Kassa, service, helger",
+    build: () => [FIELD.years(16, 2), FIELD.skills(30, ["Kassasystem", "Merförsäljning", "Kundservice", "Lagerhantering", "Engelska"]), FIELD.avail(20), FIELD.weekend(), FIELD.salary(14, 30000), FIELD.motivation(), FIELD.cv()] },
 ];
 
 /* ---------- Conditional logic ---------- */
@@ -151,7 +151,7 @@ function scoreCandidate(job, a) {
     if (!c.scored) { parts.push({ id: c.id, label: c.label, kind: "info", value: Array.isArray(a[c.id]) ? a[c.id].join(", ") : (a[c.id] ?? "—"), icon: c.icon }); continue; }
     const w = weightOf(job, c); if (w <= 0) { continue; } wsum += w;
     let frac = 0, detail = "";
-    if (c.type === "number") { const v = Number(a[c.id] || 0); frac = clamp01(v / c.ideal); detail = `${v} ${c.unit} · mal ${c.ideal}`; }
+    if (c.type === "number") { const v = Number(a[c.id] || 0); frac = clamp01(v / c.ideal); detail = `${v} ${c.unit} · mål ${c.ideal}`; }
     else if (c.type === "budget") { const v = Number(a[c.id] || 0); frac = v <= c.budget ? 1 : clamp01(1 - (v - c.budget) / (c.budget * 0.3)); detail = `${sek(v)} · tak ${sek(c.budget)}`; }
     else if (c.type === "ordinal") { const idx = Math.max(0, c.scale.indexOf(a[c.id])); const last = c.scale.length - 1; frac = c.direction === "desc" ? 1 - idx / last : idx / last; detail = a[c.id] || "—"; }
     else if (c.type === "multiselect") { const sel = Array.isArray(a[c.id]) ? a[c.id] : []; for (const o of c.options) if (o.must && !sel.includes(o.value)) knockoutReasons.push(`Saknar ${o.value}`); const hit = sel.filter((s) => c.options.some((o) => o.value === s)).length; frac = c.options.length ? clamp01(hit / c.options.length) : 0; detail = `${hit}/${c.options.length}`; }
@@ -190,7 +190,7 @@ function evalAutoRules(job, cand) {
   }
   return hits;
 }
-const ACTION_LABEL = { shortlist: "Shortlist", reject: "Avslagspool", maybe: "Reservlista", flag: "Flagga", completion: "Begar komplettering" };
+const ACTION_LABEL = { shortlist: "Shortlist", reject: "Avslagspool", maybe: "Reservlista", flag: "Flagga", completion: "Begär komplettering" };
 
 /* ---------- Team ---------- */
 const REVIEWERS = [
@@ -201,7 +201,7 @@ const REVIEWERS = [
 ];
 const ROLE_LABEL = { admin: "Admin", recruiter: "Rekryterare", manager: "Rekryterande chef", viewer: "Insyn" };
 
-/* ---------- Tjanster ---------- */
+/* ---------- Tjänster ---------- */
 function makeJob(id, title, team, slug, tmplId, extra = {}) {
   return {
     id, title, team, slug, company: extra.company || "Nordpuls AB",
@@ -209,12 +209,12 @@ function makeJob(id, title, team, slug, tmplId, extra = {}) {
     profiles: [{ id: "std", name: "Standard", weights: {} }, ...(extra.profiles || [])], activeProfileId: "std",
     rules: extra.rules || [], autoRules: extra.autoRules || [], autoRejectBelow: extra.autoRejectBelow ?? 40,
     brand: { company: extra.company || "Nordpuls AB" },
-    version: 3, versions: [{ v: 1, at: Date.now() - 40 * 864e5, by: "Du", note: "Skapade formularet fran mall" }, { v: 2, at: Date.now() - 12 * 864e5, by: "Mona Berg", note: "Justerade vikter" }, { v: 3, at: Date.now() - 3 * 864e5, by: "Du", note: "Lade till knockout-regel" }],
+    version: 3, versions: [{ v: 1, at: Date.now() - 40 * 864e5, by: "Du", note: "Skapade formuläret från mall" }, { v: 2, at: Date.now() - 12 * 864e5, by: "Mona Berg", note: "Justerade vikter" }, { v: 3, at: Date.now() - 3 * 864e5, by: "Du", note: "Lade till knockout-regel" }],
     stats: extra.stats || { started: 0, submitted: 0 },
   };
 }
 const JOBS0 = [
-  makeJob("j1", "Account Manager · B2B", "Kommersiella teamet", "account-manager-b2b", "saljare", {
+  makeJob("j1", "Account Manager · B2B", "Kommersiella teamet", "account-manager-b2b", "säljare", {
     profiles: [{ id: "junior", name: "Junior", weights: { experience: 12, skills: 30, availability: 16 } }, { id: "senior", name: "Senior", weights: { experience: 32, skills: 26, salary: 16 } }],
     rules: [{ id: "r1", field: "experience", op: ">", value: 8, tag: "Senior" }, { id: "r2", field: "total", op: ">=", value: 84, tag: "Toppmatch" }],
     autoRules: [{ id: "a1", field: "total", op: ">=", value: 85, then: "shortlist" }, { id: "a2", field: "total", op: "<", value: 45, then: "reject" }],
@@ -223,7 +223,7 @@ const JOBS0 = [
   makeJob("j2", "Lagerarbetare · truck", "Logistik Torsvik", "lagerarbetare-truck", "lager", {
     autoRules: [{ id: "a1", field: "total", op: ">=", value: 80, then: "shortlist" }], stats: { started: 88, submitted: 54 },
   }),
-  makeJob("j3", "Sjukskoterska · natt", "Vardavdelning 3", "sjukskoterska-natt", "skoterska", { autoRejectBelow: 45, stats: { started: 40, submitted: 29 } }),
+  makeJob("j3", "Sjuksköterska · natt", "Vårdavdelning 3", "sjuksköterska-natt", "sköterska", { autoRejectBelow: 45, stats: { started: 40, submitted: 29 } }),
 ];
 
 function tl(kind, detail, h, actor = "System") { return { id: uid(), kind, detail, at: Date.now() - h * 3600e3, actor }; }
@@ -231,33 +231,33 @@ function C(jobId, id, name, ans, o = {}) {
   const appliedAt = Date.now() - (o.h ?? 6) * 3600e3;
   return { id, jobId, name, email: o.email ?? (name.toLowerCase().replace(/[^a-za-o ]/g, "").replace(/ /g, ".") + "@mejl.se"), phone: o.phone ?? null,
     appliedAt, status: "new", managerStatus: null, starred: false, answers: ans, rating: o.rating || 0, comments: o.comments || [], reviews: o.reviews || {}, source: o.source || "Direkt", reason: null, formVersion: o.fv ?? 3,
-    timeline: [tl("application_received", "Ansokan mottagen via " + (o.source || "Direkt"), o.h ?? 6), tl("score_computed", "Matchning berannad (regelverk v3)", (o.h ?? 6) - 0.01)] };
+    timeline: [tl("application_received", "Ansökan mottagen via " + (o.source || "Direkt"), o.h ?? 6), tl("score_computed", "Matchning beräknad (regelverk v3)", (o.h ?? 6) - 0.01)] };
 }
 const CANDIDATES0 = [
-  C("j1", "c1", "Elin Sandberg", { experience: 7, skills: ["B2B-forsaljning", "CRM-system", "Forhandling", "Engelska", "Presentationsteknik"], education: "Kandidatexamen", availability: "Inom 1 manad", salary: 40000, workmode: "Hybrid", license: true, motivation: "Sju ar pa SaaS-sidan, alskar langa saljcykler.", cv: "elin_cv.pdf" }, { h: 2, source: "LinkedIn", phone: "070-1112233", rating: 4, reviews: { u1: "yes", u2: "maybe", u3: "yes" }, comments: [{ id: "m1", by: "u1", text: "Stark pa discovery. Boka intervju.", at: Date.now() - 5400e3 }] }),
-  C("j1", "c2", "Omar Haddad", { experience: 5, skills: ["B2B-forsaljning", "Forhandling", "Projektledning", "Engelska"], education: "Masterexamen", availability: "Omgaende", salary: 43500, workmode: "Hybrid", license: true, motivation: "Redo att satta igang direkt.", cv: "omar_cv.pdf" }, { h: 5, source: "Massa", phone: "073-4445566", reviews: { u1: "yes", u3: "maybe" } }),
-  C("j1", "c3", "Sara Lindqvist", { experience: 9, skills: ["B2B-forsaljning", "CRM-system", "Forhandling", "Projektledning", "Engelska", "Presentationsteknik"], education: "Kandidatexamen", availability: "1-3 manader", salary: 47000, workmode: "Hybrid", license: true, motivation: "Har byggt tva saljteam.", cv: "sara_cv.pdf" }, { h: 13, source: "LinkedIn", email: "sara.lindqvist@mejl.se", phone: "070-9998877", rating: 5 }),
-  C("j1", "c4", "Viktor Nystrom", { experience: 4, skills: ["CRM-system", "Forhandling", "Engelska"], education: "Kandidatexamen", availability: "Omgaende", salary: 38500, workmode: "Distans", license: true, motivation: "Vill jobba pa distans." }, { h: 17, source: "Hemsida" }),
-  C("j1", "c5", "Lucas Berg", { experience: 3, skills: ["Presentationsteknik", "Engelska"], education: "Gymnasium", availability: "Omgaende", salary: 34000, workmode: "Pa plats", license: false, motivation: "Bor granne med kontoret." }, { h: 26, source: "Direkt" }),
-  C("j1", "c6", "Nadia Khan", { experience: 8, skills: ["B2B-forsaljning", "CRM-system", "Forhandling", "Engelska"], education: "Kandidatexamen", availability: "Inom 1 manad", salary: 44000, workmode: "Hybrid", license: true, motivation: "Nyckelkundsansvarig med starkt natverk.", cv: "nadia_cv.pdf" }, { h: 30, source: "Massa", phone: "076-1234567", rating: 4 }),
-  C("j1", "c7", "Erik Wallin", { experience: 1, skills: ["CRM-system"], education: "Yrkeshogskola", availability: "Omgaende", salary: 33000, workmode: "Pa plats", license: true, motivation: "Precis klar med utbildning." }, { h: 34, source: "Platsbanken" }),
-  C("j1", "c8", "Filippa Strom", { experience: 11, skills: ["B2B-forsaljning", "CRM-system", "Forhandling", "Projektledning", "Presentationsteknik", "Engelska"], education: "Masterexamen", availability: "Mer an 3 manader", salary: 52000, workmode: "Distans", license: true, motivation: "Senior med stora affarer.", cv: "filippa_cv.pdf" }, { h: 38, source: "LinkedIn" }),
+  C("j1", "c1", "Elin Sandberg", { experience: 7, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Engelska", "Presentationsteknik"], education: "Kandidatexamen", availability: "Inom 1 månad", salary: 40000, workmode: "Hybrid", license: true, motivation: "Sju är på SaaS-sidan, älskar langa säljcykler.", cv: "elin_cv.pdf" }, { h: 2, source: "LinkedIn", phone: "070-1112233", rating: 4, reviews: { u1: "yes", u2: "maybe", u3: "yes" }, comments: [{ id: "m1", by: "u1", text: "Stark på discovery. Boka intervju.", at: Date.now() - 5400e3 }] }),
+  C("j1", "c2", "Omar Haddad", { experience: 5, skills: ["B2B-försäljning", "Förhandling", "Projektledning", "Engelska"], education: "Masterexamen", availability: "Omgående", salary: 43500, workmode: "Hybrid", license: true, motivation: "Redo att sätta igång direkt.", cv: "omar_cv.pdf" }, { h: 5, source: "Massa", phone: "073-4445566", reviews: { u1: "yes", u3: "maybe" } }),
+  C("j1", "c3", "Sara Lindqvist", { experience: 9, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Projektledning", "Engelska", "Presentationsteknik"], education: "Kandidatexamen", availability: "1-3 månader", salary: 47000, workmode: "Hybrid", license: true, motivation: "Har byggt två säljteam.", cv: "sara_cv.pdf" }, { h: 13, source: "LinkedIn", email: "sara.lindqvist@mejl.se", phone: "070-9998877", rating: 5 }),
+  C("j1", "c4", "Viktor Nystrom", { experience: 4, skills: ["CRM-system", "Förhandling", "Engelska"], education: "Kandidatexamen", availability: "Omgående", salary: 38500, workmode: "Distans", license: true, motivation: "Vill jobba på distans." }, { h: 17, source: "Hemsida" }),
+  C("j1", "c5", "Lucas Berg", { experience: 3, skills: ["Presentationsteknik", "Engelska"], education: "Gymnasium", availability: "Omgående", salary: 34000, workmode: "På plats", license: false, motivation: "Bor granne med kontoret." }, { h: 26, source: "Direkt" }),
+  C("j1", "c6", "Nadia Khan", { experience: 8, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Engelska"], education: "Kandidatexamen", availability: "Inom 1 månad", salary: 44000, workmode: "Hybrid", license: true, motivation: "Nyckelkundsansvarig med starkt nätverk.", cv: "nadia_cv.pdf" }, { h: 30, source: "Massa", phone: "076-1234567", rating: 4 }),
+  C("j1", "c7", "Erik Wallin", { experience: 1, skills: ["CRM-system"], education: "Yrkeshögskola", availability: "Omgående", salary: 33000, workmode: "På plats", license: true, motivation: "Precis klar med utbildning." }, { h: 34, source: "Platsbanken" }),
+  C("j1", "c8", "Filippa Strom", { experience: 11, skills: ["B2B-försäljning", "CRM-system", "Förhandling", "Projektledning", "Presentationsteknik", "Engelska"], education: "Masterexamen", availability: "Mer än 3 månader", salary: 52000, workmode: "Distans", license: true, motivation: "Senior med stora affärer.", cv: "filippa_cv.pdf" }, { h: 38, source: "LinkedIn" }),
   // j2 — Lager (conditional truck)
-  C("j2", "d1", "Josef Andersson", { experience: 4, truck: true, truck_beh: ["A2", "B1", "B2"], skills: ["Plockning", "Inleverans", "WMS-system", "Ordersystem"], weekend: true, availability: "Omgaende", salary: 31000, motivation: "Kort truck i sex ar.", cv: "josef_cv.pdf" }, { h: 3, source: "Platsbanken", phone: "070-2223344", rating: 4 }),
-  C("j2", "d2", "Sara Lindqvist", { experience: 2, truck: true, truck_beh: ["A2", "B1"], skills: ["Plockning", "WMS-system"], weekend: true, availability: "Inom 1 manad", salary: 30000, motivation: "Bytt bransch, van vid hogt tempo." }, { h: 7, source: "LinkedIn", email: "sara.lindqvist@mejl.se", phone: "070-9998877" }),
-  C("j2", "d3", "Marcus Ek", { experience: 6, truck: false, skills: ["Plockning", "Inleverans"], weekend: true, availability: "Omgaende", salary: 30000, motivation: "Kan ta truckkort snabbt." }, { h: 12, source: "Massa" }),
-  C("j2", "d4", "Aisha Ali", { experience: 3, truck: true, truck_beh: ["A2", "B1", "B2"], skills: ["Plockning", "Inleverans", "WMS-system", "Ordersystem", "Engelska"], weekend: false, availability: "Omgaende", salary: 31000, motivation: "Erfaren men kan ej helg.", cv: "aisha_cv.pdf" }, { h: 20, source: "Hemsida", phone: "073-5556677" }),
-  C("j2", "d5", "Tobias Falk", { experience: 8, truck: true, truck_beh: ["A2", "B1", "B2"], skills: ["Plockning", "Inleverans", "WMS-system", "Ordersystem", "Engelska"], weekend: true, availability: "Inom 1 manad", salary: 33000, motivation: "Teamledarerfarenhet fran lager.", cv: "tobias_cv.pdf" }, { h: 28, source: "Platsbanken", rating: 5 }),
-  C("j2", "d6", "Lova Berg", { experience: 1, truck: true, truck_beh: ["A2"], skills: ["Plockning"], weekend: true, availability: "Omgaende", salary: 29500, motivation: "Nyborjare, snabblard." }, { h: 33, source: "Direkt" }),
-  // j3 — Sjukskoterska
-  C("j3", "e1", "Hanna Strom", { experience: 5, legitimation: true, skills: ["Akutsjukvard", "Journalsystem", "Lakemedelshantering", "Handledning"], weekend: true, availability: "Inom 1 manad", salary: 37000, motivation: "Van vid nattpass." }, { h: 4, source: "Platsbanken", phone: "070-8887766", rating: 4 }),
-  C("j3", "e2", "Yusuf Demir", { experience: 8, legitimation: true, skills: ["Akutsjukvard", "Journalsystem", "Lakemedelshantering", "Handledning", "Engelska"], weekend: true, availability: "Omgaende", salary: 39000, motivation: "Handleder garna nyexade.", cv: "yusuf_cv.pdf" }, { h: 10, source: "Direkt" }),
-  C("j3", "e3", "Lova Berglund", { experience: 2, legitimation: true, skills: ["Journalsystem", "Lakemedelshantering"], weekend: true, availability: "Inom 1 manad", salary: 34000, motivation: "Nyexad men driven." }, { h: 18, source: "Hemsida" }),
-  C("j3", "e4", "Sandra Ek", { experience: 6, legitimation: false, skills: ["Akutsjukvard", "Journalsystem", "Lakemedelshantering"], weekend: true, availability: "Omgaende", salary: 36000, motivation: "Legitimation under registrering." }, { h: 25, source: "Direkt" }),
-  C("j3", "e5", "Mikael Norin", { experience: 11, legitimation: true, skills: ["Akutsjukvard", "Journalsystem", "Lakemedelshantering", "Handledning", "Engelska"], weekend: false, availability: "1-3 manader", salary: 42000, motivation: "Lang erfarenhet, vill ga ner i tempo." }, { h: 33, source: "LinkedIn", phone: "076-9990011" }),
+  C("j2", "d1", "Josef Andersson", { experience: 4, truck: true, truck_beh: ["A2", "B1", "B2"], skills: ["Plockning", "Inleverans", "WMS-system", "Ordersystem"], weekend: true, availability: "Omgående", salary: 31000, motivation: "Kort truck i sex är.", cv: "josef_cv.pdf" }, { h: 3, source: "Platsbanken", phone: "070-2223344", rating: 4 }),
+  C("j2", "d2", "Sara Lindqvist", { experience: 2, truck: true, truck_beh: ["A2", "B1"], skills: ["Plockning", "WMS-system"], weekend: true, availability: "Inom 1 månad", salary: 30000, motivation: "Bytt bransch, van vid högt tempo." }, { h: 7, source: "LinkedIn", email: "sara.lindqvist@mejl.se", phone: "070-9998877" }),
+  C("j2", "d3", "Marcus Ek", { experience: 6, truck: false, skills: ["Plockning", "Inleverans"], weekend: true, availability: "Omgående", salary: 30000, motivation: "Kan ta truckkort snabbt." }, { h: 12, source: "Massa" }),
+  C("j2", "d4", "Aisha Ali", { experience: 3, truck: true, truck_beh: ["A2", "B1", "B2"], skills: ["Plockning", "Inleverans", "WMS-system", "Ordersystem", "Engelska"], weekend: false, availability: "Omgående", salary: 31000, motivation: "Erfaren men kan ej helg.", cv: "aisha_cv.pdf" }, { h: 20, source: "Hemsida", phone: "073-5556677" }),
+  C("j2", "d5", "Tobias Falk", { experience: 8, truck: true, truck_beh: ["A2", "B1", "B2"], skills: ["Plockning", "Inleverans", "WMS-system", "Ordersystem", "Engelska"], weekend: true, availability: "Inom 1 månad", salary: 33000, motivation: "Teamledarerfarenhet från lager.", cv: "tobias_cv.pdf" }, { h: 28, source: "Platsbanken", rating: 5 }),
+  C("j2", "d6", "Lova Berg", { experience: 1, truck: true, truck_beh: ["A2"], skills: ["Plockning"], weekend: true, availability: "Omgående", salary: 29500, motivation: "Nybörjare, snabblard." }, { h: 33, source: "Direkt" }),
+  // j3 — Sjuksköterska
+  C("j3", "e1", "Hanna Strom", { experience: 5, legitimation: true, skills: ["Akutsjukvård", "Journalsystem", "Läkemedelshantering", "Handledning"], weekend: true, availability: "Inom 1 månad", salary: 37000, motivation: "Van vid nattpass." }, { h: 4, source: "Platsbanken", phone: "070-8887766", rating: 4 }),
+  C("j3", "e2", "Yusuf Demir", { experience: 8, legitimation: true, skills: ["Akutsjukvård", "Journalsystem", "Läkemedelshantering", "Handledning", "Engelska"], weekend: true, availability: "Omgående", salary: 39000, motivation: "Handleder garna nyexade.", cv: "yusuf_cv.pdf" }, { h: 10, source: "Direkt" }),
+  C("j3", "e3", "Lova Berglund", { experience: 2, legitimation: true, skills: ["Journalsystem", "Läkemedelshantering"], weekend: true, availability: "Inom 1 månad", salary: 34000, motivation: "Nyexad men driven." }, { h: 18, source: "Hemsida" }),
+  C("j3", "e4", "Sandra Ek", { experience: 6, legitimation: false, skills: ["Akutsjukvård", "Journalsystem", "Läkemedelshantering"], weekend: true, availability: "Omgående", salary: 36000, motivation: "Legitimation under registrering." }, { h: 25, source: "Direkt" }),
+  C("j3", "e5", "Mikael Norin", { experience: 11, legitimation: true, skills: ["Akutsjukvård", "Journalsystem", "Läkemedelshantering", "Handledning", "Engelska"], weekend: false, availability: "1-3 månader", salary: 42000, motivation: "Lång erfarenhet, vill gå ner i tempo." }, { h: 33, source: "LinkedIn", phone: "076-9990011" }),
 ];
 
-/* ---------- Sakert localStorage (fallback in-memory sa artifact ej kraschar) ---------- */
+/* ---------- Säkert localStorage (fallback in-memory så artifact ej kraschar) ---------- */
 const _mem = {};
 const store = {
   get(k, d) { try { const v = window.localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return k in _mem ? _mem[k] : d; } },
@@ -271,29 +271,29 @@ const STAGES = [
   { id: "interview", label: "Intervju", tone: "petrol" },
   { id: "reserve", label: "Reservlista", tone: "amber" },
   { id: "reject", label: "Avslag", tone: "brick" },
-  { id: "hired", label: "Anstalld", tone: "gold" },
+  { id: "hired", label: "Anställd", tone: "gold" },
 ];
 function statusLabel(s) { return STAGES.find((x) => x.id === s)?.label || s; }
 function timeAgo(ts) { const h = Math.round((Date.now() - ts) / 3600000); if (h < 1) return "nyss"; if (h < 24) return h + " h sedan"; return Math.round(h / 24) + " d sedan"; }
 function initials(name) { return (name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
 function tierOf(c) { return c.knockout ? "ko" : c.total >= 78 ? "high" : c.total >= 55 ? "mid" : "low"; }
 function can(role, what) { const R = { recruiter: ["decide", "edit", "comment", "export", "message", "vote"], admin: ["decide", "edit", "comment", "export", "message", "vote", "settings"], manager: ["vote", "comment", "export", "message", "decide"], viewer: ["export"] }; return (R[role] || []).includes(what); }
-const TL_LABEL = { application_received: "Ansokan mottagen", score_computed: "Matchning berannad", knockout: "Diskvalificerad", status_change: "Status andrad", message_sent: "Mejl kolagt", note: "Kommentar", completion_requested: "Komplettering begard", auto_rule: "Auto-regel", vote: "Team review", hired: "Anstalld" };
+const TL_LABEL = { application_received: "Ansökan mottagen", score_computed: "Matchning beräknad", knockout: "Diskvalificerad", status_change: "Status ändrad", message_sent: "Mejl köat", note: "Kommentar", completion_requested: "Komplettering begärd", auto_rule: "Auto-regel", vote: "Team review", hired: "Anställd" };
 const validEmail = (e) => !!e && /.+@.+\..+/.test(e);
 
 /* ---------- Meddelandemallar (variabler enligt spec) ---------- */
 const DEFAULT_TEMPLATES = [
-  { id: "t_received", name: "Tack for ansokan", trigger: "received", active: true, subject: "Tack for din ansokan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack for din ansokan till {{jobTitle}} hos {{companyName}}. Vi har tagit emot den och gar igenom alla ansokningar lopande. Du hor fran oss.\n\nVanliga halsningar,\n{{hrName}}\n{{companyName}}" },
-  { id: "t_shortlist", name: "Intressant profil", trigger: "shortlist", active: true, subject: "Din ansokan till {{jobTitle}} gar vidare", body: "Hej {{candidateName}},\n\nVi tycker din profil verkar intressant for {{jobTitle}} hos {{companyName}} och vill garna ta det vidare. Vi aterkommer inom kort med nasta steg.\n\nVanliga halsningar,\n{{hrName}}" },
-  { id: "t_interview", name: "Boka intervju", trigger: "interview", active: true, subject: "Vi vill traffa dig - {{jobTitle}}", body: "Hej {{candidateName}},\n\nVi vill garna traffa dig for {{jobTitle}} hos {{companyName}}. Forslag pa tid: {{interviewTime}}. Passar det, eller foreslar du en annan tid?\n\nSvara pa detta mejl sa bokar vi.\n\nVanliga halsningar,\n{{hrName}}\n{{hrEmail}}" },
-  { id: "t_reserve", name: "Reservlista", trigger: "reserve", active: true, subject: "Din ansokan - {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack for din ansokan till {{jobTitle}}. Vi har lagt din profil pa var reservlista och hor av oss om en passande roll blir aktuell.\n\nVanliga halsningar,\n{{hrName}}" },
-  { id: "t_reject", name: "Avslag", trigger: "reject", active: true, subject: "Besked om din ansokan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack for din ansokan till {{jobTitle}} hos {{companyName}}. Den har gangen gar vi vidare med andra kandidater ({{rejectionReason}}). Vi onskar dig lycka till framover.\n\nVanliga halsningar,\n{{hrName}}" },
-  { id: "t_completion", name: "Begar komplettering", trigger: "completion", active: true, subject: "Komplettering behovs - {{jobTitle}}", body: "Hej {{candidateName}},\n\nDin ansokan ser bra ut, men vi saknar: {{missingField}}. Kan du komplettera genom att svara pa detta mejl?\n\nTack,\n{{hrName}}" },
-  { id: "t_offer", name: "Erbjudande", trigger: "offer", active: true, subject: "Erbjudande - {{jobTitle}} hos {{companyName}}", body: "Hej {{candidateName}},\n\nVi ar glada att erbjuda dig rollen som {{jobTitle}} hos {{companyName}}. Vi mejlar detaljerna separat. Hor garna av dig till {{hrName}} pa {{hrEmail}} vid fragor.\n\nVarmt valkommen!\n{{hrName}}" },
-  { id: "t_reminder", name: "Paminnelse", trigger: "reminder", active: true, subject: "Paminnelse - {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn liten paminnelse angaende din ansokan till {{jobTitle}}. Hor av dig till {{hrName}} ({{hrEmail}}) om du har fragor.\n\nVanliga halsningar,\n{{hrName}}" },
+  { id: "t_received", name: "Tack för ansökan", trigger: "received", active: true, subject: "Tack för din ansökan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}} hos {{companyName}}. Vi har tagit emot den och går igenom alla ansökningar löpande. Du hör från oss.\n\nVänliga hälsningar,\n{{hrName}}\n{{companyName}}" },
+  { id: "t_shortlist", name: "Intressant profil", trigger: "shortlist", active: true, subject: "Din ansökan till {{jobTitle}} går vidare", body: "Hej {{candidateName}},\n\nVi tycker din profil verkar intressant för {{jobTitle}} hos {{companyName}} och vill garna ta det vidare. Vi återkommer inom kort med nästa steg.\n\nVänliga hälsningar,\n{{hrName}}" },
+  { id: "t_interview", name: "Boka intervju", trigger: "interview", active: true, subject: "Vi vill träffa dig - {{jobTitle}}", body: "Hej {{candidateName}},\n\nVi vill garna träffa dig för {{jobTitle}} hos {{companyName}}. Förslag på tid: {{interviewTime}}. Passar det, eller föreslår du en annan tid?\n\nSvara på detta mejl så bokar vi.\n\nVänliga hälsningar,\n{{hrName}}\n{{hrEmail}}" },
+  { id: "t_reserve", name: "Reservlista", trigger: "reserve", active: true, subject: "Din ansökan - {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}}. Vi har lagt din profil på var reservlista och hör av oss om en passande roll blir aktuell.\n\nVänliga hälsningar,\n{{hrName}}" },
+  { id: "t_reject", name: "Avslag", trigger: "reject", active: true, subject: "Besked om din ansökan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}} hos {{companyName}}. Den har gången går vi vidare med andra kandidater ({{rejectionReason}}). Vi önskar dig lycka till framöver.\n\nVänliga hälsningar,\n{{hrName}}" },
+  { id: "t_completion", name: "Begär komplettering", trigger: "completion", active: true, subject: "Komplettering behövs - {{jobTitle}}", body: "Hej {{candidateName}},\n\nDin ansökan ser bra ut, men vi saknar: {{missingField}}. Kan du komplettera genom att svara på detta mejl?\n\nTack,\n{{hrName}}" },
+  { id: "t_offer", name: "Erbjudande", trigger: "offer", active: true, subject: "Erbjudande - {{jobTitle}} hos {{companyName}}", body: "Hej {{candidateName}},\n\nVi är glada att erbjuda dig rollen som {{jobTitle}} hos {{companyName}}. Vi mejlar detaljerna separat. Hör garna av dig till {{hrName}} på {{hrEmail}} vid frågor.\n\nVarmt välkommen!\n{{hrName}}" },
+  { id: "t_reminder", name: "Paminnelse", trigger: "reminder", active: true, subject: "Paminnelse - {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn liten paminnelse angående din ansökan till {{jobTitle}}. Hör av dig till {{hrName}} ({{hrEmail}}) om du har frågor.\n\nVänliga hälsningar,\n{{hrName}}" },
 ];
 function renderTpl(str, vars) { return (str || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k) => (vars[k] == null || vars[k] === "" ? `{{${k}}}` : vars[k])); }
-function tplVars(state, cand, job) { return { candidateName: cand.name, jobTitle: job.title, companyName: state.org.companyName, hrName: state.org.hrName, hrEmail: state.org.hrEmail, missingField: (missingInfo(job, cand)[0] || "efterfragad uppgift"), interviewTime: state.org.defaultInterviewTime, rejectionReason: cand.reason ? cand.reason.toLowerCase() : "andra kandidater gick vidare" }; }
+function tplVars(state, cand, job) { return { candidateName: cand.name, jobTitle: job.title, companyName: state.org.companyName, hrName: state.org.hrName, hrEmail: state.org.hrEmail, missingField: (missingInfo(job, cand)[0] || "efterfrågad uppgift"), interviewTime: state.org.defaultInterviewTime, rejectionReason: cand.reason ? cand.reason.toLowerCase() : "andra kandidater gick vidare" }; }
 const TRIGGER_FOR = { shortlist: "shortlist", interview: "interview", reserve: "reserve", reject: "reject", hired: "offer" };
 
 /* ---------- Reducer-hjalpare ---------- */
@@ -306,13 +306,13 @@ function buildMessage(state, cand, job, trigger, who) {
   const tpl = state.templates.find((t) => t.trigger === trigger && t.active) || state.templates.find((t) => t.trigger === trigger);
   const vars = tplVars(state, cand, job);
   const ok = validEmail(cand.email);
-  return { id: uid(), candidateId: cand.id, candidateName: cand.name, jobId: job.id, to: cand.email || "(saknar e-post)", subject: tpl ? renderTpl(tpl.subject, vars) : "Angaende din ansokan", body: tpl ? renderTpl(tpl.body, vars) : "", trigger, tplName: tpl?.name || trigger, status: ok ? "queued" : "failed", error: ok ? null : "Saknar giltig e-post", at: Date.now(), by: who };
+  return { id: uid(), candidateId: cand.id, candidateName: cand.name, jobId: job.id, to: cand.email || "(saknar e-post)", subject: tpl ? renderTpl(tpl.subject, vars) : "Angående din ansökan", body: tpl ? renderTpl(tpl.body, vars) : "", trigger, tplName: tpl?.name || trigger, status: ok ? "queued" : "failed", error: ok ? null : "Saknar giltig e-post", at: Date.now(), by: who };
 }
 function applyDecision(state, cand, job, status, reason, who) {
   let c2 = addTL({ ...cand, status, reason: reason ?? cand.reason }, status === "hired" ? "hired" : "status_change", statusLabel(status) + (reason ? " · " + reason : ""), who);
   const trigger = TRIGGER_FOR[status];
   let msg = null;
-  if (trigger) { msg = buildMessage(state, c2, job, trigger, who); c2 = addTL(c2, "message_sent", `${msg.subject}${msg.status === "failed" ? " · FEL: saknar e-post" : " · koad for utskick"}`, who); }
+  if (trigger) { msg = buildMessage(state, c2, job, trigger, who); c2 = addTL(c2, "message_sent", `${msg.subject}${msg.status === "failed" ? " · FEL: saknar e-post" : " · köad för utskick"}`, who); }
   return { c2, msg };
 }
 
@@ -330,29 +330,29 @@ function reducer(state, ac) {
     case "STAR": return mapCand(state, ac.id, (c) => ({ ...c, starred: !c.starred }));
     case "RATE": return mapCand(state, ac.id, (c) => ({ ...c, rating: ac.rating }));
     case "COMMENT": { const s2 = mapCand(state, ac.id, (c) => addTL({ ...c, comments: [...c.comments, { id: uid(), by: who, text: ac.text, at: Date.now() }] }, "note", ac.text, who)); return { ...s2, log: withLog(s2, "Kommentar", state.candidates.find((c) => c.id === ac.id)?.name) }; }
-    case "REVIEW": return mapCand(state, ac.id, (c) => addTL({ ...c, reviews: { ...c.reviews, [who]: ac.verdict } }, "vote", (ac.verdict === "yes" ? "Ja" : ac.verdict === "no" ? "Nej" : "Osaker") + " (team review)", who));
+    case "REVIEW": return mapCand(state, ac.id, (c) => addTL({ ...c, reviews: { ...c.reviews, [who]: ac.verdict } }, "vote", (ac.verdict === "yes" ? "Ja" : ac.verdict === "no" ? "Nej" : "Osäker") + " (team review)", who));
     case "APPLY": {
       const job = state.jobs.find((j) => j.id === state.activeJobId);
-      const cand = { ...ac.cand, jobId: state.activeJobId, timeline: [{ id: uid(), kind: "score_computed", detail: "Matchning berannad (regelverk v" + job.version + ")", at: Date.now(), actor: "System" }, { id: uid(), kind: "application_received", detail: "Ansokan mottagen via " + ac.cand.source, at: Date.now(), actor: "System" }] };
+      const cand = { ...ac.cand, jobId: state.activeJobId, timeline: [{ id: uid(), kind: "score_computed", detail: "Matchning beräknad (regelverk v" + job.version + ")", at: Date.now(), actor: "System" }, { id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + ac.cand.source, at: Date.now(), actor: "System" }] };
       const msg = buildMessage({ ...state }, cand, job, "received", who);
-      const withMsgTL = addTL(cand, "message_sent", `${msg.subject}${msg.status === "failed" ? " · FEL" : " · koad"}`, "System");
+      const withMsgTL = addTL(cand, "message_sent", `${msg.subject}${msg.status === "failed" ? " · FEL" : " · köad"}`, "System");
       const s2 = { ...state, candidates: [withMsgTL, ...state.candidates], messages: [msg, ...state.messages], jobs: state.jobs.map((j) => j.id === state.activeJobId ? { ...j, stats: { started: j.stats.started + 1, submitted: j.stats.submitted + 1 } } : j) };
-      return { ...s2, log: withLog(s2, "Ny ansokan", ac.cand.name) };
+      return { ...s2, log: withLog(s2, "Ny ansökan", ac.cand.name) };
     }
     case "SEND_MESSAGE": {
       const cand = state.candidates.find((c) => c.id === ac.id); const job = state.jobs.find((j) => j.id === cand.jobId);
       const msg = ac.subject ? { id: uid(), candidateId: cand.id, candidateName: cand.name, jobId: job.id, to: cand.email || "(saknar e-post)", subject: ac.subject, body: ac.body, trigger: ac.trigger || "manual", tplName: ac.trigger || "manual", status: validEmail(cand.email) ? "queued" : "failed", error: validEmail(cand.email) ? null : "Saknar giltig e-post", at: Date.now(), by: who } : buildMessage(state, cand, job, ac.trigger, who);
-      const s2 = mapCand(state, ac.id, (c) => addTL(c, ac.trigger === "completion" ? "completion_requested" : "message_sent", `${msg.subject}${msg.status === "failed" ? " · FEL" : " · koad"}`, who));
+      const s2 = mapCand(state, ac.id, (c) => addTL(c, ac.trigger === "completion" ? "completion_requested" : "message_sent", `${msg.subject}${msg.status === "failed" ? " · FEL" : " · köad"}`, who));
       return { ...s2, messages: [msg, ...state.messages], log: withLog(s2, "Mejl", `${msg.trigger} · ${cand.name}`) };
     }
     case "SET_ACTIVE_JOB": return { ...state, activeJobId: ac.id };
     case "SET_USER": return { ...state, currentUserId: ac.id };
-    case "ADD_JOB": { const id = "j" + uid(); const job = makeJob(id, ac.title, ac.team || "Nytt team", (ac.title || "tjanst").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 22), ac.tmplId, { company: state.org.companyName }); const s2 = { ...state, jobs: [...state.jobs, job], activeJobId: id }; return { ...s2, log: withLog(s2, "Ny tjanst", ac.title) }; }
+    case "ADD_JOB": { const id = "j" + uid(); const job = makeJob(id, ac.title, ac.team || "Nytt team", (ac.title || "tjänst").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 22), ac.tmplId, { company: state.org.companyName }); const s2 = { ...state, jobs: [...state.jobs, job], activeJobId: id }; return { ...s2, log: withLog(s2, "Ny tjänst", ac.title) }; }
     case "SET_WEIGHT": return updateActiveJob(state, (job) => job.activeProfileId === "std" ? { ...job, criteria: job.criteria.map((c) => c.id === ac.critId ? { ...c, weight: ac.weight } : c) } : { ...job, profiles: job.profiles.map((p) => p.id === job.activeProfileId ? { ...p, weights: { ...p.weights, [ac.critId]: ac.weight } } : p) });
-    case "SET_FIELD_FLAG": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: job.criteria.map((c) => c.id === ac.critId ? { ...c, ...ac.patch } : c) }, "Andrade falt: " + ac.critId, REVIEWERS.find((r) => r.id === who)?.name));
+    case "SET_FIELD_FLAG": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: job.criteria.map((c) => c.id === ac.critId ? { ...c, ...ac.patch } : c) }, "Ändrade fält: " + ac.critId, REVIEWERS.find((r) => r.id === who)?.name));
     case "TOGGLE_SKILL_MUST": return updateActiveJob(state, (job) => ({ ...job, criteria: job.criteria.map((c) => c.id === "skills" ? { ...c, options: c.options.map((o, i) => i === ac.idx ? { ...o, must: !o.must } : o) } : c) }));
-    case "ADD_FIELD": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: [...job.criteria.filter((c) => c.block !== "text"), ac.field, ...job.criteria.filter((c) => c.block === "text")] }, "La till falt: " + ac.field.label, REVIEWERS.find((r) => r.id === who)?.name));
-    case "REMOVE_FIELD": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: job.criteria.filter((c) => c.id !== ac.critId) }, "Tog bort falt", REVIEWERS.find((r) => r.id === who)?.name));
+    case "ADD_FIELD": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: [...job.criteria.filter((c) => c.block !== "text"), ac.field, ...job.criteria.filter((c) => c.block === "text")] }, "La till fält: " + ac.field.label, REVIEWERS.find((r) => r.id === who)?.name));
+    case "REMOVE_FIELD": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: job.criteria.filter((c) => c.id !== ac.critId) }, "Tog bort fält", REVIEWERS.find((r) => r.id === who)?.name));
     case "MOVE_FIELD": return updateActiveJob(state, (job) => { const arr = [...job.criteria]; const i = arr.findIndex((c) => c.id === ac.critId); const j = i + ac.dir; if (i < 0 || j < 0 || j >= arr.length) return job; [arr[i], arr[j]] = [arr[j], arr[i]]; return { ...job, criteria: arr }; });
     case "SET_PROFILE": return updateActiveJob(state, (job) => ({ ...job, activeProfileId: ac.id }));
     case "SAVE_PROFILE": return updateActiveJob(state, (job) => { const weights = {}; job.criteria.forEach((c) => { if (c.scored && c.weight != null) weights[c.id] = weightOf(job, c); }); const id = "p" + uid(); return { ...job, profiles: [...job.profiles, { id, name: ac.name, weights }], activeProfileId: id }; });
@@ -369,11 +369,11 @@ function reducer(state, ac) {
         if (c.jobId !== job.id || c.status !== "new") return c;
         const sc = scoreCandidate(job, c.answers); const hits = evalAutoRules(job, { ...c, ...sc }); if (!hits.length) return c;
         const rule = hits[0];
-        if (["shortlist", "reject", "reserve", "interview"].includes(rule.then)) { applied++; const { c2, msg } = applyDecision(state, c, job, rule.then, rule.then === "reject" ? "under troskeln" : null, null); if (msg) newMsgs.push(msg); return addTL(c2, "auto_rule", `Auto: ${statusLabel(rule.then)}`, null); }
+        if (["shortlist", "reject", "reserve", "interview"].includes(rule.then)) { applied++; const { c2, msg } = applyDecision(state, c, job, rule.then, rule.then === "reject" ? "under tröskeln" : null, null); if (msg) newMsgs.push(msg); return addTL(c2, "auto_rule", `Auto: ${statusLabel(rule.then)}`, null); }
         if (rule.then === "flag") { applied++; return addTL({ ...c, starred: true }, "auto_rule", "Auto: flaggad", null); }
         return c;
       });
-      const s2 = { ...state, candidates, messages: [...newMsgs, ...state.messages] }; return { ...s2, log: withLog(s2, "Auto-pipeline kord", `${applied} kandidater flyttade`) };
+      const s2 = { ...state, candidates, messages: [...newMsgs, ...state.messages] }; return { ...s2, log: withLog(s2, "Auto-pipeline körd", `${applied} kandidater flyttade`) };
     }
     case "ADD_TEMPLATE": return { ...state, templates: [...state.templates, { ...ac.tpl, id: "t_" + uid() }] };
     case "UPDATE_TEMPLATE": return { ...state, templates: state.templates.map((t) => t.id === ac.id ? { ...t, ...ac.patch } : t) };
@@ -386,7 +386,7 @@ const INITIAL = {
   jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: "j1", candidates: CANDIDATES0, currentUserId: "u1",
   history: [], templates: DEFAULT_TEMPLATES, messages: [],
   org: { companyName: "Nordpuls AB", hrName: "Mona Berg", hrEmail: "mona.berg@nordpuls.se", fromEmail: "noreply@nordpuls.se", appUrl: "https://rekyl.app", defaultInterviewTime: "onsdag 14:00" },
-  log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjanst oppnad", detail: "Account Manager · B2B" }],
+  log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjänst öppnad", detail: "Account Manager · B2B" }],
 };
 
 /* ---------- Delade UI-hjalpare ---------- */
@@ -398,20 +398,20 @@ function ScoreDial({ value, knockout, size = 76 }) { const [shown, setShown] = u
 function Stars({ value, onSet, readOnly }) { return <div className="ats-stars">{[1, 2, 3, 4, 5].map((n) => <button key={n} disabled={readOnly} className={n <= value ? "is-on" : ""} onClick={() => onSet && onSet(n === value ? 0 : n)}><Star size={14} fill={n <= value ? "currentColor" : "none"} /></button>)}</div>; }
 function TagPills({ tags }) { return tags?.length ? <span className="ats-tags">{tags.map((t) => <span key={t} className="ats-tagpill"><Tag size={10} />{t}</span>)}</span> : null; }
 function MissingChips({ items }) { return items?.length ? <span className="ats-missing">{items.map((m) => <span key={m} className="ats-misschip"><CircleAlert size={10} /> Saknar {m}</span>)}</span> : null; }
-function VoteSummary({ reviews }) { const v = reviews || {}; const y = Object.values(v).filter((x) => x === "yes").length, n = Object.values(v).filter((x) => x === "no").length, m = Object.values(v).filter((x) => x === "maybe").length; if (y + n + m === 0) return null; return <span className="ats-votesum"><Users size={12} /> {y} ja · {m} osaker · {n} nej</span>; }
-function QRCode({ text, size = 124 }) { const m = useMemo(() => { try { return generateQR(text); } catch (e) { return null; } }, [text]); if (!m) return <div className="ats-qr-fallback">Lanken ar for lang</div>; const N = m.length, cell = size / (N + 8), rects = []; for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (m[r][c] === 1) rects.push(<rect key={r + "-" + c} x={(c + 4) * cell} y={(r + 4) * cell} width={cell + 0.4} height={cell + 0.4} />); return <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="ats-qr"><rect width={size} height={size} rx="10" fill="#fff" /><g fill="#16171B">{rects}</g></svg>; }
-const REASONS = ["Saknar krav", "Fel tillganglighet", "For lite erfarenhet", "For hogt loneansprak", "Ej relevant profil", "Ofullstandig ansokan", "Annat"];
+function VoteSummary({ reviews }) { const v = reviews || {}; const y = Object.values(v).filter((x) => x === "yes").length, n = Object.values(v).filter((x) => x === "no").length, m = Object.values(v).filter((x) => x === "maybe").length; if (y + n + m === 0) return null; return <span className="ats-votesum"><Users size={12} /> {y} ja · {m} osäker · {n} nej</span>; }
+function QRCode({ text, size = 124 }) { const m = useMemo(() => { try { return generateQR(text); } catch (e) { return null; } }, [text]); if (!m) return <div className="ats-qr-fallback">Lanken är för lång</div>; const N = m.length, cell = size / (N + 8), rects = []; for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (m[r][c] === 1) rects.push(<rect key={r + "-" + c} x={(c + 4) * cell} y={(r + 4) * cell} width={cell + 0.4} height={cell + 0.4} />); return <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="ats-qr"><rect width={size} height={size} rx="10" fill="#fff" /><g fill="#16171B">{rects}</g></svg>; }
+const REASONS = ["Saknar krav", "Fel tillgänglighet", "För lite erfarenhet", "För högt löneanspråk", "Ej relevant profil", "Ofullstandig ansökan", "Annat"];
 const NAV = [
-  { id: "dashboard", label: "Oversikt", icon: LayoutDashboard },
-  { id: "queue", label: "Ko", icon: Layers },
+  { id: "dashboard", label: "Översikt", icon: LayoutDashboard },
+  { id: "queue", label: "Kö", icon: Layers },
   { id: "candidates", label: "Kandidater", icon: ClipboardList },
-  { id: "form", label: "Formular", icon: Blocks },
+  { id: "form", label: "Formulär", icon: Blocks },
   { id: "stats", label: "Statistik", icon: BarChart3 },
   { id: "team", label: "Team & logg", icon: Activity },
-  { id: "settings", label: "Installningar", icon: Settings },
+  { id: "settings", label: "Inställningar", icon: Settings },
 ];
 
-/* ---------- Inline sidrubrik + jobbvaljare ---------- */
+/* ---------- Inline sidrubrik + jobbväljare ---------- */
 function JobSwitch({ state, D }) { const job = state.jobs.find((j) => j.id === state.activeJobId); return <Menu trigger={<button className="ats-jobswitch">{job.title} <ChevronDown size={13} /></button>}>{state.jobs.map((j) => <button key={j.id} className={"ats-menu-item" + (j.id === state.activeJobId ? " is-active" : "")} onClick={() => D({ type: "SET_ACTIVE_JOB", id: j.id })}><Briefcase size={13} /> {j.title}</button>)}</Menu>; }
 function PageHeader({ title, meta, right }) { return <div className="ats-ph"><div className="ats-ph-l"><h1 className="ats-ph-title">{title}</h1>{meta && <div className="ats-ph-meta">{meta}</div>}</div>{right && <div className="ats-ph-r">{right}</div>}</div>; }
 function Dot() { return <span className="ats-ph-dot">·</span>; }
@@ -474,14 +474,14 @@ export default function App() {
       {detail && <CandidateDrawer cand={detail} state={state} D={D} me={me} job={state.jobs.find((j) => j.id === detail.jobId)} onClose={() => setDetailId(null)} showToast={showToast} setPrintDoc={setPrintDoc} dupIndex={dupIndex} compareIds={compareIds} toggleCompare={toggleCompare} />}
       {compareOpen && <CompareModal cands={cands} compareIds={compareIds} toggleCompare={toggleCompare} onClose={() => setCompareOpen(false)} job={job} />}
       {newJob && <NewJobModal onClose={() => setNewJob(false)} onCreate={(t, tmpl) => { D({ type: "ADD_JOB", title: t, tmplId: tmpl }); setNewJob(false); go("form"); }} />}
-      {reasonFor && <ReasonModal onClose={() => setReasonFor(null)} onPick={(reason) => { D({ type: "DECIDE", id: reasonFor.id, status: "reject", reason }); showToast({ kind: "ok", msg: "Avslag · avslagsmejl kolagt" }); if (reasonFor.after) reasonFor.after(); setReasonFor(null); }} />}
+      {reasonFor && <ReasonModal onClose={() => setReasonFor(null)} onPick={(reason) => { D({ type: "DECIDE", id: reasonFor.id, status: "reject", reason }); showToast({ kind: "ok", msg: "Avslag · avslagsmejl köat" }); if (reasonFor.after) reasonFor.after(); setReasonFor(null); }} />}
       {printDoc && <PrintModal doc={printDoc} onClose={() => setPrintDoc(null)} />}
-      <button className="ats-fab" onClick={() => setNewJob(true)} title="Ny tjanst"><Plus size={20} /></button>
+      <button className="ats-fab" onClick={() => setNewJob(true)} title="Ny tjänst"><Plus size={20} /></button>
     </div>
   );
 }
 
-function NewJobModal({ onClose, onCreate }) { const [title, setTitle] = useState(""); const [tmpl, setTmpl] = useState(TEMPLATES[0].id); return <Modal title="Ny tjanst" onClose={onClose} wide><div className="ats-nj"><label className="ats-field"><span className="ats-field-l">Titel</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="t.ex. Innesaljare Goteborg" /></label><div className="ats-field-l" style={{ marginTop: 4 }}>Starta fran mall — scoring, knockout och kandidatkort forladdas automatiskt</div><div className="ats-tmplgrid">{TEMPLATES.map((t) => { const Ic = ICONS[t.icon] || Briefcase; return <button key={t.id} className={"ats-tmpl" + (tmpl === t.id ? " is-on" : "")} onClick={() => setTmpl(t.id)}><span className="ats-tmpl-ic"><Ic size={16} /></span><b>{t.name}</b><span>{t.desc}</span></button>; })}</div><button className={"ats-send" + (title.trim().length > 1 ? "" : " is-off")} onClick={() => title.trim().length > 1 && onCreate(title.trim(), tmpl)}>Skapa tjanst <ArrowRight size={16} /></button></div></Modal>; }
+function NewJobModal({ onClose, onCreate }) { const [title, setTitle] = useState(""); const [tmpl, setTmpl] = useState(TEMPLATES[0].id); return <Modal title="Ny tjänst" onClose={onClose} wide><div className="ats-nj"><label className="ats-field"><span className="ats-field-l">Titel</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="t.ex. Innesäljare Göteborg" /></label><div className="ats-field-l" style={{ marginTop: 4 }}>Starta från mall — scoring, knockout och kandidatkort forladdas automatiskt</div><div className="ats-tmplgrid">{TEMPLATES.map((t) => { const Ic = ICONS[t.icon] || Briefcase; return <button key={t.id} className={"ats-tmpl" + (tmpl === t.id ? " is-on" : "")} onClick={() => setTmpl(t.id)}><span className="ats-tmpl-ic"><Ic size={16} /></span><b>{t.name}</b><span>{t.desc}</span></button>; })}</div><button className={"ats-send" + (title.trim().length > 1 ? "" : " is-off")} onClick={() => title.trim().length > 1 && onCreate(title.trim(), tmpl)}>Skapa tjänst <ArrowRight size={16} /></button></div></Modal>; }
 function ReasonModal({ onClose, onPick }) { return <Modal title="Anledning till avslag" onClose={onClose}><div className="ats-reasons">{REASONS.map((r) => <button key={r} className="ats-reason" onClick={() => onPick(r)}>{r}</button>)}</div><p className="ats-reason-note">Anledningen sparas i kandidatens timeline och i statistiken, och anvands i avslagsmejlet ({"{{rejectionReason}}"}).</p></Modal>; }
 function PrintModal({ doc, onClose }) { return <div className="ats-printwrap"><div className="ats-print-toolbar"><span>{doc.title}</span><div><button className="ats-ghost" onClick={() => window.print()}><Download size={15} /> Skriv ut / PDF</button><button className="ats-ghost" onClick={onClose}><X size={15} /> Stang</button></div></div><div className="ats-printdoc">{doc.node}</div></div>; }
 
@@ -499,25 +499,25 @@ function DashboardView({ allScored, state, D, cands, job, setView, setDetailId }
     { label: "Kvalificerade", value: qualified, icon: Check, tone: "green" },
     { label: "Diskvalificerade", value: ko, icon: ShieldAlert, tone: "brick" },
     { label: "Snittmatchning", value: avg + "%", icon: Gauge, tone: "petrol" },
-    { label: "Vantar > 24h", value: waiting, icon: Clock, tone: waiting ? "amber" : "petrol" },
+    { label: "Väntar > 24h", value: waiting, icon: Clock, tone: waiting ? "amber" : "petrol" },
   ];
   return (
     <div className="ats-view">
-      <PageHeader title="Oversikt" meta={<><span>{state.org.companyName}</span><Dot /><span>{state.jobs.length} tjanster</span></>} right={<button className="ats-ghost is-accent" onClick={() => setView("queue")}><Layers size={15} /> Till kon</button>} />
+      <PageHeader title="Översikt" meta={<><span>{state.org.companyName}</span><Dot /><span>{state.jobs.length} tjänster</span></>} right={<button className="ats-ghost is-accent" onClick={() => setView("queue")}><Layers size={15} /> Till kön</button>} />
       <div className="ats-stats">{kpis.map((k) => <div key={k.label} className="ats-stat"><span className={"ats-stat-ic is-" + k.tone}><k.icon size={16} /></span><div><div className="ats-stat-v">{k.value}</div><div className="ats-stat-l">{k.label}</div></div></div>)}</div>
       <div className="ats-grid-2">
-        <div className="ats-hero"><div className="ats-hero-l"><span className="ats-eyebrow">Att gora nu</span><div className="ats-hero-big">{queue.length}</div><p>{queue.length ? `vantar pa beslut i ${job.title}. Swipa sa skickas ratt mejl automatiskt.` : "Kon ar tom just nu."}</p><button className="ats-hero-cta" onClick={() => setView("queue")} disabled={!queue.length}>Fortsatt i kon <ArrowRight size={16} /></button></div>
-          <div className="ats-hero-r">{best ? <><span className="ats-hero-tag"><Flame size={12} /> Bast i kon</span><button className="ats-hero-best" onClick={() => setDetailId(best.id)}><div className="ats-avatar">{initials(best.name)}</div><div><b>{best.name}</b><span>{best.total}% matchning</span></div></button><div className="ats-hero-score">{shortlisted} i shortlist/intervju</div></> : <span className="ats-hero-tag">Ingen i kon</span>}</div></div>
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Portfolj</h2><span className="ats-summono">alla tjanster</span></div>
+        <div className="ats-hero"><div className="ats-hero-l"><span className="ats-eyebrow">Att gora nu</span><div className="ats-hero-big">{queue.length}</div><p>{queue.length ? `väntar på beslut i ${job.title}. Swipa så skickas rätt mejl automatiskt.` : "Kön är tom just nu."}</p><button className="ats-hero-cta" onClick={() => setView("queue")} disabled={!queue.length}>Fortsatt i kön <ArrowRight size={16} /></button></div>
+          <div className="ats-hero-r">{best ? <><span className="ats-hero-tag"><Flame size={12} /> Bast i kön</span><button className="ats-hero-best" onClick={() => setDetailId(best.id)}><div className="ats-avatar">{initials(best.name)}</div><div><b>{best.name}</b><span>{best.total}% matchning</span></div></button><div className="ats-hero-score">{shortlisted} i shortlist/intervju</div></> : <span className="ats-hero-tag">Ingen i kön</span>}</div></div>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Portfölj</h2><span className="ats-summono">alla tjänster</span></div>
           {allScored.map(({ job: j, list }) => { const q = list.filter((c) => c.status === "new").length; const b = [...list].filter((c) => c.status === "new" && !c.knockout).sort((a, b) => b.total - a.total)[0]; return <button key={j.id} className={"ats-portrow" + (j.id === state.activeJobId ? " is-active" : "")} onClick={() => { D({ type: "SET_ACTIVE_JOB", id: j.id }); setView("queue"); }}><div><b>{j.title}</b><span>{j.team}</span></div><div className="ats-portrow-r"><span className="ats-portrow-q">{q} i ko</span>{b && <span className="ats-portrow-b">{b.name.split(" ")[0]} {b.total}%</span>}</div></button>; })}
         </div>
       </div>
       <div className="ats-panel"><div className="ats-panel-h"><h2>Snabbstatus · {job.title}</h2><button className="ats-linkbtn" onClick={() => setView("stats")}>Statistik <ChevronRight size={14} /></button></div>
         <div className="ats-quickgrid">
-          <div className="ats-quick"><span className="ats-quick-v">{job.stats.submitted}/{job.stats.started}</span><span className="ats-quick-l">Skickade / paborjade</span></div>
+          <div className="ats-quick"><span className="ats-quick-v">{job.stats.submitted}/{job.stats.started}</span><span className="ats-quick-l">Skickade / pabörjade</span></div>
           <div className="ats-quick"><span className="ats-quick-v">{Math.round((job.stats.submitted / Math.max(1, job.stats.started)) * 100)}%</span><span className="ats-quick-l">Completion rate</span></div>
           <div className="ats-quick"><span className="ats-quick-v">{cands.filter((c) => c.missing.length).length}</span><span className="ats-quick-l">Ofullstandiga</span></div>
-          <div className="ats-quick"><span className="ats-quick-v">{cands.filter((c) => c.status === "hired").length}</span><span className="ats-quick-l">Anstallda</span></div>
+          <div className="ats-quick"><span className="ats-quick-v">{cands.filter((c) => c.status === "hired").length}</span><span className="ats-quick-l">Anställda</span></div>
         </div>
       </div>
     </div>
@@ -529,9 +529,9 @@ function flagsOf(c) {
   const green = [], red = [];
   (c.tags || []).forEach((t) => green.push(t));
   c.parts.filter((p) => p.kind === "scored").forEach((p) => { if (p.frac >= 0.8) green.push("Stark: " + p.label.toLowerCase()); else if (p.frac <= 0.34) red.push("Svag: " + p.label.toLowerCase()); });
-  if (c.answers?.availability === "Omgaende") green.push("Kan borja omgaende");
+  if (c.answers?.availability === "Omgående") green.push("Kan börja omgående");
   c.knockoutReasons.forEach((r) => red.unshift(r));
-  if (c.belowThreshold) red.push("Under troskeln");
+  if (c.belowThreshold) red.push("Under tröskeln");
   return { green: green.slice(0, 3), red: red.slice(0, 3) };
 }
 function CardFace({ c, onStar, onOpen, showActions }) {
@@ -553,7 +553,7 @@ function CardFace({ c, onStar, onOpen, showActions }) {
         {scored.map((p) => { const Icon = ICONS[p.icon] || Award; return <div key={p.id} className="ats-break-row"><span className="ats-break-ic"><Icon size={13} /></span><div className="ats-break-main"><div className="ats-break-label"><span>{p.label}</span><span className="ats-break-detail">{p.detail}</span></div><div className="ats-break-bar"><div className="ats-break-bar-fill" style={{ width: Math.round(p.frac * 100) + "%" }} /></div></div><span className="ats-break-pts">+{Math.round(p.earned)}</span></div>; })}
       </div>
       {c.missing?.length > 0 && <div className="ats-face-missing"><MissingChips items={c.missing} /></div>}
-      <div className="ats-face-foot"><div className="ats-face-foot-l">{last && <span className="ats-face-last"><Activity size={11} /> {TL_LABEL[last.kind] || last.kind} · {timeAgo(last.at)}</span>}<VoteSummary reviews={c.reviews} /></div><div className="ats-face-foot-r">{onStar && <button className={"ats-iconbtn" + (c.starred ? " is-on" : "")} onClick={(e) => { e.stopPropagation(); onStar(); }} title="Stjarnmarkera"><Star size={14} fill={c.starred ? "currentColor" : "none"} /></button>}{onOpen && <button className="ats-openbtn" onClick={(e) => { e.stopPropagation(); onOpen(); }}>Oppna kandidat <ChevronRight size={13} /></button>}</div></div>
+      <div className="ats-face-foot"><div className="ats-face-foot-l">{last && <span className="ats-face-last"><Activity size={11} /> {TL_LABEL[last.kind] || last.kind} · {timeAgo(last.at)}</span>}<VoteSummary reviews={c.reviews} /></div><div className="ats-face-foot-r">{onStar && <button className={"ats-iconbtn" + (c.starred ? " is-on" : "")} onClick={(e) => { e.stopPropagation(); onStar(); }} title="Stjärnmarkera"><Star size={14} fill={c.starred ? "currentColor" : "none"} /></button>}{onOpen && <button className="ats-openbtn" onClick={(e) => { e.stopPropagation(); onOpen(); }}>Öppna kandidat <ChevronRight size={13} /></button>}</div></div>
     </div>
   );
 }
@@ -571,16 +571,16 @@ function QueueView({ cands, D, me, job, state, showToast, setReasonFor, setDetai
     if (!top || exit || !allowed) return;
     if (dir === "left") { setReasonFor({ id: top.id }); return; }
     const d = DIRS[dir]; setExit({ dir }); const snap = { id: top.id, name: top.name, label: d.label, toast: d.toast, email: top.email };
-    setTimeout(() => { D({ type: "DECIDE", id: top.id, status: d.status }); setExit(null); setDrag({ dx: 0, dy: 0, active: false }); setLast(snap); showToast({ kind: snap.email ? "ok" : "warn", msg: snap.email ? `${d.label} · ${d.toast} kolagt` : `${d.label} · mejl EJ kolagt (saknar e-post)` }); }, 300);
+    setTimeout(() => { D({ type: "DECIDE", id: top.id, status: d.status }); setExit(null); setDrag({ dx: 0, dy: 0, active: false }); setLast(snap); showToast({ kind: snap.email ? "ok" : "warn", msg: snap.email ? `${d.label} · ${d.toast} köat` : `${d.label} · mejl EJ köat (saknar e-post)` }); }, 300);
   }, [top, exit, allowed, D, setReasonFor, showToast]);
   useEffect(() => { const onKey = (e) => { if (e.key === "ArrowRight") commit("right"); else if (e.key === "ArrowLeft") commit("left"); else if (e.key === "ArrowUp") commit("up"); else if (e.key === "ArrowDown") commit("down"); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, [commit]);
   const onDown = (e) => { if (exit || !allowed) return; startRef.current = { x: e.clientX, y: e.clientY }; setDrag({ dx: 0, dy: 0, active: true }); e.currentTarget.setPointerCapture?.(e.pointerId); };
   const onMove = (e) => { if (!drag.active || !startRef.current) return; setDrag({ dx: e.clientX - startRef.current.x, dy: e.clientY - startRef.current.y, active: true }); };
   const onUp = () => { if (!drag.active) return; const { dx, dy } = drag; if (Math.abs(dx) > Math.abs(dy)) { if (dx > 120) commit("right"); else if (dx < -120) commit("left"); else setDrag({ dx: 0, dy: 0, active: false }); } else { if (dy < -110) commit("up"); else if (dy > 110) commit("down"); else setDrag({ dx: 0, dy: 0, active: false }); } startRef.current = null; };
 
-  const header = <PageHeader title="Ko" meta={<><JobSwitch state={state} D={D} /><Dot /><span>{deck.length} vantar</span></>} right={<div className="ats-queue-filters"><div className="ats-search"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Sok…" /></div><button className={"ats-chip" + (sort === "score" ? " is-on" : "")} onClick={() => setSort("score")}>Bast</button><button className={"ats-chip" + (sort === "new" ? " is-on" : "")} onClick={() => setSort("new")}>Senaste</button><button className={"ats-chip" + (hideKO ? " is-on" : "")} onClick={() => setHideKO((v) => !v)}>Dolj diskade</button></div>} />;
+  const header = <PageHeader title="Kö" meta={<><JobSwitch state={state} D={D} /><Dot /><span>{deck.length} väntar</span></>} right={<div className="ats-queue-filters"><div className="ats-search"><Search size={14} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Sok…" /></div><button className={"ats-chip" + (sort === "score" ? " is-on" : "")} onClick={() => setSort("score")}>Bast</button><button className={"ats-chip" + (sort === "new" ? " is-on" : "")} onClick={() => setSort("new")}>Senaste</button><button className={"ats-chip" + (hideKO ? " is-on" : "")} onClick={() => setHideKO((v) => !v)}>Dolj diskade</button></div>} />;
 
-  if (!top) return <div className="ats-view">{header}<div className="ats-empty"><div className="ats-empty-badge"><Check size={22} /></div><h3>Kon ar tomd</h3><p>Alla {total} ansokningar ar genomgangna. Nya kandidater dyker upp har direkt nar de skickar formularet.</p></div></div>;
+  if (!top) return <div className="ats-view">{header}<div className="ats-empty"><div className="ats-empty-badge"><Check size={22} /></div><h3>Kön är tömd</h3><p>Alla {total} ansökningar är genomgångna. Nya kandidater dyker upp här direkt när de skickar formuläret.</p></div></div>;
   const dir = Math.abs(drag.dx) > Math.abs(drag.dy) ? (drag.dx > 60 ? "right" : drag.dx < -60 ? "left" : null) : (drag.dy < -60 ? "up" : drag.dy > 60 ? "down" : null);
   let cardStyle;
   if (exit) { const tx = exit.dir === "right" ? 620 : exit.dir === "left" ? -620 : 0; const ty = exit.dir === "up" ? -640 : exit.dir === "down" ? 640 : 0; const rot = exit.dir === "right" ? 16 : exit.dir === "left" ? -16 : 0; cardStyle = { transform: `translate(${tx}px,${ty}px) rotate(${rot}deg)`, opacity: 0, transition: "transform .3s cubic-bezier(.4,0,.2,1), opacity .3s" }; }
@@ -589,22 +589,22 @@ function QueueView({ cands, D, me, job, state, showToast, setReasonFor, setDetai
   return (
     <div className="ats-view ats-queue">
       {header}
-      {!allowed && <div className="ats-rolebar"><AlertTriangle size={14} /> Du ar {ROLE_LABEL[me.role].toLowerCase()} och kan bladdra men inte fatta beslut.</div>}
-      <div className="ats-progress"><div className="ats-progress-track"><div className="ats-progress-fill" style={{ width: `${(reviewed / Math.max(1, total)) * 100}%` }} /></div><span className="ats-progress-txt">{reviewed} av {total} genomgangna</span></div>
+      {!allowed && <div className="ats-rolebar"><AlertTriangle size={14} /> Du är {ROLE_LABEL[me.role].toLowerCase()} och kan bladdra men inte fatta beslut.</div>}
+      <div className="ats-progress"><div className="ats-progress-track"><div className="ats-progress-fill" style={{ width: `${(reviewed / Math.max(1, total)) * 100}%` }} /></div><span className="ats-progress-txt">{reviewed} av {total} genomgångna</span></div>
       <div className="ats-deck">
         {deck.slice(1, 3).reverse().map((c, i, arr) => { const depth = arr.length - i; return <div key={c.id} className="ats-card is-behind" style={{ transform: `translateY(${depth * 12}px) scale(${1 - depth * 0.035})`, zIndex: 1 }}><CardFace c={c} /></div>; })}
         <div className="ats-card is-top" style={{ ...cardStyle, zIndex: 5 }} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>{dir && !exit && <div className={"ats-stamp is-" + dir}>{DIRS[dir].label}</div>}<CardFace c={top} onStar={() => D({ type: "STAR", id: top.id })} onOpen={() => setDetailId(top.id)} /></div>
       </div>
-      <div className="ats-actions"><button className="ats-act is-reject" disabled={!allowed} onClick={() => commit("left")} title="Avsla (vanster)"><X size={20} /></button><button className="ats-act is-reserve" disabled={!allowed} onClick={() => commit("down")} title="Reserv (ner)"><PauseCircle size={18} /></button><button className="ats-act is-interview" disabled={!allowed} onClick={() => commit("up")} title="Intervju (upp)"><CalendarCheck size={18} /></button><button className="ats-act is-yes" disabled={!allowed} onClick={() => commit("right")} title="Shortlist (hoger)"><Check size={22} /></button></div>
-      <p className="ats-hint"><ArrowRight size={12} /> shortlist · <span className="ats-hint-up">upp</span> intervju · <span className="ats-hint-dn">ner</span> reserv · <ArrowLeftIcon /> avslag — ratt mejl skickas automatiskt</p>
+      <div className="ats-actions"><button className="ats-act is-reject" disabled={!allowed} onClick={() => commit("left")} title="Avslå (vänster)"><X size={20} /></button><button className="ats-act is-reserve" disabled={!allowed} onClick={() => commit("down")} title="Reserv (ner)"><PauseCircle size={18} /></button><button className="ats-act is-interview" disabled={!allowed} onClick={() => commit("up")} title="Intervju (upp)"><CalendarCheck size={18} /></button><button className="ats-act is-yes" disabled={!allowed} onClick={() => commit("right")} title="Shortlist (höger)"><Check size={22} /></button></div>
+      <p className="ats-hint"><ArrowRight size={12} /> shortlist · <span className="ats-hint-up">upp</span> intervju · <span className="ats-hint-dn">ner</span> reserv · <ArrowLeftIcon /> avslag — rätt mejl skickas automatiskt</p>
     </div>
   );
 }
 function ArrowLeftIcon() { return <ChevronLeft size={12} style={{ display: "inline", verticalAlign: "-2px" }} />; }
 
 /* ===================== KANDIDATER ===================== */
-function toCSV(list) { const head = ["Namn", "E-post", "Telefon", "Matchning", "Status", "Kalla", "Betyg", "Diskvalificerad", "Saknar", "Avslagsanledning"]; const rows = list.map((c) => [c.name, c.email || "", c.phone || "", c.total + "%", statusLabel(c.status), c.source, c.rating || "", c.knockout ? "Ja" : "Nej", (c.missing || []).join("|"), c.reason || ""]); return [head, ...rows].map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n"); }
-function ScorecardDoc({ job, c, org }) { return <div className="ats-pr"><div className="ats-pr-head"><div><div className="ats-pr-co">{org.companyName}</div><div className="ats-pr-title">Kandidatunderlag · {job.title}</div></div><div className="ats-pr-score"><b>{c.total}</b><small>% matchning</small></div></div><div className="ats-pr-name">{c.name} {c.knockout && <span className="ats-pr-ko">Diskvalificerad</span>}</div><div className="ats-pr-sub">{c.email} · {c.phone || "telefon saknas"} · {c.source} · formular v{c.formVersion}</div><table className="ats-pr-table"><thead><tr><th>Kriterium</th><th>Kandidat</th><th>Uppfyllt</th><th>Bidrag</th></tr></thead><tbody>{c.parts.filter((p) => p.kind === "scored").map((p) => <tr key={p.id}><td>{p.label}</td><td>{p.detail}</td><td>{Math.round(p.frac * 100)}%</td><td>+{Math.round(p.earned)}</td></tr>)}{c.parts.filter((p) => p.kind === "must").map((p) => <tr key={p.id}><td>{p.label}</td><td>Obligatoriskt</td><td colSpan={2}>{p.ok ? "Uppfyllt" : "Saknas"}</td></tr>)}</tbody></table>{c.parts.find((p) => p.kind === "text")?.value && <div className="ats-pr-mot"><b>Motivering</b><p>{c.parts.find((p) => p.kind === "text").value}</p></div>}<div className="ats-pr-foot">Deterministiskt underlag fran Rekyl · viktade kriterier, ingen AI · {new Date().toLocaleDateString("sv-SE")}</div></div>; }
+function toCSV(list) { const head = ["Namn", "E-post", "Telefon", "Matchning", "Status", "Källa", "Betyg", "Diskvalificerad", "Saknar", "Avslagsanledning"]; const rows = list.map((c) => [c.name, c.email || "", c.phone || "", c.total + "%", statusLabel(c.status), c.source, c.rating || "", c.knockout ? "Ja" : "Nej", (c.missing || []).join("|"), c.reason || ""]); return [head, ...rows].map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n"); }
+function ScorecardDoc({ job, c, org }) { return <div className="ats-pr"><div className="ats-pr-head"><div><div className="ats-pr-co">{org.companyName}</div><div className="ats-pr-title">Kandidatunderlag · {job.title}</div></div><div className="ats-pr-score"><b>{c.total}</b><small>% matchning</small></div></div><div className="ats-pr-name">{c.name} {c.knockout && <span className="ats-pr-ko">Diskvalificerad</span>}</div><div className="ats-pr-sub">{c.email} · {c.phone || "telefon saknas"} · {c.source} · formulär v{c.formVersion}</div><table className="ats-pr-table"><thead><tr><th>Kriterium</th><th>Kandidat</th><th>Uppfyllt</th><th>Bidrag</th></tr></thead><tbody>{c.parts.filter((p) => p.kind === "scored").map((p) => <tr key={p.id}><td>{p.label}</td><td>{p.detail}</td><td>{Math.round(p.frac * 100)}%</td><td>+{Math.round(p.earned)}</td></tr>)}{c.parts.filter((p) => p.kind === "must").map((p) => <tr key={p.id}><td>{p.label}</td><td>Obligatoriskt</td><td colSpan={2}>{p.ok ? "Uppfyllt" : "Saknas"}</td></tr>)}</tbody></table>{c.parts.find((p) => p.kind === "text")?.value && <div className="ats-pr-mot"><b>Motivering</b><p>{c.parts.find((p) => p.kind === "text").value}</p></div>}<div className="ats-pr-foot">Deterministiskt underlag från Rekyl · viktade kriterier, ingen AI · {new Date().toLocaleDateString("sv-SE")}</div></div>; }
 function CommentBox({ onAdd }) { const [t, setT] = useState(""); return <div className="ats-cmtbox"><input value={t} onChange={(e) => setT(e.target.value)} placeholder="Skriv en kommentar…" onKeyDown={(e) => { if (e.key === "Enter" && t.trim()) { onAdd(t.trim()); setT(""); } }} /><button disabled={!t.trim()} onClick={() => { if (t.trim()) { onAdd(t.trim()); setT(""); } }}><ArrowRight size={15} /></button></div>; }
 
 function CandidatesView({ cands, D, me, job, state, showToast, setDetailId, compareIds, toggleCompare, openCompare }) {
@@ -615,16 +615,16 @@ function CandidatesView({ cands, D, me, job, state, showToast, setDetailId, comp
   const exportCSV = () => { const csv = toCSV(list); const ok = downloadText(`kandidater-${job.slug}.csv`, csv, "text/csv"); copyText(csv); showToast({ kind: "ok", msg: ok ? "CSV nedladdad" : "CSV kopierad" }); };
   return (
     <div className="ats-view">
-      <PageHeader title="Kandidater" meta={<><JobSwitch state={state} D={D} /><Dot /><span>{cands.length} totalt</span></>} right={<>{compareIds.length >= 2 && <button className="ats-ghost is-accent" onClick={openCompare}><GitCompare size={15} /> Jamfor ({compareIds.length})</button>}<button className="ats-ghost" onClick={exportCSV}><Download size={15} /> CSV</button></>} />
+      <PageHeader title="Kandidater" meta={<><JobSwitch state={state} D={D} /><Dot /><span>{cands.length} totalt</span></>} right={<>{compareIds.length >= 2 && <button className="ats-ghost is-accent" onClick={openCompare}><GitCompare size={15} /> Jämför ({compareIds.length})</button>}<button className="ats-ghost" onClick={exportCSV}><Download size={15} /> CSV</button></>} />
       <div className="ats-tabs">{[{ id: "all", label: "Alla" }, ...STAGES].map((s) => <button key={s.id} className={"ats-tab" + (tab === s.id ? " is-on" : "") + (s.tone ? " tone-" + s.tone : "")} onClick={() => setTab(s.id)}>{s.label}<span className="ats-tab-n">{counts[s.id] || 0}</span></button>)}</div>
       <div className="ats-cand-tools"><div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sok kandidat…" /></div>
-        <select value={source} onChange={(e) => setSource(e.target.value)} className="ats-select">{sources.map((s) => <option key={s} value={s}>{s === "all" ? "Alla kallor" : s}</option>)}</select>
+        <select value={source} onChange={(e) => setSource(e.target.value)} className="ats-select">{sources.map((s) => <option key={s} value={s}>{s === "all" ? "Alla källor" : s}</option>)}</select>
         <select value={sort} onChange={(e) => setSort(e.target.value)} className="ats-select"><option value="score">Matchning</option><option value="new">Senaste</option><option value="name">Namn</option></select>
-        {compareIds.length > 0 && <span className="ats-cmp-hint"><GitCompare size={13} /> {compareIds.length} valda for jamforelse (2–4)</span>}
+        {compareIds.length > 0 && <span className="ats-cmp-hint"><GitCompare size={13} /> {compareIds.length} valda för jämförelse (2–4)</span>}
       </div>
       <div className="ats-table"><div className="ats-tr ats-th"><span></span><span>Kandidat</span><span>Matchning</span><span>Status</span><span>Team</span><span></span></div>
         {list.map((c) => <div key={c.id} className={"ats-tr" + (c.knockout ? " is-ko" : "")}>
-          <span><input type="checkbox" className="ats-cmpcheck" checked={compareIds.includes(c.id)} onChange={() => toggleCompare(c.id)} title="Lagg till i jamforelse" /></span>
+          <span><input type="checkbox" className="ats-cmpcheck" checked={compareIds.includes(c.id)} onChange={() => toggleCompare(c.id)} title="Lägg till i jämförelse" /></span>
           <button className="ats-td-name" onClick={() => setDetailId(c.id)}><div className="ats-avatar is-sm">{initials(c.name)}</div><div><b>{c.name} {c.starred && <Star size={11} fill="currentColor" className="ats-starred" />}</b><div className="ats-td-flags"><span className="ats-td-mail">{c.email}</span>{c.missing.length > 0 && <MissingChips items={c.missing.slice(0, 2)} />}</div></div></button>
           <span className="ats-td-score"><div className="ats-td-bar"><div className={"is-" + tierOf(c)} style={{ width: c.total + "%" }} /></div><b className={"is-" + tierOf(c)}>{c.total}%</b></span>
           <span><span className={"ats-statuspill is-" + c.status}>{statusLabel(c.status)}</span></span>
@@ -642,34 +642,34 @@ function CandidateDrawer({ cand, state, D, me, job, onClose, showToast, setPrint
   const c = { ...cand, ...scoreCandidate(job, cand.answers), missing: missingInfo(job, cand) };
   const canVote = can(me.role, "vote"), canComment = can(me.role, "comment"), canDecide = can(me.role, "decide"), canMsg = can(me.role, "message");
   const dupOf = (dupIndex[(c.email || "").toLowerCase()] || []).filter((x) => x.id !== c.id);
-  const decide = (status, reason) => { D({ type: "DECIDE", id: c.id, status, reason }); showToast({ kind: c.email ? "ok" : "warn", msg: c.email ? `${statusLabel(status)} · mejl kolagt` : `${statusLabel(status)} · mejl EJ kolagt (saknar e-post)` }); };
-  const sendMsg = (trigger) => { D({ type: "SEND_MESSAGE", id: c.id, trigger }); showToast({ kind: c.email ? "ok" : "warn", msg: c.email ? "Mejl kolagt i mejlloggen" : "EJ kolagt — saknar e-post" }); };
+  const decide = (status, reason) => { D({ type: "DECIDE", id: c.id, status, reason }); showToast({ kind: c.email ? "ok" : "warn", msg: c.email ? `${statusLabel(status)} · mejl köat` : `${statusLabel(status)} · mejl EJ köat (saknar e-post)` }); };
+  const sendMsg = (trigger) => { D({ type: "SEND_MESSAGE", id: c.id, trigger }); showToast({ kind: c.email ? "ok" : "warn", msg: c.email ? "Mejl köat i mejlloggen" : "EJ köat — saknar e-post" }); };
   return (
     <div className="ats-drawer-bg" onClick={onClose}><div className="ats-drawer" onClick={(e) => e.stopPropagation()}>
       <div className="ats-drawer-h"><div><h3>{c.name}</h3><span>{c.email || "e-post saknas"} · {c.phone || "telefon saknas"}</span></div><button onClick={onClose}><X size={18} /></button></div>
       <div className="ats-drawer-body">
         <div className="ats-drawer-score"><ScoreDial value={c.total} knockout={c.knockout} size={84} /><div><span className={"ats-statuspill is-" + c.status}>{statusLabel(c.status)}</span>{c.knockout ? <div className="ats-ko is-mini"><ShieldAlert size={13} /> {c.knockoutReasons.join(", ")}</div> : <div className="ats-below is-ok"><Check size={13} /> Uppfyller obligatoriska krav</div>}<TagPills tags={c.tags} /><MissingChips items={c.missing} /></div></div>
-        {dupOf.length > 0 && <div className="ats-dupbox"><History size={13} /> Har sokt {dupOf.length + 1} ganger. {dupOf.map((d) => { const j = state.jobs.find((x) => x.id === d.jobId); return <span key={d.id} className="ats-dup-item">{j ? j.title : d.jobId} · {statusLabel(d.status)}</span>; })}</div>}
+        {dupOf.length > 0 && <div className="ats-dupbox"><History size={13} /> Har sokt {dupOf.length + 1} gånger. {dupOf.map((d) => { const j = state.jobs.find((x) => x.id === d.jobId); return <span key={d.id} className="ats-dup-item">{j ? j.title : d.jobId} · {statusLabel(d.status)}</span>; })}</div>}
 
-        <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><UserCheck size={12} /> Team review</div><div className="ats-verdicts">{[["yes", "Ja", ThumbsUp], ["maybe", "Osaker", HelpCircle], ["no", "Nej", ThumbsDown]].map(([v, label, Ic]) => <button key={v} disabled={!canVote} className={"ats-verdict is-" + v + (c.reviews[me.id] === v ? " is-on" : "")} onClick={() => D({ type: "REVIEW", id: c.id, verdict: v })}><Ic size={14} /> {label}</button>)}</div>{Object.keys(c.reviews).length > 0 && <div className="ats-cons-pills">{REVIEWERS.filter((r) => c.reviews[r.id]).map((r) => <span key={r.id} className={"ats-cons is-" + c.reviews[r.id]}>{r.initials}: {c.reviews[r.id] === "yes" ? "Ja" : c.reviews[r.id] === "no" ? "Nej" : "Osaker"}</span>)}</div>}</div>
+        <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><UserCheck size={12} /> Team review</div><div className="ats-verdicts">{[["yes", "Ja", ThumbsUp], ["maybe", "Osäker", HelpCircle], ["no", "Nej", ThumbsDown]].map(([v, label, Ic]) => <button key={v} disabled={!canVote} className={"ats-verdict is-" + v + (c.reviews[me.id] === v ? " is-on" : "")} onClick={() => D({ type: "REVIEW", id: c.id, verdict: v })}><Ic size={14} /> {label}</button>)}</div>{Object.keys(c.reviews).length > 0 && <div className="ats-cons-pills">{REVIEWERS.filter((r) => c.reviews[r.id]).map((r) => <span key={r.id} className={"ats-cons is-" + c.reviews[r.id]}>{r.initials}: {c.reviews[r.id] === "yes" ? "Ja" : c.reviews[r.id] === "no" ? "Nej" : "Osäker"}</span>)}</div>}</div>
 
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><Activity size={12} /> Timeline</div><div className="ats-tline">{(c.timeline || []).slice(0, 9).map((e) => <div key={e.id} className="ats-tline-row"><span className="ats-tline-dot" /><div className="ats-tline-main"><b>{TL_LABEL[e.kind] || e.kind}</b>{e.detail && <span> · {e.detail}</span>}</div><span className="ats-tline-time">{timeAgo(e.at)}</span></div>)}</div></div>
 
-        <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><Gauge size={12} /> Poangunderlag</div>{c.parts.filter((p) => p.kind === "scored").map((p) => <div key={p.id} className="ats-break-row"><div className="ats-break-main"><div className="ats-break-label"><span>{p.label}</span><span className="ats-break-detail">{p.detail}</span></div><div className="ats-break-bar"><div className="ats-break-bar-fill" style={{ width: Math.round(p.frac * 100) + "%" }} /></div></div><span className="ats-break-pts">+{Math.round(p.earned)}</span></div>)}</div>
+        <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><Gauge size={12} /> Poängunderlag</div>{c.parts.filter((p) => p.kind === "scored").map((p) => <div key={p.id} className="ats-break-row"><div className="ats-break-main"><div className="ats-break-label"><span>{p.label}</span><span className="ats-break-detail">{p.detail}</span></div><div className="ats-break-bar"><div className="ats-break-bar-fill" style={{ width: Math.round(p.frac * 100) + "%" }} /></div></div><span className="ats-break-pts">+{Math.round(p.earned)}</span></div>)}</div>
 
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><Star size={12} /> Betyg</div><Stars value={c.rating} readOnly={!canComment} onSet={(n) => D({ type: "RATE", id: c.id, rating: n })} /></div>
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><FileText size={12} /> Kommentarer</div>{c.comments.map((m) => { const a = REVIEWERS.find((r) => r.id === m.by); return <div key={m.id} className="ats-cmt"><span className="ats-avatar is-xs">{a?.initials || "?"}</span><div><b>{a?.name}</b> <small>{timeAgo(m.at)}</small><p>{m.text}</p></div></div>; })}{canComment && <CommentBox onAdd={(t) => D({ type: "COMMENT", id: c.id, text: t })} />}</div>
 
-        {canMsg && <div className="ats-drawer-msgs">{c.missing.length > 0 && <button className="ats-ghost" onClick={() => sendMsg("completion")}><Bell size={14} /> Begar komplettering</button>}<button className="ats-ghost" onClick={() => sendMsg("reminder")}><Mail size={14} /> Paminnelse</button><button className="ats-ghost" onClick={() => { toggleCompare(c.id); showToast({ kind: "ok", msg: compareIds.includes(c.id) ? "Borttagen fran jamforelse" : "Tillagd i jamforelse" }); }}><GitCompare size={14} /> {compareIds.includes(c.id) ? "I jamforelse" : "Jamfor"}</button></div>}
+        {canMsg && <div className="ats-drawer-msgs">{c.missing.length > 0 && <button className="ats-ghost" onClick={() => sendMsg("completion")}><Bell size={14} /> Begär komplettering</button>}<button className="ats-ghost" onClick={() => sendMsg("reminder")}><Mail size={14} /> Paminnelse</button><button className="ats-ghost" onClick={() => { toggleCompare(c.id); showToast({ kind: "ok", msg: compareIds.includes(c.id) ? "Borttagen från jämförelse" : "Tillagd i jämförelse" }); }}><GitCompare size={14} /> {compareIds.includes(c.id) ? "I jämförelse" : "Jämför"}</button></div>}
       </div>
       <div className="ats-drawer-foot">
         <button className="ats-ghost is-sm" onClick={() => setPrintDoc({ title: "Scorecard", node: <ScorecardDoc job={job} c={c} org={state.org} /> })}><FileText size={14} /> PDF</button>
         {canDecide && <div className="ats-drawer-decide">
-          <Menu align="right" trigger={<button className="ats-dq-rej" title="Avsla"><X size={15} /></button>}><div className="ats-menu-label">Avslagsanledning</div>{REASONS.map((r) => <button key={r} className="ats-menu-item" onClick={() => decide("reject", r)}>{r}</button>)}</Menu>
+          <Menu align="right" trigger={<button className="ats-dq-rej" title="Avslå"><X size={15} /></button>}><div className="ats-menu-label">Avslagsanledning</div>{REASONS.map((r) => <button key={r} className="ats-menu-item" onClick={() => decide("reject", r)}>{r}</button>)}</Menu>
           <button className="ats-dq-res" title="Reservlista" onClick={() => decide("reserve")}><PauseCircle size={15} /></button>
           <button className="ats-dq-int" title="Intervju" onClick={() => decide("interview")}><CalendarCheck size={15} /></button>
           <button className="ats-dq-yes" title="Shortlist" onClick={() => decide("shortlist")}><Check size={15} /></button>
-          <button className="ats-dq-hire" title="Anstall" onClick={() => decide("hired")}><BadgeCheck size={15} /> Anstall</button>
+          <button className="ats-dq-hire" title="Anställ" onClick={() => decide("hired")}><BadgeCheck size={15} /> Anställ</button>
         </div>}
       </div>
     </div></div>
@@ -682,15 +682,15 @@ function CompareModal({ cands, compareIds, toggleCompare, onClose, job }) {
   const rows = [
     { label: "Matchning", get: (c) => <b className={"is-" + tierOf(c)}>{c.total}%</b> },
     { label: "Status", get: (c) => statusLabel(c.status) },
-    { label: "Erfarenhet", get: (c) => (c.answers.experience ?? "—") + " ar" },
-    { label: "Kan borja", get: (c) => c.answers.availability || "—" },
-    { label: "Loneansprak", get: (c) => c.answers.salary ? sek(c.answers.salary) + " kr" : "—" },
+    { label: "Erfarenhet", get: (c) => (c.answers.experience ?? "—") + " år" },
+    { label: "Kan börja", get: (c) => c.answers.availability || "—" },
+    { label: "Löneanspråk", get: (c) => c.answers.salary ? sek(c.answers.salary) + " kr" : "—" },
     { label: "Krav uppfyllda", get: (c) => c.knockout ? <span className="ats-x">Nej</span> : <span className="ats-ok">Ja</span> },
     { label: "Saknar", get: (c) => c.knockout ? c.knockoutReasons.join(", ") : (c.missing.length ? c.missing.join(", ") : "—") },
     { label: "Taggar", get: (c) => c.tags?.join(", ") || "—" },
     { label: "Team", get: (c) => { const v = Object.values(c.reviews || {}); return v.length ? `${v.filter((x) => x === "yes").length} ja / ${v.filter((x) => x === "no").length} nej` : "—"; } },
   ];
-  return <Modal title={`Jamfor ${list.length} kandidater`} onClose={onClose} wide>
+  return <Modal title={`Jämför ${list.length} kandidater`} onClose={onClose} wide>
     <div className="ats-cmp-modal"><div className="ats-cmp-grid" style={{ gridTemplateColumns: `140px repeat(${list.length},1fr)` }}>
       <div className="ats-cmp-corner" />{list.map((c) => <div key={c.id} className="ats-cmp-head"><div className="ats-avatar is-sm">{initials(c.name)}</div><b>{c.name.split(" ")[0]}</b><button onClick={() => toggleCompare(c.id)}><X size={13} /></button></div>)}
       {rows.map((r) => <Fragment key={r.label}><div className="ats-cmp-rl">{r.label}</div>{list.map((c) => <div key={c.id + r.label} className="ats-cmp-cell">{r.get(c)}</div>)}</Fragment>)}
@@ -700,58 +700,79 @@ function CompareModal({ cands, compareIds, toggleCompare, onClose, job }) {
 
 /* ===================== FORMULAR ===================== */
 function buildField(block) {
-  const base = { id: block + "_" + uid(), scored: false, display: true, required: false, knockout: false, koValue: false, showIf: null, step: 3 };
+  const base = { id: block + "_" + uid(), scored: false, display: true, required: false, knockout: false, koValue: false, showIf: null, step: 3, help: "", placeholder: "" };
   switch (block) {
-    case "experience": return { ...base, label: "Ars erfarenhet", block, type: "number", icon: "Briefcase", scored: true, weight: 15, ideal: 4, unit: "ar", step: 2 };
+    case "experience": return { ...base, label: "Års erfarenhet", block, type: "number", icon: "Briefcase", scored: true, weight: 15, ideal: 4, unit: "år", step: 2 };
     case "skills": return { ...base, label: "Kompetenser", block, type: "multiselect", icon: "Zap", scored: true, weight: 20, options: [{ value: "Kompetens 1", must: false }, { value: "Kompetens 2", must: false }, { value: "Kompetens 3", must: false }] };
-    case "availability": return { ...base, label: "Kan borja", block, type: "ordinal", icon: "Clock", scored: true, weight: 12, direction: "desc", scale: ["Omgaende", "Inom 1 manad", "1-3 manader", "Mer an 3 manader"], step: 4 };
-    case "salary": return { ...base, label: "Loneansprak", block, type: "budget", icon: "Wallet", scored: true, weight: 12, budget: 40000, unit: "kr/man", step: 4 };
-    case "cert": return { ...base, label: "Certifikat / behorighet", block, type: "boolean", icon: "ShieldCheck", knockout: true, required: true, step: 3 };
-    case "yesno": return { ...base, label: "Ja/nej-fraga", block, type: "boolean", icon: "ListChecks", step: 3 };
-    case "choice": return { ...base, label: "Flervalsfraga", block, type: "select", icon: "ListChecks", scored: true, weight: 8, options: ["Alternativ 1", "Alternativ 2", "Alternativ 3"], step: 3 };
-    case "text": return { ...base, label: "Fritext", block, type: "text", icon: "FileText", step: 5, placeholder: "Skriv har…" };
+    case "availability": return { ...base, label: "Kan börja", block, type: "ordinal", icon: "Clock", scored: true, weight: 12, direction: "desc", scale: ["Omgående", "Inom 1 månad", "1-3 månader", "Mer än 3 månader"], step: 4 };
+    case "salary": return { ...base, label: "Löneanspråk", block, type: "budget", icon: "Wallet", scored: true, weight: 12, budget: 40000, unit: "kr/mån", step: 4 };
+    case "cert": return { ...base, label: "Certifikat / behörighet", block, type: "boolean", icon: "ShieldCheck", knockout: true, required: true, step: 3 };
+    case "yesno": return { ...base, label: "Ja/nej-fråga", block, type: "boolean", icon: "ListChecks", step: 3 };
+    case "choice": return { ...base, label: "Flervalsfråga", block, type: "select", icon: "ListChecks", scored: true, weight: 8, options: ["Alternativ 1", "Alternativ 2", "Alternativ 3"], step: 3 };
+    case "rating": return { ...base, label: "Skattning (1-5)", block, type: "ordinal", icon: "Star", scored: true, weight: 8, direction: "asc", scale: ["1", "2", "3", "4", "5"], step: 3 };
+    case "date": return { ...base, label: "Datum", block, type: "date", icon: "CalendarClock", step: 4 };
+    case "phone": return { ...base, label: "Telefon (extra)", block, type: "phone", icon: "Phone", step: 2 };
+    case "url": return { ...base, label: "Länk (portfölj m.m.)", block, type: "url", icon: "Link2", step: 5, placeholder: "https://" };
+    case "text": return { ...base, label: "Fritext", block, type: "text", icon: "FileText", step: 5, placeholder: "Skriv här…" };
     case "file": return { ...base, label: "Bilaga", block, type: "file", icon: "Upload", display: false, step: 5 };
-    default: return { ...base, label: "Falt", block: "text", type: "text", icon: "FileText" };
+    default: return { ...base, label: "Fält", block: "text", type: "text", icon: "FileText" };
   }
 }
-const ADDABLE = [["experience", "Erfarenhet"], ["skills", "Kompetenser"], ["availability", "Tillganglighet"], ["salary", "Lon"], ["cert", "Certifikat (knockout)"], ["yesno", "Ja/nej"], ["choice", "Flerval"], ["text", "Fritext"], ["file", "Bilaga"]];
+const ADDABLE = [["experience", "Erfarenhet"], ["skills", "Kompetenser"], ["availability", "Tillgänglighet"], ["salary", "Lön"], ["cert", "Certifikat (knockout)"], ["yesno", "Ja/nej"], ["choice", "Flerval"], ["rating", "Skattning 1-5"], ["date", "Datum"], ["phone", "Telefon"], ["url", "Länk"], ["text", "Fritext"], ["file", "Bilaga"]];
 const STEP_LABEL = { 2: "Bakgrund", 3: "Kompetens & krav", 4: "Praktiskt", 5: "Om dig" };
 
+function optLabel(o){ return typeof o === "string" ? o : o.value; }
 function FieldSettings({ c, job, D }) {
   const [adv, setAdv] = useState(false);
-  const set = (patch) => D({ type: "SET_FIELD_FLAG", critId: c.id, patch });
+  const setC = (patch) => D({ type: "SET_CRIT", critId: c.id, patch });
+  const setF = (patch) => D({ type: "SET_FIELD_FLAG", critId: c.id, patch });
   const condCandidates = job.criteria.filter((x) => x.id !== c.id && (x.type === "boolean" || x.type === "select"));
+  const hasOptions = c.type === "multiselect" || c.type === "select" || c.type === "ordinal";
+  const optArr = c.type === "ordinal" ? (c.scale || []) : (c.options || []);
+  const writeOpts = (arr) => { if (c.type === "ordinal") setC({ scale: arr }); else setC({ options: arr }); };
+  const renameOpt = (i, val) => writeOpts(optArr.map((o, k) => k === i ? (c.type === "multiselect" ? { ...o, value: val } : val) : o));
+  const removeOpt = (i) => writeOpts(optArr.filter((_, k) => k !== i));
+  const addOpt = () => writeOpts([...optArr, c.type === "multiselect" ? { value: "Nytt alternativ", must: false } : "Nytt alternativ"]);
+  const toggleMust = (i) => writeOpts(optArr.map((o, k) => k === i ? { ...o, must: !o.must } : o));
+  const duplicate = () => { const clone = { ...JSON.parse(JSON.stringify(c)), id: c.block + "_" + uid(), label: c.label + " (kopia)" }; D({ type: "ADD_FIELD", field: clone }); };
   return (
     <div className="ats-fset">
-      <label className="ats-fset-row"><span>Etikett</span><input value={c.label} onChange={(e) => set({ label: e.target.value })} /></label>
+      <label className="ats-fset-row"><span>Etikett</span><input value={c.label} onChange={(e) => setC({ label: e.target.value })} /></label>
+      <label className="ats-fset-row"><span>Hjälptext (visas för kandidaten)</span><input value={c.help || ""} onChange={(e) => setC({ help: e.target.value })} placeholder="t.ex. Ange antal hela år" /></label>
       <div className="ats-fset-toggles">
-        {c.type !== "text" && c.type !== "file" && <button className={"ats-toggle" + (c.scored ? " is-on" : "")} onClick={() => set({ scored: !c.scored })}><Gauge size={12} /> Paverkar poang</button>}
-        <button className={"ats-toggle" + (c.required ? " is-on" : "")} onClick={() => set({ required: !c.required })}><CircleAlert size={12} /> Obligatorisk</button>
-        {c.type === "boolean" && <button className={"ats-toggle is-ko" + (c.knockout ? " is-on" : "")} onClick={() => set({ knockout: !c.knockout })}><ShieldAlert size={12} /> Knockout</button>}
+        {c.type !== "text" && c.type !== "file" && c.type !== "date" && c.type !== "phone" && c.type !== "url" && <button className={"ats-toggle" + (c.scored ? " is-on" : "")} onClick={() => setF({ scored: !c.scored })}><Gauge size={12} /> Påverkar poäng</button>}
+        <button className={"ats-toggle" + (c.required ? " is-on" : "")} onClick={() => setF({ required: !c.required })}><CircleAlert size={12} /> Obligatorisk</button>
+        {c.type === "boolean" && <button className={"ats-toggle is-ko" + (c.knockout ? " is-on" : "")} onClick={() => setF({ knockout: !c.knockout })}><ShieldAlert size={12} /> Knockout</button>}
       </div>
       {c.scored && c.type !== "text" && c.type !== "file" && <label className="ats-fset-row"><span>Vikt {weightOf(job, c)}</span><input type="range" min="0" max="40" value={weightOf(job, c)} onChange={(e) => D({ type: "SET_WEIGHT", critId: c.id, weight: Number(e.target.value) })} /></label>}
-      {c.type === "number" && <label className="ats-fset-row"><span>Malvarde</span><input type="number" value={c.ideal} onChange={(e) => set({ ideal: Number(e.target.value) })} /></label>}
-      {c.type === "budget" && <label className="ats-fset-row"><span>Lonetak</span><input type="number" value={c.budget} onChange={(e) => set({ budget: Number(e.target.value) })} /></label>}
+      {c.type === "number" && <label className="ats-fset-row"><span>Målvärde</span><input type="number" value={c.ideal} onChange={(e) => setC({ ideal: Number(e.target.value) })} /></label>}
+      {c.type === "budget" && <label className="ats-fset-row"><span>Lönetak</span><input type="number" value={c.budget} onChange={(e) => setC({ budget: Number(e.target.value) })} /></label>}
+      {hasOptions && <div className="ats-optedit"><div className="ats-optedit-h"><ListChecks size={12} /> Alternativ</div>{optArr.map((o, i) => <div key={i} className="ats-optrow"><input value={optLabel(o)} onChange={(e) => renameOpt(i, e.target.value)} />{c.type === "multiselect" && <button className={"ats-optmust" + (o.must ? " is-on" : "")} onClick={() => toggleMust(i)} title="Obligatoriskt (knockout)"><ShieldAlert size={12} /></button>}<button className="ats-optdel" onClick={() => removeOpt(i)}><X size={13} /></button></div>)}<button className="ats-ghost is-sm" onClick={addOpt}><Plus size={12} /> Lägg till alternativ</button></div>}
+      <div className="ats-fset-actions"><button className="ats-ghost is-sm" onClick={duplicate}><Copy size={12} /> Duplicera fält</button></div>
       <button className="ats-advtoggle" onClick={() => setAdv((v) => !v)}>{adv ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Avancerat</button>
       {adv && <div className="ats-adv">
-        <button className={"ats-toggle" + (c.display ? " is-on" : "")} onClick={() => set({ display: !c.display })}><Eye size={12} /> Syns pa kandidatkort</button>
-        {c.type === "boolean" && c.knockout && <label className="ats-fset-row"><span>Diskvalificera om svar</span><select value={String(c.koValue)} onChange={(e) => set({ koValue: e.target.value === "true" })}><option value="false">Nej</option><option value="true">Ja</option></select></label>}
+        <label className="ats-fset-row"><span>Steg i formuläret</span><select value={c.step} onChange={(e) => setF({ step: Number(e.target.value) })}>{[2, 3, 4, 5].map((s) => <option key={s} value={s}>{STEP_LABEL[s] || ("Steg " + s)}</option>)}</select></label>
+        <button className={"ats-toggle" + (c.display ? " is-on" : "")} onClick={() => setF({ display: !c.display })}><Eye size={12} /> Syns på kandidatkort</button>
+        {c.type === "boolean" && c.knockout && <label className="ats-fset-row"><span>Diskvalificera om svar</span><select value={String(c.koValue)} onChange={(e) => setF({ koValue: e.target.value === "true" })}><option value="false">Nej</option><option value="true">Ja</option></select></label>}
         <div className="ats-fset-cond"><div className="ats-fset-cond-h"><Workflow size={12} /> Visa endast om (villkor)</div>
-          {c.showIf ? <div className="ats-fset-condrow"><span>{job.criteria.find((x) => x.id === c.showIf.field)?.label || c.showIf.field} = <b>{String(c.showIf.equals)}</b></span><button onClick={() => set({ showIf: null })}><X size={12} /></button></div>
-            : condCandidates.length > 0 ? <div className="ats-fset-condadd"><select id={"cond-" + c.id} className="ats-select is-sm" defaultValue=""><option value="" disabled>Valj falt…</option>{condCandidates.map((x) => x.type === "boolean" ? [<option key={x.id + "t"} value={x.id + "::true"}>{x.label} = Ja</option>, <option key={x.id + "f"} value={x.id + "::false"}>{x.label} = Nej</option>] : (x.options || []).map((o) => { const val = typeof o === "string" ? o : o.value; return <option key={x.id + val} value={x.id + "::" + val}>{x.label} = {val}</option>; }))}</select><button className="ats-ghost is-sm" onClick={() => { const el = document.getElementById("cond-" + c.id); if (!el || !el.value) return; const [field, raw] = el.value.split("::"); const equals = raw === "true" ? true : raw === "false" ? false : raw; set({ showIf: { field, equals } }); }}><Plus size={12} /></button></div>
-              : <span className="ats-muted" style={{ fontSize: 12 }}>Lagg till ett ja/nej- eller flervalsfalt forst.</span>}
+          {c.showIf ? <div className="ats-fset-condrow"><span>{job.criteria.find((x) => x.id === c.showIf.field)?.label || c.showIf.field} = <b>{String(c.showIf.equals)}</b></span><button onClick={() => setF({ showIf: null })}><X size={12} /></button></div>
+            : condCandidates.length > 0 ? <div className="ats-fset-condadd"><select id={"cond-" + c.id} className="ats-select is-sm" defaultValue=""><option value="" disabled>Välj fält…</option>{condCandidates.map((x) => x.type === "boolean" ? [<option key={x.id + "t"} value={x.id + "::true"}>{x.label} = Ja</option>, <option key={x.id + "f"} value={x.id + "::false"}>{x.label} = Nej</option>] : (x.options || []).map((o) => { const val = typeof o === "string" ? o : o.value; return <option key={x.id + val} value={x.id + "::" + val}>{x.label} = {val}</option>; }))}</select><button className="ats-ghost is-sm" onClick={() => { const el = document.getElementById("cond-" + c.id); if (!el || !el.value) return; const [field, raw] = el.value.split("::"); const equals = raw === "true" ? true : raw === "false" ? false : raw; setF({ showIf: { field, equals } }); }}><Plus size={12} /></button></div>
+              : <span className="ats-muted" style={{ fontSize: 12 }}>Lägg till ett ja/nej- eller flervalsfält först.</span>}
         </div>
       </div>}
     </div>
   );
 }
 function FieldInput({ c, value, onChange }) {
-  if (c.type === "number" || c.type === "budget") return <input type="number" className="ats-inp" value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))} placeholder={c.type === "budget" ? "kr/man" : c.unit} />;
+  if (c.type === "number" || c.type === "budget") return <input type="number" className="ats-inp" value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))} placeholder={c.placeholder || (c.type === "budget" ? "kr/mån" : c.unit)} />;
+  if (c.type === "date") return <input type="date" className="ats-inp" value={value ?? ""} onChange={(e) => onChange(e.target.value)} />;
+  if (c.type === "phone") return <input type="tel" className="ats-inp" value={value ?? ""} onChange={(e) => onChange(e.target.value)} placeholder={c.placeholder || "070-…"} />;
+  if (c.type === "url") return <input type="url" className="ats-inp" value={value ?? ""} onChange={(e) => onChange(e.target.value)} placeholder={c.placeholder || "https://"} />;
   if (c.type === "text") return <textarea className="ats-inp" rows={3} value={value ?? ""} onChange={(e) => onChange(e.target.value)} placeholder={c.placeholder} />;
-  if (c.type === "file") return <label className="ats-fileinp"><Upload size={14} /> {value ? value : "Valj fil…"}<input type="file" style={{ display: "none" }} onChange={(e) => onChange(e.target.files?.[0]?.name || "")} /></label>;
+  if (c.type === "file") return <label className="ats-fileinp"><Upload size={14} /> {value ? value : "Välj fil…"}<input type="file" style={{ display: "none" }} onChange={(e) => onChange(e.target.files?.[0]?.name || "")} /></label>;
   if (c.type === "boolean") return <div className="ats-yn"><button className={value === true ? "is-on" : ""} onClick={() => onChange(true)}>Ja</button><button className={value === false ? "is-on" : ""} onClick={() => onChange(false)}>Nej</button></div>;
-  if (c.type === "multiselect") { const sel = Array.isArray(value) ? value : []; return <div className="ats-chipset">{c.options.map((o) => { const v = o.value; const on = sel.includes(v); return <button key={v} className={"ats-selchip" + (on ? " is-on" : "") + (o.must ? " is-must" : "")} onClick={() => onChange(on ? sel.filter((x) => x !== v) : [...sel, v])}>{on && <Check size={12} />}{v}{o.must && <span className="ats-mustdot">krav</span>}</button>; })}</div>; }
-  const opts = c.type === "ordinal" ? c.scale : c.options; return <div className="ats-chipset">{opts.map((o) => <button key={o} className={"ats-selchip" + (value === o ? " is-on" : "")} onClick={() => onChange(o)}>{value === o && <Check size={12} />}{o}</button>)}</div>;
+  if (c.type === "multiselect") { const sel = Array.isArray(value) ? value : []; return <div className="ats-chipset">{(c.options||[]).map((o) => { const v = o.value; const on = sel.includes(v); return <button key={v} className={"ats-selchip" + (on ? " is-on" : "") + (o.must ? " is-must" : "")} onClick={() => onChange(on ? sel.filter((x) => x !== v) : [...sel, v])}>{on && <Check size={12} />}{v}{o.must && <span className="ats-mustdot">krav</span>}</button>; })}</div>; }
+  const opts = c.type === "ordinal" ? c.scale : c.options; return <div className="ats-chipset">{(opts||[]).map((o) => <button key={o} className={"ats-selchip" + (value === o ? " is-on" : "")} onClick={() => onChange(o)}>{value === o && <Check size={12} />}{o}</button>)}</div>;
 }
 
 function ApplyForm({ job, D, org, showToast }) {
@@ -759,16 +780,16 @@ function ApplyForm({ job, D, org, showToast }) {
   const set = (id, v) => setAnswers((a) => ({ ...a, [id]: v }));
   const visible = job.criteria.filter((c) => isVisible(c, answers));
   const stepNums = Array.from(new Set(visible.map((c) => c.step))).sort((a, b) => a - b);
-  const steps = [{ key: "base", label: "Grunduppgifter" }, ...stepNums.map((n) => ({ key: n, label: STEP_LABEL[n] || "Fragor" })), { key: "gdpr", label: "Skicka in" }];
+  const steps = [{ key: "base", label: "Grunduppgifter" }, ...stepNums.map((n) => ({ key: n, label: STEP_LABEL[n] || "Frågor" })), { key: "gdpr", label: "Skicka in" }];
   const cur = steps[step];
   const live = useMemo(() => scoreCandidate(job, answers), [job, answers]);
   const stepFields = typeof cur.key === "number" ? visible.filter((c) => c.step === cur.key) : [];
   const nameOk = base.name.trim().length > 1; const emailOk = validEmail(base.email.trim());
   const canNext = cur.key === "base" ? (nameOk && emailOk) : cur.key === "gdpr" ? consent : stepFields.filter((c) => c.required).every((c) => { const v = answers[c.id]; return !(v == null || v === "" || (Array.isArray(v) && v.length === 0)); });
 
-  if (sent) return <div className="ats-applied"><div className="ats-empty-badge"><CheckCircle2 size={22} /></div><h3>Tack {base.name.split(" ")[0]}!</h3><p>Din ansokan till {job.title} ar mottagen. En bekraftelse har kolagts till {base.email}. Ansokan syns nu i kon med {live.total}% matchning.</p><button className="ats-ghost" onClick={() => { setSent(false); setAnswers({}); setBase({ name: "", email: "", phone: "" }); setConsent(false); setStep(0); setTouched(false); }}>Fyll i en till</button></div>;
+  if (sent) return <div className="ats-applied"><div className="ats-empty-badge"><CheckCircle2 size={22} /></div><h3>Tack {base.name.split(" ")[0]}!</h3><p>Din ansökan till {job.title} är mottagen. En bekräftelse har köats till {base.email}. Ansökan syns nu i kön med {live.total}% matchning.</p><button className="ats-ghost" onClick={() => { setSent(false); setAnswers({}); setBase({ name: "", email: "", phone: "" }); setConsent(false); setStep(0); setTouched(false); }}>Fyll i en till</button></div>;
 
-  const submit = () => { if (!nameOk || !emailOk || !consent) { setTouched(true); return; } D({ type: "APPLY", cand: { id: "c" + uid(), name: base.name.trim(), email: base.email.trim(), phone: base.phone.trim() || null, source: "Forhandsvisning", answers, rating: 0, comments: [], reviews: {}, status: "new", starred: false, appliedAt: Date.now(), reason: null, formVersion: job.version } }); setSent(true); showToast && showToast({ kind: "ok", msg: "Ansokan inskickad · bekraftelsemejl kolagt" }); };
+  const submit = () => { if (!nameOk || !emailOk || !consent) { setTouched(true); return; } D({ type: "APPLY", cand: { id: "c" + uid(), name: base.name.trim(), email: base.email.trim(), phone: base.phone.trim() || null, source: "Förhandsvisning", answers, rating: 0, comments: [], reviews: {}, status: "new", starred: false, appliedAt: Date.now(), reason: null, formVersion: job.version } }); setSent(true); showToast && showToast({ kind: "ok", msg: "Ansökan inskickad · bekräftelsemejl köat" }); };
 
   return (
     <div className="ats-apply">
@@ -777,13 +798,13 @@ function ApplyForm({ job, D, org, showToast }) {
       <div className="ats-apply-body">
         {cur.key === "base" && <div className="ats-apply-fields">
           <label className="ats-apply-f"><span>Namn *</span><input className={"ats-inp" + (touched && !nameOk ? " is-err" : "")} value={base.name} onChange={(e) => setBase((b) => ({ ...b, name: e.target.value }))} onBlur={() => setTouched(true)} />{touched && !nameOk && <span className="ats-err-txt">Ange ditt namn.</span>}</label>
-          <label className="ats-apply-f"><span>E-post *</span><input className={"ats-inp" + (touched && !emailOk ? " is-err" : "")} value={base.email} onChange={(e) => setBase((b) => ({ ...b, email: e.target.value }))} onBlur={() => setTouched(true)} placeholder="namn@mejl.se" />{touched && !emailOk && <span className="ats-err-txt">Ange en giltig e-postadress — den anvands for all kommunikation kring ansokan.</span>}</label>
+          <label className="ats-apply-f"><span>E-post *</span><input className={"ats-inp" + (touched && !emailOk ? " is-err" : "")} value={base.email} onChange={(e) => setBase((b) => ({ ...b, email: e.target.value }))} onBlur={() => setTouched(true)} placeholder="namn@mejl.se" />{touched && !emailOk && <span className="ats-err-txt">Ange en giltig e-postadress — den anvands för all kommunikation kring ansökan.</span>}</label>
           <label className="ats-apply-f"><span>Telefon</span><input className="ats-inp" value={base.phone} onChange={(e) => setBase((b) => ({ ...b, phone: e.target.value }))} placeholder="070-…" /></label>
         </div>}
-        {typeof cur.key === "number" && <div className="ats-apply-fields">{stepFields.map((c) => <div key={c.id} className="ats-apply-f"><span>{c.label} {c.required && "*"} {c.knockout && <span className="ats-reqko">krav</span>}</span><FieldInput c={c} value={answers[c.id]} onChange={(v) => set(c.id, v)} /></div>)}</div>}
-        {cur.key === "gdpr" && <div className="ats-apply-gdpr"><label className={"ats-gdpr-check" + (touched && !consent ? " is-err" : "")}><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /><span>Jag samtycker till att {org.companyName} sparar mina uppgifter och kontaktar mig via e-post om min ansokan. *</span></label>{touched && !consent && <span className="ats-err-txt">Samtycke kravs for att skicka in ansokan.</span>}<p className="ats-gdpr-text">Din e-postadress och dina svar sparas for att behandla ansokan och kontakta dig kring rekryteringen: bekraftelse, statusuppdateringar, kompletteringar, intervju och besked. Uppgifterna anvands enbart for detta syfte och delas inte for marknadsforing.</p></div>}
+        {typeof cur.key === "number" && <div className="ats-apply-fields">{stepFields.map((c) => <div key={c.id} className="ats-apply-f"><span>{c.label} {c.required && "*"} {c.knockout && <span className="ats-reqko">krav</span>}</span><FieldInput c={c} value={answers[c.id]} onChange={(v) => set(c.id, v)} />{c.help && <small className="ats-fieldhelp">{c.help}</small>}</div>)}</div>}
+        {cur.key === "gdpr" && <div className="ats-apply-gdpr"><label className={"ats-gdpr-check" + (touched && !consent ? " is-err" : "")}><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /><span>Jag samtycker till att {org.companyName} sparar mina uppgifter och kontaktar mig via e-post om min ansökan. *</span></label>{touched && !consent && <span className="ats-err-txt">Samtycke kravs för att skicka in ansökan.</span>}<p className="ats-gdpr-text">Din e-postadress och dina svar sparas för att behandla ansökan och kontakta dig kring rekryteringen: bekräftelse, statusuppdateringar, kompletteringar, intervju och besked. Uppgifterna anvands enbart för detta syfte och delas inte för marknadsforing.</p></div>}
       </div>
-      <div className="ats-apply-nav">{step > 0 ? <button className="ats-ghost" onClick={() => setStep((s) => s - 1)}><ChevronLeft size={15} /> Bakat</button> : <span />}{step < steps.length - 1 ? <button className={"ats-send" + (canNext ? "" : " is-off")} onClick={() => { setTouched(true); if (canNext) setStep((s) => s + 1); }}>Nasta <ArrowRight size={15} /></button> : <button className={"ats-send" + (canNext ? "" : " is-off")} onClick={submit}>Skicka ansokan <Send size={15} /></button>}</div>
+      <div className="ats-apply-nav">{step > 0 ? <button className="ats-ghost" onClick={() => setStep((s) => s - 1)}><ChevronLeft size={15} /> Bakat</button> : <span />}{step < steps.length - 1 ? <button className={"ats-send" + (canNext ? "" : " is-off")} onClick={() => { setTouched(true); if (canNext) setStep((s) => s + 1); }}>Nästa <ArrowRight size={15} /></button> : <button className={"ats-send" + (canNext ? "" : " is-off")} onClick={submit}>Skicka ansökan <Send size={15} /></button>}</div>
     </div>
   );
 }
@@ -794,24 +815,24 @@ function FormView({ job, D, me, state, showToast }) {
   const sel = job.criteria.find((c) => c.id === selId);
   const skills = job.criteria.find((c) => c.id === "skills");
   const scored = job.criteria.filter((c) => c.scored && c.type !== "text" && c.type !== "file");
-  const link = `${state.org.appUrl}/j/${job.slug}`; const embed = `<iframe src="${link}/inbaddad" width="100%" height="720" style="border:0" title="${job.title}"></iframe>`;
+  const link = `${state.org.appUrl}/j/${job.slug}`; const embed = `<iframe src="${link}/inbäddad" width="100%" height="720" style="border:0" title="${job.title}"></iframe>`;
   const [advScore, setAdvScore] = useState(false);
   const addDefaults = () => { D({ type: "ADD_AUTORULE", rule: { field: "total", op: ">=", value: 85, then: "shortlist" } }); D({ type: "ADD_AUTORULE", rule: { field: "total", op: "<", value: 45, then: "reject" } }); showToast({ kind: "ok", msg: "Smarta standardregler tillagda" }); };
 
   return (
     <div className="ats-view">
-      <PageHeader title="Formular" meta={<><JobSwitch state={state} D={D} /><Dot /><span>formular v{job.version}</span></>} right={<button className="ats-ghost is-accent" onClick={() => setTab("dela")}><Eye size={15} /> Forhandsvisa</button>} />
-      <div className="ats-subtabs">{[["bygg", "Formular", Blocks], ["scoring", "Scoring & krav", Gauge], ["auto", "Automation", Workflow], ["dela", "Dela & forhandsvisa", Link2]].map(([id, label, Ic]) => <button key={id} className={"ats-subtab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}><Ic size={14} /> {label}</button>)}</div>
+      <PageHeader title="Formulär" meta={<><JobSwitch state={state} D={D} /><Dot /><span>formulär v{job.version}</span></>} right={<button className="ats-ghost is-accent" onClick={() => setTab("dela")}><Eye size={15} /> Förhandsvisa</button>} />
+      <div className="ats-subtabs">{[["bygg", "Formulär", Blocks], ["scoring", "Scoring & krav", Gauge], ["auto", "Automation", Workflow], ["dela", "Dela & förhandsvisa", Link2]].map(([id, label, Ic]) => <button key={id} className={"ats-subtab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}><Ic size={14} /> {label}</button>)}</div>
 
       {tab === "bygg" && <div className="ats-grid-builder">
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Struktur</h2>{canEdit && <Menu align="right" trigger={<button className="ats-ghost is-sm"><Plus size={13} /> Lagg till block</button>}>{ADDABLE.map(([b, label]) => <button key={b} className="ats-menu-item" onClick={() => { const f = buildField(b); D({ type: "ADD_FIELD", field: f }); setSelId(f.id); }}><Blocks size={13} /> {label}</button>)}</Menu>}</div>
-          <p className="ats-builder-note"><Sparkles size={12} /> Formularet <b>ar</b> scoringmotorn. Scoring, knockout och kandidatkort skapas automatiskt fran falten.</p>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Struktur</h2>{canEdit && <Menu align="right" trigger={<button className="ats-ghost is-sm"><Plus size={13} /> Lägg till block</button>}>{ADDABLE.map(([b, label]) => <button key={b} className="ats-menu-item" onClick={() => { const f = buildField(b); D({ type: "ADD_FIELD", field: f }); setSelId(f.id); }}><Blocks size={13} /> {label}</button>)}</Menu>}</div>
+          <p className="ats-builder-note"><Sparkles size={12} /> Formuläret <b>är</b> scoringmotorn. Scoring, knockout och kandidatkort skapas automatiskt från fälten.</p>
           <div className="ats-blocklist">{job.criteria.map((c, i) => { const Ic = ICONS[c.icon] || FileText; return <button key={c.id} className={"ats-blockrow" + (selId === c.id ? " is-sel" : "")} onClick={() => setSelId(c.id)}>
             <span className="ats-blockrow-ic"><Ic size={15} /></span><div className="ats-blockrow-txt"><b>{c.label}</b><span className="ats-blockrow-meta">{TYPE_LABEL[c.type]}{c.scored ? ` · vikt ${weightOf(job, c)}` : " · info"}{c.knockout ? " · knockout" : ""}{c.showIf ? " · villkorad" : ""}</span></div>
             {canEdit && <span className="ats-blockrow-acts"><span onClick={(e) => { e.stopPropagation(); D({ type: "MOVE_FIELD", critId: c.id, dir: -1 }); }} className={i === 0 ? "is-off" : ""}><ArrowUp size={14} /></span><span onClick={(e) => { e.stopPropagation(); D({ type: "MOVE_FIELD", critId: c.id, dir: 1 }); }} className={i === job.criteria.length - 1 ? "is-off" : ""}><ArrowDown size={14} /></span><span className="is-danger" onClick={(e) => { e.stopPropagation(); D({ type: "REMOVE_FIELD", critId: c.id }); if (selId === c.id) setSelId(job.criteria[0]?.id); }}><Trash2 size={14} /></span></span>}
           </button>; })}</div>
         </div>
-        <div className="ats-panel"><div className="ats-panel-h"><h2>{sel ? "Faltinstallningar" : "Sammanfattning"}</h2></div>{sel && canEdit ? <FieldSettings c={sel} job={job} D={D} /> : <div className="ats-buildsum"><div><span>Falt</span><b>{job.criteria.length}</b></div><div><span>Poangsatta</span><b>{job.criteria.filter((c) => c.scored).length}</b></div><div><span>Knockout</span><b>{job.criteria.filter((c) => c.knockout).length}</b></div><div><span>Villkorade</span><b>{job.criteria.filter((c) => c.showIf).length}</b></div></div>}</div>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>{sel ? "Fältinställningar" : "Sammanfattning"}</h2></div>{sel && canEdit ? <FieldSettings c={sel} job={job} D={D} /> : <div className="ats-buildsum"><div><span>Fält</span><b>{job.criteria.length}</b></div><div><span>Poängsätta</span><b>{job.criteria.filter((c) => c.scored).length}</b></div><div><span>Knockout</span><b>{job.criteria.filter((c) => c.knockout).length}</b></div><div><span>Villkorade</span><b>{job.criteria.filter((c) => c.showIf).length}</b></div></div>}</div>
       </div>}
 
       {tab === "scoring" && <div className="ats-grid-2">
@@ -819,7 +840,7 @@ function FormView({ job, D, me, state, showToast }) {
           {scored.map((c) => { const w = weightOf(job, c); const Ic = ICONS[c.icon] || Award; return <div key={c.id} className="ats-wrow"><span className="ats-wrow-ic"><Ic size={14} /></span><div className="ats-wrow-main"><div className="ats-wrow-top"><span>{c.label}</span><b>{w}</b></div><input type="range" min="0" max="40" value={w} disabled={!canEdit} onChange={(e) => D({ type: "SET_WEIGHT", critId: c.id, weight: Number(e.target.value) })} className="ats-range" /></div></div>; })}
           {skills && <div className="ats-mustedit"><div className="ats-mustedit-h">Obligatoriska kompetenser (knockout)</div><div className="ats-chipset">{skills.options.map((o, i) => <button key={o.value} className={"ats-selchip" + (o.must ? " is-must is-on" : "")} disabled={!canEdit} onClick={() => D({ type: "TOGGLE_SKILL_MUST", idx: i })}>{o.must && <ShieldAlert size={11} />} {o.value}</button>)}</div></div>}
         </div>
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Krav & troskel</h2></div>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Krav & tröskel</h2></div>
           <div className="ats-thresh"><div className="ats-thresh-top"><span>Foreslå avslag under</span><b>{job.autoRejectBelow ?? 0}%</b></div><input type="range" min="0" max="90" value={job.autoRejectBelow ?? 0} disabled={!canEdit} onChange={(e) => D({ type: "SET_THRESHOLD", value: Number(e.target.value) })} className="ats-range" /></div>
           <button className="ats-advtoggle" style={{ marginTop: 14 }} onClick={() => setAdvScore((v) => !v)}>{advScore ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Avancerat: auto-taggar</button>
           {advScore && <div className="ats-adv"><div className="ats-rulelist">{job.rules.length === 0 && <div className="ats-col-empty">Inga taggregler.</div>}{job.rules.map((r) => <div key={r.id} className="ats-rulechip"><Tag size={11} /> {r.field === "total" ? "Matchning" : job.criteria.find((c) => c.id === r.field)?.label || r.field} {r.op} {r.value} → <b>{r.tag}</b>{canEdit && <button onClick={() => D({ type: "REMOVE_RULE", id: r.id })}><X size={11} /></button>}</div>)}</div>{canEdit && <RuleAdder criteria={job.criteria} onAdd={(rule) => D({ type: "ADD_RULE", rule })} />}</div>}
@@ -827,19 +848,19 @@ function FormView({ job, D, me, state, showToast }) {
       </div>}
 
       {tab === "auto" && <div className="ats-panel ats-autopanel"><div className="ats-panel-h"><h2>Automation</h2><button className={"ats-switch" + (job.autopilotOn ? " is-on" : "")} onClick={() => D({ type: "TOGGLE_AUTOPILOT" })}><span className="ats-switch-dot" /></button></div>
-        <p className="ats-builder-note"><Workflow size={12} /> Nar automation ar pa flyttas nya kandidater automatiskt enligt reglerna — och ratt mejl kolaggs. Allt kan overstyras manuellt och loggas i timeline.</p>
-        {job.autoRules.length === 0 ? <div className="ats-auto-empty"><p>Inga regler an.</p><button className="ats-ghost is-accent" onClick={addDefaults}><Sparkles size={14} /> Lagg till smarta standardregler</button></div>
+        <p className="ats-builder-note"><Workflow size={12} /> När automation är på flyttas nya kandidater automatiskt enligt reglerna — och rätt mejl köas. Allt kan överstyras manuellt och loggas i timeline.</p>
+        {job.autoRules.length === 0 ? <div className="ats-auto-empty"><p>Inga regler än.</p><button className="ats-ghost is-accent" onClick={addDefaults}><Sparkles size={14} /> Lägg till smarta standardregler</button></div>
           : <><div className="ats-arules">{job.autoRules.map((r) => <div key={r.id} className="ats-arule"><div className="ats-arule-txt"><b>{r.field === "total" ? "Matchning" : r.field} {r.op} {r.value}</b><ArrowRight size={13} /><span className={"ats-arule-then is-" + r.then}>{statusLabel(r.then)}</span></div>{canEdit && <button className="is-danger" onClick={() => D({ type: "REMOVE_AUTORULE", id: r.id })}><Trash2 size={13} /></button>}</div>)}</div>
             {canEdit && <div className="ats-arule-add"><AutoRuleAdder onAdd={(rule) => D({ type: "ADD_AUTORULE", rule })} /></div>}
-            <button className="ats-ghost is-accent" style={{ marginTop: 12 }} onClick={() => { D({ type: "RUN_AUTORULES" }); showToast({ kind: "ok", msg: "Automation kord · mejl kolagda" }); }}><Zap size={14} /> Kor pa befintlig ko nu</button></>}
+            <button className="ats-ghost is-accent" style={{ marginTop: 12 }} onClick={() => { D({ type: "RUN_AUTORULES" }); showToast({ kind: "ok", msg: "Automation körd · mejl köade" }); }}><Zap size={14} /> Kör på befintlig ko nu</button></>}
       </div>}
 
       {tab === "dela" && <div className="ats-grid-2">
         <div className="ats-preview-wrap"><ApplyForm job={job} D={D} org={state.org} showToast={showToast} /></div>
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Dela formularet</h2></div>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Dela formuläret</h2></div>
           <label className="ats-field"><span className="ats-field-l">Publik lank</span><div className="ats-copyrow"><input readOnly value={link} /><button onClick={() => { copyText(link); showToast({ kind: "ok", msg: "Lank kopierad" }); }}><Copy size={14} /></button></div></label>
-          <label className="ats-field"><span className="ats-field-l">Inbaddning</span><div className="ats-copyrow"><input readOnly value={embed} /><button onClick={() => { copyText(embed); showToast({ kind: "ok", msg: "Kod kopierad" }); }}><Code2 size={14} /></button></div></label>
-          <div className="ats-qrpanel"><QRCode text={link} size={150} /><p>Scanna for att oppna det publika formularet.</p></div>
+          <label className="ats-field"><span className="ats-field-l">Inbäddning</span><div className="ats-copyrow"><input readOnly value={embed} /><button onClick={() => { copyText(embed); showToast({ kind: "ok", msg: "Kod kopierad" }); }}><Code2 size={14} /></button></div></label>
+          <div className="ats-qrpanel"><QRCode text={link} size={150} /><p>Scanna för att öppna det publika formuläret.</p></div>
           <details className="ats-versions"><summary><History size={13} /> Versionshistorik (v{job.version})</summary><div className="ats-tline">{[...job.versions].reverse().map((v) => <div key={v.v} className="ats-tline-row"><span className="ats-tline-dot" /><div className="ats-tline-main"><b>v{v.v}</b> · {v.note} <span className="ats-muted">({v.by})</span></div><span className="ats-tline-time">{timeAgo(v.at)}</span></div>)}</div></details>
         </div>
       </div>}
@@ -863,22 +884,22 @@ function StatsView({ cands, job, state, D }) {
   const koFields = job.criteria.filter((c) => c.knockout && c.type === "boolean").map((c) => ({ label: c.label, n: cands.filter((cc) => isVisible(c, cc.answers) && !!cc.answers[c.id] === !!c.koValue).length }));
   const missCount = {}; cands.forEach((c) => c.missing.forEach((m) => { missCount[m] = (missCount[m] || 0) + 1; }));
   const missList = Object.entries(missCount).sort((a, b) => b[1] - a[1]);
-  const funnel = [["Paborjade", started, "neutral"], ["Skickade", submitted, "green"], ["Kvalificerade", cands.filter((c) => !c.knockout && c.total >= 55).length, "green"], ["Gick vidare", advanced, "amber"], ["Anstallda", cands.filter((c) => c.status === "hired").length, "gold"]];
+  const funnel = [["Pabörjade", started, "neutral"], ["Skickade", submitted, "green"], ["Kvalificerade", cands.filter((c) => !c.knockout && c.total >= 55).length, "green"], ["Gick vidare", advanced, "amber"], ["Anställda", cands.filter((c) => c.status === "hired").length, "gold"]];
   const fMax = Math.max(1, ...funnel.map((f) => f[1]));
   return (
     <div className="ats-view">
-      <PageHeader title="Statistik" meta={<><JobSwitch state={state} D={D} /><Dot /><span>kvalitet och kallor</span></>} />
-      <div className="ats-stats"><div className="ats-stat"><span className="ats-stat-ic is-green"><TrendingUp size={16} /></span><div><div className="ats-stat-v">{completion}%</div><div className="ats-stat-l">Completion rate</div></div></div><div className="ats-stat"><span className="ats-stat-ic is-petrol"><Check size={16} /></span><div><div className="ats-stat-v">{submitted}</div><div className="ats-stat-l">Skickade ansokningar</div></div></div><div className="ats-stat"><span className="ats-stat-ic is-brick"><ShieldAlert size={16} /></span><div><div className="ats-stat-v">{Math.round((ko / Math.max(1, cands.length)) * 100)}%</div><div className="ats-stat-l">Diskvalificerade</div></div></div><div className="ats-stat"><span className="ats-stat-ic is-amber"><Star size={16} /></span><div><div className="ats-stat-v">{advanced}</div><div className="ats-stat-l">Gick vidare</div></div></div></div>
+      <PageHeader title="Statistik" meta={<><JobSwitch state={state} D={D} /><Dot /><span>kvalitet och källor</span></>} />
+      <div className="ats-stats"><div className="ats-stat"><span className="ats-stat-ic is-green"><TrendingUp size={16} /></span><div><div className="ats-stat-v">{completion}%</div><div className="ats-stat-l">Completion rate</div></div></div><div className="ats-stat"><span className="ats-stat-ic is-petrol"><Check size={16} /></span><div><div className="ats-stat-v">{submitted}</div><div className="ats-stat-l">Skickade ansökningar</div></div></div><div className="ats-stat"><span className="ats-stat-ic is-brick"><ShieldAlert size={16} /></span><div><div className="ats-stat-v">{Math.round((ko / Math.max(1, cands.length)) * 100)}%</div><div className="ats-stat-l">Diskvalificerade</div></div></div><div className="ats-stat"><span className="ats-stat-ic is-amber"><Star size={16} /></span><div><div className="ats-stat-v">{advanced}</div><div className="ats-stat-l">Gick vidare</div></div></div></div>
       <div className="ats-grid-2">
         <div className="ats-panel"><div className="ats-panel-h"><h2>Rekryteringsfunnel</h2></div><div className="ats-funnel">{funnel.map(([label, n, tone]) => <div key={label} className="ats-funnel-row"><span className="ats-funnel-l">{label}</span><div className="ats-funnel-bar"><div className={"ats-funnel-fill is-" + tone} style={{ width: Math.max(4, (n / fMax) * 100) + "%" }}>{n}</div></div></div>)}</div></div>
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Poangfordelning</h2></div><div className="ats-hist">{hist.map((h) => <div key={h.label} className="ats-hist-col"><div className="ats-hist-bar" style={{ height: Math.max(4, (h.n / histMax) * 130) + "px" }}><span>{h.n}</span></div><span className="ats-hist-x">{h.label}</span></div>)}</div></div>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Poängfördelning</h2></div><div className="ats-hist">{hist.map((h) => <div key={h.label} className="ats-hist-col"><div className="ats-hist-bar" style={{ height: Math.max(4, (h.n / histMax) * 130) + "px" }}><span>{h.n}</span></div><span className="ats-hist-x">{h.label}</span></div>)}</div></div>
       </div>
       <div className="ats-grid-2">
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Frageprestanda</h2></div><p className="ats-builder-note" style={{ marginTop: 0 }}><ListChecks size={12} /> Hur ofta varje krav sallar bort kandidater, och vilka uppgifter som oftast saknas.</p>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Frågeprestanda</h2></div><p className="ats-builder-note" style={{ marginTop: 0 }}><ListChecks size={12} /> Hur ofta varje krav sållar bort kandidater, och vilka uppgifter som oftast saknas.</p>
           <div className="ats-qperf">{koFields.filter((k) => k.n > 0).map((k) => <div key={k.label} className="ats-qperf-row"><span className="ats-qperf-l"><ShieldAlert size={12} /> {k.label}</span><span className="ats-qperf-n">{k.n} diskvalificerade</span></div>)}
-            {missList.map(([m, n]) => <div key={m} className="ats-qperf-row"><span className="ats-qperf-l"><CircleAlert size={12} /> Saknar {m}</span><span className="ats-qperf-n">{n} ansokningar</span></div>)}
+            {missList.map(([m, n]) => <div key={m} className="ats-qperf-row"><span className="ats-qperf-l"><CircleAlert size={12} /> Saknar {m}</span><span className="ats-qperf-n">{n} ansökningar</span></div>)}
             {koFields.every((k) => k.n === 0) && missList.length === 0 && <div className="ats-col-empty">Inga bortfall registrerade.</div>}</div></div>
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Kallanalys</h2></div><div className="ats-srclist">{sources.map((s) => <div key={s.s} className="ats-src-row"><span className="ats-src-l">{s.s}</span><div className="ats-src-bar"><div style={{ width: (s.n / srcMax) * 100 + "%" }} /></div><span className="ats-src-n">{s.n} · snitt {s.avg}%</span></div>)}</div></div>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Källanalys</h2></div><div className="ats-srclist">{sources.map((s) => <div key={s.s} className="ats-src-row"><span className="ats-src-l">{s.s}</span><div className="ats-src-bar"><div style={{ width: (s.n / srcMax) * 100 + "%" }} /></div><span className="ats-src-n">{s.n} · snitt {s.avg}%</span></div>)}</div></div>
       </div>
     </div>
   );
@@ -891,22 +912,22 @@ function TeamView({ state, me }) {
   const cName = (id) => state.candidates.find((c) => c.id === id)?.name || "—";
   return (
     <div className="ats-view">
-      <PageHeader title="Team & logg" meta={<><span>{REVIEWERS.length} personer</span><Dot /><span>{state.log.length} handelser</span></>} />
+      <PageHeader title="Team & logg" meta={<><span>{REVIEWERS.length} personer</span><Dot /><span>{state.log.length} händelser</span></>} />
       <div className="ats-grid-2">
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Team & behorigheter</h2></div>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Team & behörigheter</h2></div>
           <div className="ats-permtable"><div className="ats-permrow ats-permhead"><span>Person</span>{perms.map((p) => <span key={p[0]}>{p[1]}</span>)}</div>
             {REVIEWERS.map((r) => <div key={r.id} className={"ats-permrow" + (r.id === me.id ? " is-me" : "")}><span className="ats-permname"><span className="ats-avatar is-xs">{r.initials}</span><span>{r.name}<small>{ROLE_LABEL[r.role]}</small></span></span>{perms.map((p) => <span key={p[0]}>{can(r.role, p[0]) ? <Check size={14} className="ats-permyes" /> : <X size={13} className="ats-permno" />}</span>)}</div>)}
           </div>
-          <p className="ats-builder-note"><ShieldCheck size={12} /> Team review, beslut i kon och per-kandidat-timeline gor processen sparbar och ratssaker.</p>
+          <p className="ats-builder-note"><ShieldCheck size={12} /> Team review, beslut i kön och per-kandidat-timeline gor processen sparbar och rättssäker.</p>
         </div>
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Revisionslogg</h2><span className="ats-summono">senaste handelser</span></div>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Revisionslogg</h2><span className="ats-summono">senaste händelser</span></div>
           <div className="ats-log">{state.log.map((l) => <div key={l.id} className="ats-log-row"><span className="ats-log-dot" /><div className="ats-log-main"><b>{l.action}</b>{l.detail && <span> · {l.detail}</span>}<div className="ats-log-meta">{l.who} · {timeAgo(l.at)}</div></div></div>)}</div>
         </div>
       </div>
       <div className="ats-panel"><div className="ats-panel-h"><h2>Mejllogg</h2><span className="ats-summono">{state.messages.length} meddelanden</span></div>
-        <div className="ats-honestbar"><Info size={13} /> Varje mejl loggas har och i kandidatens timeline med sann status. Status <b>Koad</b> betyder att mejlet ar berett for utskick via appens backend (SMTP-modulen) — konfigurera SMTP under Installningar. Ingen status visar "levererad" forran backend bekraftar leverans.</div>
-        {msgs.length === 0 ? <div className="ats-col-empty" style={{ padding: 20 }}>Inga mejl loggade an. Swipa i kon sa kolaggs ratt mejl automatiskt.</div>
-          : <div className="ats-msglog"><div className="ats-msglog-head"><span>Status</span><span>Mottagare</span><span>Amne</span><span>Mall / trigger</span><span>Tid</span></div>{msgs.map((m) => <div key={m.id} className="ats-msglog-row"><span className={"ats-msgstatus is-" + m.status}>{m.status === "queued" ? "Koad" : "Fel"}</span><span className="ats-msglog-to">{cName(m.candidateId)}<small>{m.to}</small></span><span className="ats-msglog-subj">{m.subject}{m.error && <small className="ats-msgerr">{m.error}</small>}</span><span className="ats-msglog-tpl">{m.tplName}<small>{m.trigger}</small></span><span className="ats-msglog-time">{timeAgo(m.at)}</span></div>)}</div>}
+        <div className="ats-honestbar"><Info size={13} /> Varje mejl loggas här och i kandidatens timeline med sann status. Status <b>Köad</b> betyder att mejlet är berett för utskick via appens backend (SMTP-modulen) — konfigurera SMTP under Inställningar. Ingen status visar "levererad" forran backend bekraftar leverans.</div>
+        {msgs.length === 0 ? <div className="ats-col-empty" style={{ padding: 20 }}>Inga mejl loggade än. Swipa i kön så köas rätt mejl automatiskt.</div>
+          : <div className="ats-msglog"><div className="ats-msglog-head"><span>Status</span><span>Mottagare</span><span>Ämne</span><span>Mall / trigger</span><span>Tid</span></div>{msgs.map((m) => <div key={m.id} className="ats-msglog-row"><span className={"ats-msgstatus is-" + m.status}>{m.status === "queued" ? "Köad" : "Fel"}</span><span className="ats-msglog-to">{cName(m.candidateId)}<small>{m.to}</small></span><span className="ats-msglog-subj">{m.subject}{m.error && <small className="ats-msgerr">{m.error}</small>}</span><span className="ats-msglog-tpl">{m.tplName}<small>{m.trigger}</small></span><span className="ats-msglog-time">{timeAgo(m.at)}</span></div>)}</div>}
       </div>
     </div>
   );
@@ -924,19 +945,19 @@ function SettingsView({ state, D, me, job, cands, showToast }) {
   const patchTpl = (p) => D({ type: "UPDATE_TEMPLATE", id: tpl.id, patch: p });
   const previewCand = cands.find((c) => c.id === prevId) || cands[0];
   const vars = previewCand ? tplVars(state, previewCand, job) : {};
-  const envBlock = `# Rekyl SMTP - lagg i .env.local (backend)\nSMTP_HOST=smtp.din-leverantor.se\nSMTP_PORT=587\nSMTP_USER=${org.fromEmail}\nSMTP_PASS=din-smtp-nyckel\nSMTP_FROM="${org.companyName} <${org.fromEmail}>"\nSMTP_REPLY_TO=${org.hrEmail}\nAPP_URL=${org.appUrl}`;
+  const envBlock = `# Rekyl SMTP - lägg i .env.local (backend)\nSMTP_HOST=smtp.din-leverantör.se\nSMTP_PORT=587\nSMTP_USER=${org.fromEmail}\nSMTP_PASS=din-smtp-nyckel\nSMTP_FROM="${org.companyName} <${org.fromEmail}>"\nSMTP_REPLY_TO=${org.hrEmail}\nAPP_URL=${org.appUrl}`;
   return (
     <div className="ats-view">
-      <PageHeader title="Installningar" meta={<><span>e-post</span><Dot /><span>mallar</span><Dot /><span>foretag</span></>} />
+      <PageHeader title="Inställningar" meta={<><span>e-post</span><Dot /><span>mallar</span><Dot /><span>företag</span></>} />
       <div className="ats-grid-2">
-        <div className="ats-panel"><div className="ats-panel-h"><h2>Foretag & avsandare</h2></div>
-          <label className="ats-field"><span className="ats-field-l">Foretagsnamn</span><input value={org.companyName} disabled={!canEdit} onChange={(e) => setOrg({ companyName: e.target.value })} /></label>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Företag & avsändare</h2></div>
+          <label className="ats-field"><span className="ats-field-l">Företagsnamn</span><input value={org.companyName} disabled={!canEdit} onChange={(e) => setOrg({ companyName: e.target.value })} /></label>
           <div className="ats-tpl-two"><label className="ats-field"><span className="ats-field-l">HR-ansvarig (namn)</span><input value={org.hrName} disabled={!canEdit} onChange={(e) => setOrg({ hrName: e.target.value })} /></label><label className="ats-field"><span className="ats-field-l">HR-mejl (Reply-To)</span><input value={org.hrEmail} disabled={!canEdit} onChange={(e) => setOrg({ hrEmail: e.target.value })} /></label></div>
-          <div className="ats-tpl-two"><label className="ats-field"><span className="ats-field-l">Avsandaradress (From)</span><input value={org.fromEmail} disabled={!canEdit} onChange={(e) => setOrg({ fromEmail: e.target.value })} /></label><label className="ats-field"><span className="ats-field-l">App-URL</span><input value={org.appUrl} disabled={!canEdit} onChange={(e) => setOrg({ appUrl: e.target.value })} /></label></div>
-          <p className="ats-builder-note"><Mail size={12} /> Mejlen skickas fran <b>{org.fromEmail}</b> med foretagsnamnet synligt, och <b>{org.hrEmail}</b> som Reply-To sa kandidatens svar gar till ratt person.</p>
+          <div className="ats-tpl-two"><label className="ats-field"><span className="ats-field-l">Avsändaradress (From)</span><input value={org.fromEmail} disabled={!canEdit} onChange={(e) => setOrg({ fromEmail: e.target.value })} /></label><label className="ats-field"><span className="ats-field-l">App-URL</span><input value={org.appUrl} disabled={!canEdit} onChange={(e) => setOrg({ appUrl: e.target.value })} /></label></div>
+          <p className="ats-builder-note"><Mail size={12} /> Mejlen skickas från <b>{org.fromEmail}</b> med företagsnämnet synligt, och <b>{org.hrEmail}</b> som Reply-To så kandidatens svar går till rätt person.</p>
         </div>
         <div className="ats-panel"><div className="ats-panel-h"><h2>SMTP</h2><span className="ats-smtp-status"><Server size={13} /> Konfigureras i backend</span></div>
-          <div className="ats-honestbar"><Info size={13} /> Sjalva utskicket sker i din Next.js-backend (mejl-modulen) — en webbklient kan inte oppna en SMTP-koppling. Lagg env-variablerna nedan sa levererar backend mejlen som kolaggs har. Saknas eller felar SMTP visas riktigt fel-state, aldrig fejkad "skickat".</div>
+          <div className="ats-honestbar"><Info size={13} /> Sjalva utskicket sker i din Next.js-backend (mejl-modulen) — en webbklient kan inte öppna en SMTP-koppling. Lägg env-variablerna nedan så levererar backend mejlen som köas har. Saknas eller felar SMTP visas riktigt fel-state, aldrig fejkad "skickat".</div>
           <label className="ats-field"><span className="ats-field-l">.env (kopiera till backend)</span><div className="ats-envbox"><pre>{envBlock}</pre></div></label>
           <button className="ats-ghost" onClick={() => { copyText(envBlock); showToast({ kind: "ok", msg: "Env-block kopierat" }); }}><Copy size={14} /> Kopiera .env-block</button>
         </div>
@@ -947,13 +968,13 @@ function SettingsView({ state, D, me, job, cands, showToast }) {
           <div className="ats-tpllist">{canEdit && <button className="ats-ghost is-sm" style={{ marginBottom: 8, width: "100%" }} onClick={() => { D({ type: "ADD_TEMPLATE", tpl: { name: "Ny mall", trigger: "manual", active: true, subject: "", body: "Hej {{candidateName}},\n\n" } }); }}><Plus size={13} /> Ny mall</button>}{state.templates.map((t) => <button key={t.id} className={"ats-tplitem" + (t.id === selId ? " is-on" : "")} onClick={() => setSelId(t.id)}><Mail size={13} /><div><b>{t.name}</b><span>{t.trigger}</span></div>{!t.active && <span className="ats-muted">av</span>}</button>)}</div>
           {tpl && <div className="ats-tpledit">
             <div className="ats-tpl-two"><label className="ats-field"><span className="ats-field-l">Namn</span><input value={tpl.name} disabled={!canEdit} onChange={(e) => patchTpl({ name: e.target.value })} /></label><label className="ats-field"><span className="ats-field-l">Trigger</span><select value={tpl.trigger} disabled={!canEdit} onChange={(e) => patchTpl({ trigger: e.target.value })}>{["received", "shortlist", "interview", "reserve", "reject", "completion", "offer", "reminder", "manual"].map((t) => <option key={t} value={t}>{t}</option>)}</select></label></div>
-            <label className="ats-field"><span className="ats-field-l">Amne</span><input value={tpl.subject} disabled={!canEdit} onChange={(e) => patchTpl({ subject: e.target.value })} /></label>
+            <label className="ats-field"><span className="ats-field-l">Ämne</span><input value={tpl.subject} disabled={!canEdit} onChange={(e) => patchTpl({ subject: e.target.value })} /></label>
             <label className="ats-field"><span className="ats-field-l">Meddelande</span><textarea rows={8} value={tpl.body} disabled={!canEdit} onChange={(e) => patchTpl({ body: e.target.value })} /></label>
             {canEdit && <div className="ats-varchips"><span>Variabler:</span>{VAR_CHIPS.map((v) => <button key={v} onClick={() => patchTpl({ body: (tpl.body || "") + `{{${v}}}` })}>{`{{${v}}}`}</button>)}</div>}
             {canEdit && state.templates.length > 1 && <button className="ats-ghost is-sm is-danger" style={{ marginTop: 10 }} onClick={() => { D({ type: "REMOVE_TEMPLATE", id: tpl.id }); setSelId(state.templates.find((t) => t.id !== tpl.id)?.id); }}><Trash2 size={13} /> Ta bort mall</button>}
           </div>}
-          <div className="ats-tplprev"><div className="ats-panel-h" style={{ marginBottom: 8 }}><h2 style={{ fontSize: 14 }}>Forhandsvisning</h2>{cands.length > 0 && <select className="ats-select is-sm" value={prevId} onChange={(e) => setPrevId(e.target.value)}>{cands.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}</div>
-            {previewCand && tpl ? <div className="ats-mailprev"><div className="ats-mailprev-h"><b>{renderTpl(tpl.subject, vars) || "(inget amne)"}</b><span>Till: {previewCand.email} · Fran: {org.companyName} &lt;{org.fromEmail}&gt; · Svar: {org.hrEmail}</span></div><div className="ats-mailprev-body">{renderTpl(tpl.body, vars)}</div></div> : <div className="ats-muted">Ingen kandidat att forhandsvisa mot.</div>}
+          <div className="ats-tplprev"><div className="ats-panel-h" style={{ marginBottom: 8 }}><h2 style={{ fontSize: 14 }}>Förhandsvisning</h2>{cands.length > 0 && <select className="ats-select is-sm" value={prevId} onChange={(e) => setPrevId(e.target.value)}>{cands.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}</div>
+            {previewCand && tpl ? <div className="ats-mailprev"><div className="ats-mailprev-h"><b>{renderTpl(tpl.subject, vars) || "(inget ämne)"}</b><span>Till: {previewCand.email} · Från: {org.companyName} &lt;{org.fromEmail}&gt; · Svar: {org.hrEmail}</span></div><div className="ats-mailprev-body">{renderTpl(tpl.body, vars)}</div></div> : <div className="ats-muted">Ingen kandidat att förhandsvisa mot.</div>}
           </div>
         </div>
       </div>
@@ -1514,6 +1535,28 @@ function Style() {
 .ats-pr-mot{margin-top:16px;background:var(--paper2);padding:14px;border-radius:10px}
 .ats-pr-mot b{font-size:12px}.ats-pr-mot p{font-size:13px;color:var(--sub);margin-top:5px;font-style:italic}
 .ats-pr-foot{margin-top:20px;padding-top:14px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);font-family:'IBM Plex Mono'}
+)
+.ats-optedit{display:flex;flex-direction:column;gap:6px;background:var(--paper2);border-radius:10px;padding:10px}
+.ats-optedit-h{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--sub)}
+.ats-optrow{display:flex;align-items:center;gap:6px}
+.ats-optrow input{flex:1;border:1px solid var(--line);border-radius:7px;padding:6px 9px;background:var(--surface);font-size:12.5px}
+.ats-optmust{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);display:grid;place-items:center;color:var(--muted);flex-shrink:0}
+.ats-optmust.is-on{background:var(--amber);color:#fff;border-color:var(--amber)}
+.ats-optdel{width:30px;height:30px;border-radius:7px;display:grid;place-items:center;color:var(--muted);flex-shrink:0}
+.ats-optdel:hover{color:var(--brick)}
+.ats-fset-actions{display:flex;gap:8px;margin-top:2px}
+.ats-fieldhelp{font-size:11.5px;color:var(--muted);margin-top:2px}
+)
+.ats-optedit{display:flex;flex-direction:column;gap:6px;background:var(--paper2);border-radius:10px;padding:10px}
+.ats-optedit-h{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;color:var(--sub)}
+.ats-optrow{display:flex;align-items:center;gap:6px}
+.ats-optrow input{flex:1;border:1px solid var(--line);border-radius:7px;padding:6px 9px;background:var(--surface);font-size:12.5px}
+.ats-optmust{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);display:grid;place-items:center;color:var(--muted);flex-shrink:0}
+.ats-optmust.is-on{background:var(--amber);color:#fff;border-color:var(--amber)}
+.ats-optdel{width:30px;height:30px;border-radius:7px;display:grid;place-items:center;color:var(--muted);flex-shrink:0}
+.ats-optdel:hover{color:var(--brick)}
+.ats-fset-actions{display:flex;gap:8px;margin-top:2px}
+.ats-fieldhelp{font-size:11.5px;color:var(--muted);margin-top:2px}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
