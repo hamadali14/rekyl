@@ -227,6 +227,7 @@ function makeJob(id, title, team, slug, tmplId, extra = {}) {
     brand: { company: extra.company || "Nordpuls AB" },
     version: 3, versions: [{ v: 1, at: Date.now() - 40 * 864e5, by: "Du", note: "Skapade formuläret från mall" }, { v: 2, at: Date.now() - 12 * 864e5, by: "Mona Berg", note: "Justerade vikter" }, { v: 3, at: Date.now() - 3 * 864e5, by: "Du", note: "Lade till knockout-regel" }],
     stats: extra.stats || { started: 0, submitted: 0 },
+    annons: { location: "Stockholm", workmode: "Hybrid", employment: "Heltid · tillsvidare", salary: "", start: "Enligt överenskommelse", deadline: "", pitch: "", description: "", requirements: [], meriter: [], benefits: ["Kollektivavtal", "Tjänstepension", "Friskvårdsbidrag", "Flexibla arbetstider"], process: ["Ansökan via formuläret", "Urval & telefonavstämning", "Intervju", "Referenstagning", "Erbjudande"], contact: { name: "", email: "" }, faq: [], ...(extra.annons || {}) },
   };
 }
 const JOBS0 = [
@@ -235,11 +236,13 @@ const JOBS0 = [
     rules: [{ id: "r1", field: "experience", op: ">", value: 8, tag: "Senior" }, { id: "r2", field: "total", op: ">=", value: 84, tag: "Toppmatch" }],
     autoRules: [{ id: "a1", field: "total", op: ">=", value: 85, then: "shortlist" }, { id: "a2", field: "total", op: "<", value: 45, then: "reject" }],
     autoRejectBelow: 50, stats: { started: 61, submitted: 42 },
+    annons: { location: "Göteborg", salary: "38 000–48 000 kr/mån + provision", pitch: "Driv nya affärer mot mellanstora B2B-kunder i ett team som älskar att vinna.", description: "Som Account Manager äger du hela säljcykeln – från prospektering till avslut och långsiktig kundvård. Du jobbar nära marknad och Customer Success och har stort eget ansvar för din pipeline och dina resultat.", requirements: ["Minst 3 års erfarenhet av B2B-försäljning", "Vana att driva hela säljcykeln själv", "Flytande svenska och engelska", "B-körkort"], meriter: ["Erfarenhet av SaaS eller techförsäljning", "Van vid CRM (HubSpot eller Salesforce)", "Eget nätverk inom branschen"], contact: { name: "Mona Berg", email: "mona@nordpuls.se" }, faq: [{ q: "Är rollen på plats eller hybrid?", a: "Hybrid – 2–3 dagar i veckan på kontoret i Göteborg." }, { q: "Hur ser lönemodellen ut?", a: "Fast grundlön plus en provisionsmodell utan tak." }] },
   }),
   makeJob("j2", "Lagerarbetare · truck", "Logistik Torsvik", "lagerarbetare-truck", "lager", {
     autoRules: [{ id: "a1", field: "total", op: ">=", value: 80, then: "shortlist" }], stats: { started: 88, submitted: 54 },
+    annons: { location: "Jönköping (Torsvik)", salary: "28 000–33 000 kr/mån", employment: "Heltid · tvåskift", pitch: "Bli en nyckelperson i högt tempo på ett av regionens modernaste lager.", description: "Du arbetar med plock, pack, in- och utleverans samt truckkörning i ett välorganiserat lager. Vi kör tvåskift med möjlighet till helgpass.", requirements: ["Giltigt truckkort (A+B)", "Van vid fysiskt arbete i högt tempo", "Noggrann och pålitlig"], meriter: ["Erfarenhet av WMS-system", "Tidigare lagererfarenhet"], contact: { name: "Josef Falk", email: "jobb@nordpuls.se" } },
   }),
-  makeJob("j3", "Sjuksköterska · natt", "Vårdavdelning 3", "sjuksköterska-natt", "sköterska", { autoRejectBelow: 45, stats: { started: 40, submitted: 29 } }),
+  makeJob("j3", "Sjuksköterska · natt", "Vårdavdelning 3", "sjuksköterska-natt", "sköterska", { autoRejectBelow: 45, stats: { started: 40, submitted: 29 }, annons: { location: "Stockholm", employment: "Heltid · natt", pitch: "Var med och ge trygg vård på en avdelning med stark teamkänsla.", description: "Du ansvarar för omvårdnad och läkemedelshantering under natten tillsammans med ett erfaret team.", requirements: ["Legitimerad sjuksköterska", "Erfarenhet av slutenvård"], contact: { name: "Karin Ek", email: "vard@nordpuls.se" } } }),
 ];
 
 function tl(kind, detail, h, actor = "System") { return { id: uid(), kind, detail, at: Date.now() - h * 3600e3, actor }; }
@@ -453,20 +456,43 @@ function LoginScreen({ onAuthed }) {
 }
 function PublicApply({ slug, localJobs, localOrg }) {
   const [remote, setRemote] = useState(undefined);
+  const source = typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("source") || null) : null;
   useEffect(() => { let alive = true; (async () => { if (sbEnabled) { const rows = await sbGet("jobs?slug=eq." + encodeURIComponent(slug) + "&published=eq.true&select=*"); if (alive) setRemote(rows && rows.length ? rows[0] : null); } else setRemote(null); })(); return () => { alive = false; }; }, [slug]);
   const localJob = localJobs.find((j) => j.slug === slug);
-  let job = null, org = localOrg;
-  if (remote && remote.form) { job = { id: "remote", slug, title: remote.title, version: remote.form.version || 1, criteria: remote.form.criteria || [], pages: remote.form.pages, pageLabels: remote.form.pageLabels || {}, profiles: [{ id: "std", name: "Standard" }], activeProfileId: "std", autoRejectBelow: 0, rules: [], autoRules: [], stats: { started: 0, submitted: 0 } }; org = remote.org || localOrg; }
-  else if (localJob) job = localJob;
-  const submitFn = async (cand) => { if (sbEnabled) await sbInsert("applications", { job_slug: slug, name: cand.name, email: cand.email, phone: cand.phone, answers: cand.answers, source: "Länk", created_at: new Date().toISOString() }); };
-  return <div className="ats-root"><Style /><div className="ats-pub">
-    {remote === undefined ? <div className="ats-pub-card"><div className="ats-spinner" /><span>Laddar formulär…</span></div>
-      : !job ? <div className="ats-pub-card"><h2>Formuläret hittades inte</h2><p>Länken kan vara felaktig, eller så är formuläret inte publicerat än. Kontrollera länken med den som skickade den.</p></div>
-        : <div className="ats-pub-inner"><ApplyForm job={job} D={() => {}} org={org} showToast={() => {}} onSubmit={sbEnabled ? submitFn : undefined} /><p className="ats-pub-foot">Drivs av Rekyl{!sbEnabled && " · förhandsläge"}</p></div>}
+  let job = null, org = localOrg, company = localOrg.companyName;
+  if (remote && remote.form) { job = { id: "remote", slug, title: remote.title, version: remote.form.version || 1, criteria: remote.form.criteria || [], pages: remote.form.pages, pageLabels: remote.form.pageLabels || {}, annons: remote.form.annons || {}, profiles: [{ id: "std", name: "Standard" }], activeProfileId: "std", autoRejectBelow: 0, rules: [], autoRules: [], stats: { started: 0, submitted: 0 } }; org = remote.org || localOrg; company = remote.company || (remote.org && remote.org.companyName) || company; }
+  else if (localJob) { job = localJob; company = localJob.company || company; }
+  const submitFn = async (cand) => { if (sbEnabled) await sbInsert("applications", { job_slug: slug, name: cand.name, email: cand.email, phone: cand.phone, answers: cand.answers, source: cand.source, created_at: new Date().toISOString() }); };
+  if (remote === undefined) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>Laddar…</span></div></div></div>;
+  if (!job) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><h2>Tjänsten hittades inte</h2><p>Länken kan vara felaktig eller så är annonsen inte publicerad än.</p></div></div></div>;
+  const a = job.annons || {};
+  const IC = { MapPin, Building2, Briefcase, Wallet, CalendarClock, Bell };
+  const chips = [a.location && ["MapPin", a.location], a.workmode && ["Building2", a.workmode], a.employment && ["Briefcase", a.employment], a.salary && ["Wallet", a.salary], a.start && ["CalendarClock", "Start: " + a.start], a.deadline && ["Bell", "Sök senast: " + a.deadline]].filter(Boolean);
+  const scrollForm = () => { const el = document.getElementById("apply"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  return <div className="ats-root"><Style /><div className="ats-jobpage">
+    <header className="ats-jp-top"><div className="ats-jp-top-in"><div className="ats-jp-brand"><span className="ats-logo">{(company || "R")[0]}</span> {company}</div><button className="ats-btn-primary" onClick={scrollForm}>Ansök nu</button></div></header>
+    <div className="ats-jp-main">
+      <div className="ats-jp-hero"><span className="ats-jp-eyebrow">Ledig tjänst{source && <span className="ats-jp-src">via {source}</span>}</span><h1>{job.title}</h1><div className="ats-jp-company"><Building2 size={15} /> {company}</div>{chips.length > 0 && <div className="ats-jp-chips">{chips.map(([ic, txt], i) => { const I = IC[ic]; return <span key={i} className="ats-jp-chip"><I size={14} /> {txt}</span>; })}</div>}{a.pitch && <p className="ats-jp-pitch">{a.pitch}</p>}<button className="ats-btn-primary ats-jp-cta" onClick={scrollForm}>Ansök nu <ArrowRight size={15} /></button></div>
+      <div className="ats-jp-grid">
+        <div className="ats-jp-content">
+          {a.description && <section className="ats-jp-sec"><h2>Om rollen</h2><p className="ats-jp-prose">{a.description}</p></section>}
+          {a.requirements && a.requirements.length > 0 && <section className="ats-jp-sec"><h2>Vi söker dig som</h2><ul className="ats-jp-list">{a.requirements.map((r, i) => <li key={i}><Check size={15} /> {r}</li>)}</ul></section>}
+          {a.meriter && a.meriter.length > 0 && <section className="ats-jp-sec"><h2>Meriterande</h2><ul className="ats-jp-list is-plus">{a.meriter.map((r, i) => <li key={i}><Plus size={15} /> {r}</li>)}</ul></section>}
+          {a.benefits && a.benefits.length > 0 && <section className="ats-jp-sec"><h2>Vi erbjuder</h2><div className="ats-jp-benefits">{a.benefits.map((b, i) => <span key={i} className="ats-jp-benefit"><Sparkles size={13} /> {b}</span>)}</div></section>}
+          {a.process && a.process.length > 0 && <section className="ats-jp-sec"><h2>Rekryteringsprocessen</h2><ol className="ats-jp-steps">{a.process.map((p, i) => <li key={i}><span className="ats-jp-stepn">{i + 1}</span><span>{p}</span></li>)}</ol></section>}
+          {a.faq && a.faq.length > 0 && <section className="ats-jp-sec"><h2>Vanliga frågor</h2><div className="ats-jp-faq">{a.faq.map((f, i) => <details key={i} className="ats-jp-faq-item"><summary>{f.q}</summary><p>{f.a}</p></details>)}</div></section>}
+        </div>
+        <aside className="ats-jp-side">
+          <div className="ats-jp-form" id="apply"><h2>Ansök nu</h2><p className="ats-jp-form-sub">Fyll i formuläret – tar bara någon minut.</p><ApplyForm job={job} D={() => {}} org={org} showToast={() => {}} onSubmit={sbEnabled ? submitFn : undefined} source={source} /></div>
+          {(a.contact && (a.contact.name || a.contact.email)) && <div className="ats-jp-contact"><div className="ats-jp-contact-h"><UserCheck size={14} /> Frågor om tjänsten?</div>{a.contact.name && <div className="ats-jp-contact-n">{a.contact.name}</div>}{a.contact.email && <a href={"mailto:" + a.contact.email}>{a.contact.email}</a>}</div>}
+        </aside>
+      </div>
+    </div>
+    <footer className="ats-jp-foot"><span>Drivs av Rekyl{!sbEnabled && " · förhandsläge"}</span><span>Dina uppgifter hanteras enligt GDPR.</span></footer>
   </div></div>;
 }
 export default function App() {
-  const [state, dispatch] = useReducer(reducer, INITIAL);
+  const [state, dispatch] = useReducer(reducer, INITIAL, (init) => { try { const sv = store.get("rekyl_state", null); return sv && sv.jobs && sv.candidates ? sv : init; } catch (e) { return init; } });
   const D = dispatch;
   const [view, setView] = useState("dashboard");
   const [pinned, setPinned] = useState(() => store.get("rekyl_pin", false));
@@ -481,6 +507,7 @@ export default function App() {
   const [session, setSession] = useState(() => { const sv = store.get("rekyl_session", null); if (sv && sv.token) sbSetToken(sv.token); return sv; });
   const login = (sv) => { store.set("rekyl_session", sv); sbSetToken(sv.token); setSession(sv); };
   const logout = () => { store.set("rekyl_session", null); sbSetToken(null); setSession(null); };
+  useEffect(() => { store.set("rekyl_state", state); }, [state]);
 
   const job = state.jobs.find((j) => j.id === state.activeJobId);
   const me = REVIEWERS.find((r) => r.id === state.currentUserId);
@@ -862,7 +889,7 @@ function FieldInput({ c, value, onChange }) {
   const opts = c.type === "ordinal" ? c.scale : c.options; return <div className="ats-chipset">{(opts||[]).map((o) => <button key={o} className={"ats-selchip" + (value === o ? " is-on" : "")} onClick={() => onChange(o)}>{value === o && <Check size={12} />}{o}</button>)}</div>;
 }
 
-function ApplyForm({ job, D, org, showToast, onSubmit }) {
+function ApplyForm({ job, D, org, showToast, onSubmit, source }) {
   const [answers, setAnswers] = useState({}); const [base, setBase] = useState({ name: "", email: "", phone: "" }); const [consent, setConsent] = useState(false); const [step, setStep] = useState(0); const [sent, setSent] = useState(false); const [touched, setTouched] = useState(false);
   const set = (id, v) => setAnswers((a) => ({ ...a, [id]: v }));
   const visible = job.criteria.filter((c) => isVisible(c, answers));
@@ -876,7 +903,7 @@ function ApplyForm({ job, D, org, showToast, onSubmit }) {
 
   if (sent) return <div className="ats-applied"><div className="ats-empty-badge"><CheckCircle2 size={22} /></div><h3>Tack {base.name.split(" ")[0]}!</h3><p>Din ansökan till {job.title} är mottagen. En bekräftelse har köats till {base.email}. Ansökan syns nu i kön med {live.total}% matchning.</p><button className="ats-ghost" onClick={() => { setSent(false); setAnswers({}); setBase({ name: "", email: "", phone: "" }); setConsent(false); setStep(0); setTouched(false); }}>Fyll i en till</button></div>;
 
-  const submit = () => { if (!nameOk || !emailOk || !consent) { setTouched(true); return; } const cand = { id: "c" + uid(), name: base.name.trim(), email: base.email.trim(), phone: base.phone.trim() || null, source: onSubmit ? "Länk" : "Förhandsvisning", answers, rating: 0, comments: [], reviews: {}, status: "new", starred: false, appliedAt: Date.now(), reason: null, formVersion: job.version }; if (onSubmit) onSubmit(cand); else D({ type: "APPLY", cand }); setSent(true); showToast && showToast({ kind: "ok", msg: "Ansökan inskickad · bekräftelsemejl köat" }); };
+  const submit = () => { if (!nameOk || !emailOk || !consent) { setTouched(true); return; } const cand = { id: "c" + uid(), name: base.name.trim(), email: base.email.trim(), phone: base.phone.trim() || null, source: source || (onSubmit ? "Länk" : "Förhandsvisning"), answers, rating: 0, comments: [], reviews: {}, status: "new", starred: false, appliedAt: Date.now(), reason: null, formVersion: job.version }; if (onSubmit) onSubmit(cand); else D({ type: "APPLY", cand }); setSent(true); showToast && showToast({ kind: "ok", msg: "Ansökan inskickad · bekräftelsemejl köat" }); };
 
   return (
     <div className="ats-apply">
@@ -915,7 +942,9 @@ function FormView({ job, D, me, state, showToast }) {
   const duplicateField = (id) => { const f = job.criteria.find((c) => c.id === id); if (!f) return; const clone = { ...JSON.parse(JSON.stringify(f)), id: f.block + "_" + uid(), label: f.label + " (kopia)" }; snap(); const idx = job.criteria.findIndex((c) => c.id === id); const nc = [...job.criteria]; nc.splice(idx + 1, 0, clone); D({ type: "SET_FORM", patch: { criteria: flatten(nc) } }); setDirty(true); setSelId(clone.id); };
   const placeAt = (payload, step, index) => { if (!payload) return; snap(); let field, base = job.criteria; if (payload.slice(0, 6) === "block:") field = { ...buildField(payload.slice(6)), step }; else { const id = payload.slice(6); const found = base.find((c) => c.id === id); if (!found) return; field = { ...found, step }; base = base.filter((c) => c.id !== id); } const pageItems = base.filter((c) => c.step === step); pageItems.splice(index, 0, field); const out = []; const used = new Set(); pages.forEach((p) => { const items = p === step ? pageItems : base.filter((c) => c.step === p); items.forEach((it) => { if (!used.has(it.id)) { used.add(it.id); out.push(it); } }); }); [field, ...base].forEach((c) => { if (!used.has(c.id)) { used.add(c.id); out.push(c); } }); D({ type: "SET_FORM", patch: { criteria: out } }); setDirty(true); if (payload.slice(0, 6) === "block:") setSelId(field.id); };
   const addPage = () => { setPages([...pages, Math.max(1, ...pages) + 1]); };
-  const publish = () => { D({ type: "SET_FORM", patch: {}, bump: true }); setDirty(false); if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1 }, published: true }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Publicerat lokalt · molnet svarade inte" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); } };
+  const A = job.annons || {};
+  const setA = (patch) => { D({ type: "SET_FORM", patch: { annons: { ...(job.annons || {}), ...patch } } }); setDirty(true); };
+  const publish = () => { D({ type: "SET_FORM", patch: {}, bump: true }); setDirty(false); if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1, annons: job.annons }, published: true }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Publicerat lokalt · molnet svarade inte" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); } };
   const skills = job.criteria.find((c) => c.id === "skills");
   const scored = job.criteria.filter((c) => c.scored && c.type !== "text" && c.type !== "file");
   const link = (typeof window !== "undefined" ? window.location.origin : state.org.appUrl) + "/j/" + job.slug; const embed = `<iframe src="${link}/inbäddad" width="100%" height="720" style="border:0" title="${job.title}"></iframe>`;
@@ -925,7 +954,7 @@ function FormView({ job, D, me, state, showToast }) {
   return (
     <div className="ats-view">
       <PageHeader title="Formulär" meta={<><JobSwitch state={state} D={D} /><Dot /><span>formulär v{job.version}</span></>} right={<button className="ats-ghost is-accent" onClick={() => setTab("dela")}><Eye size={15} /> Förhandsvisa</button>} />
-      <div className="ats-subtabs">{[["bygg", "Formulär", Blocks], ["scoring", "Scoring & krav", Gauge], ["auto", "Automation", Workflow], ["dela", "Dela & förhandsvisa", Link2]].map(([id, label, Ic]) => <button key={id} className={"ats-subtab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}><Ic size={14} /> {label}</button>)}</div>
+      <div className="ats-subtabs">{[["bygg", "Formulär", Blocks], ["annons", "Jobbannons", Building2], ["scoring", "Scoring & krav", Gauge], ["auto", "Automation", Workflow], ["dela", "Dela & förhandsvisa", Link2]].map(([id, label, Ic]) => <button key={id} className={"ats-subtab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}><Ic size={14} /> {label}</button>)}</div>
 
       {tab === "bygg" && <>
         <div className="ats-fb-toolbar">
@@ -958,6 +987,31 @@ function FormView({ job, D, me, state, showToast }) {
         {showPreview && <Modal title="Förhandsvisning — så ser kandidaten formuläret" onClose={() => setShowPreview(false)} wide><div className="ats-fb-prevwrap"><ApplyForm job={job} D={() => {}} org={state.org} showToast={() => {}} /></div></Modal>}
         {showShare && <ShareModal job={job} state={state} onClose={() => setShowShare(false)} showToast={showToast} />}
       </>}
+
+      {tab === "annons" && <div className="ats-anned">
+        <p className="ats-anned-intro"><Sparkles size={13} /> Fyll i så byggs en professionell publik jobbsida på <b>/j/{job.slug}</b> automatiskt. Förhandsvisa via länken under "Dela".</p>
+        <div className="ats-anned-grid">
+          <label className="ats-field"><span className="ats-field-l">Plats</span><input value={A.location || ""} onChange={(e) => setA({ location: e.target.value })} placeholder="t.ex. Göteborg" /></label>
+          <label className="ats-field"><span className="ats-field-l">Arbetsform</span><input value={A.workmode || ""} onChange={(e) => setA({ workmode: e.target.value })} placeholder="Hybrid / På plats / Distans" /></label>
+          <label className="ats-field"><span className="ats-field-l">Anställningsform</span><input value={A.employment || ""} onChange={(e) => setA({ employment: e.target.value })} placeholder="Heltid · tillsvidare" /></label>
+          <label className="ats-field"><span className="ats-field-l">Lön / lönespann</span><input value={A.salary || ""} onChange={(e) => setA({ salary: e.target.value })} placeholder="t.ex. 38 000–48 000 kr/mån" /></label>
+          <label className="ats-field"><span className="ats-field-l">Startdatum</span><input value={A.start || ""} onChange={(e) => setA({ start: e.target.value })} placeholder="Enligt överenskommelse" /></label>
+          <label className="ats-field"><span className="ats-field-l">Sök senast (deadline)</span><input value={A.deadline || ""} onChange={(e) => setA({ deadline: e.target.value })} placeholder="t.ex. 31 augusti" /></label>
+        </div>
+        <label className="ats-field ats-anned-full"><span className="ats-field-l">Kort pitch (visas stort överst)</span><textarea rows={2} value={A.pitch || ""} onChange={(e) => setA({ pitch: e.target.value })} placeholder="En mening som säljer in rollen." /></label>
+        <label className="ats-field ats-anned-full"><span className="ats-field-l">Full arbetsbeskrivning</span><textarea rows={5} value={A.description || ""} onChange={(e) => setA({ description: e.target.value })} placeholder="Beskriv rollen, ansvar och vardagen." /></label>
+        <div className="ats-anned-lists">
+          <AnnListEditor label="Vi söker dig som (krav)" items={A.requirements || []} onChange={(v) => setA({ requirements: v })} placeholder="t.ex. 3 års erfarenhet" />
+          <AnnListEditor label="Meriterande" items={A.meriter || []} onChange={(v) => setA({ meriter: v })} placeholder="t.ex. SaaS-erfarenhet" />
+          <AnnListEditor label="Vi erbjuder (förmåner)" items={A.benefits || []} onChange={(v) => setA({ benefits: v })} placeholder="t.ex. Friskvårdsbidrag" />
+          <AnnListEditor label="Rekryteringsprocess (steg)" items={A.process || []} onChange={(v) => setA({ process: v })} placeholder="t.ex. Intervju" />
+        </div>
+        <div className="ats-anned-grid">
+          <label className="ats-field"><span className="ats-field-l">Kontaktperson</span><input value={(A.contact && A.contact.name) || ""} onChange={(e) => setA({ contact: { ...(A.contact || {}), name: e.target.value } })} placeholder="Namn" /></label>
+          <label className="ats-field"><span className="ats-field-l">Kontakt-e-post</span><input value={(A.contact && A.contact.email) || ""} onChange={(e) => setA({ contact: { ...(A.contact || {}), email: e.target.value } })} placeholder="namn@företag.se" /></label>
+        </div>
+        <FaqEditor items={A.faq || []} onChange={(v) => setA({ faq: v })} />
+      </div>}
 
       {tab === "scoring" && <div className="ats-grid-2">
         <div className="ats-panel"><div className="ats-panel-h"><h2>Vikter</h2><Menu align="right" trigger={<button className="ats-profilebtn">{job.profiles.find((p) => p.id === job.activeProfileId)?.name} <ChevronDown size={13} /></button>}>{job.profiles.map((p) => <button key={p.id} className={"ats-menu-item" + (p.id === job.activeProfileId ? " is-active" : "")} onClick={() => D({ type: "SET_PROFILE", id: p.id })}>{p.name}</button>)}{canEdit && <><div className="ats-menu-sep" /><button className="ats-menu-item is-accent" onClick={() => D({ type: "SAVE_PROFILE", name: "Profil " + job.profiles.length })}><Plus size={13} /> Spara som profil</button></>}</Menu></div>
@@ -1016,18 +1070,35 @@ function FileDrop({ value, onChange }) {
     <input ref={inputRef} type="file" style={{ display: "none" }} onChange={(e) => pick(e.target.files && e.target.files[0])} />
   </div>;
 }
+function AnnListEditor({ label, items, onChange, placeholder }) {
+  return <div className="ats-anned-list"><span className="ats-field-l">{label}</span>{items.map((it, i) => <div key={i} className="ats-anned-row"><input value={it} onChange={(e) => onChange(items.map((x, k) => k === i ? e.target.value : x))} placeholder={placeholder} /><button className="ats-optdel" onClick={() => onChange(items.filter((_, k) => k !== i))}><X size={13} /></button></div>)}<button className="ats-ghost is-sm" onClick={() => onChange([...items, ""])}><Plus size={12} /> Lägg till</button></div>;
+}
+function FaqEditor({ items, onChange }) {
+  return <div className="ats-anned-list"><span className="ats-field-l">Vanliga frågor (FAQ)</span>{items.map((f, i) => <div key={i} className="ats-anned-faq"><input value={f.q} onChange={(e) => onChange(items.map((x, k) => k === i ? { ...x, q: e.target.value } : x))} placeholder="Fråga" /><textarea rows={2} value={f.a} onChange={(e) => onChange(items.map((x, k) => k === i ? { ...x, a: e.target.value } : x))} placeholder="Svar" /><button className="ats-optdel" onClick={() => onChange(items.filter((_, k) => k !== i))}><X size={13} /></button></div>)}<button className="ats-ghost is-sm" onClick={() => onChange([...items, { q: "", a: "" }])}><Plus size={12} /> Lägg till fråga</button></div>;
+}
 function ShareModal({ job, state, onClose, showToast }) {
-  const link = (typeof window !== "undefined" ? window.location.origin : state.org.appUrl) + "/j/" + job.slug;
-  const embed = '<iframe src="' + link + '/inbaddad" width="100%" height="760" style="border:0" title="' + job.title + '"></iframe>';
+  const origin = typeof window !== "undefined" ? window.location.origin : state.org.appUrl;
+  const base = origin + "/j/" + job.slug;
+  const link = (src) => base + (src ? "?source=" + src : "");
+  const embed = '<iframe src="' + base + '" width="100%" height="900" style="border:0" title="' + job.title + '"></iframe>';
   const cp = (t, m) => { copyText(t); showToast({ kind: "ok", msg: m }); };
   const open = (u) => window.open(u, "_blank");
   const enc = encodeURIComponent;
-  return <Modal title="Dela och publicera formuläret" onClose={onClose}>
-    <div className="ats-share">
-      <div className="ats-share-link"><Link2 size={15} /><input readOnly value={link} onFocus={(e) => e.target.select()} /><button className="ats-btn-primary" onClick={() => cp(link, "Länk kopierad")}><Copy size={14} /> Kopiera</button></div>
-      <div className="ats-share-plat"><button onClick={() => open("https://www.linkedin.com/sharing/share-offsite/?url=" + enc(link))}><Share2 size={15} /> LinkedIn</button><button onClick={() => open("https://www.facebook.com/sharer/sharer.php?u=" + enc(link))}><Share2 size={15} /> Facebook</button><button onClick={() => open("https://twitter.com/intent/tweet?url=" + enc(link) + "&text=" + enc(job.title))}><Share2 size={15} /> X</button><button onClick={() => open("mailto:?subject=" + enc(job.title) + "&body=" + enc(link))}><Mail size={15} /> Mejl</button><button onClick={() => open("https://wa.me/?text=" + enc(job.title + " " + link))}><MessageCircle size={15} /> WhatsApp</button><button onClick={() => cp(link, "Länk kopierad")}><Globe size={15} /> Kopiera</button></div>
-      <label className="ats-field"><span className="ats-field-l">Bädda in på er hemsida</span><div className="ats-envbox"><pre>{embed}</pre></div></label>
-      <button className="ats-ghost" onClick={() => cp(embed, "Inbäddningskod kopierad")}><Copy size={14} /> Kopiera inbäddningskod</button>
+  const CH = [
+    { id: "linkedin", label: "LinkedIn", hint: "Klistra in som extern ansökningslänk", icon: Share2, share: "https://www.linkedin.com/sharing/share-offsite/?url=" + enc(link("linkedin")) },
+    { id: "indeed", label: "Indeed", hint: "Klistra in som ansöknings-URL", icon: Globe, share: null },
+    { id: "platsbanken", label: "Platsbanken", hint: "Klistra in som webbadress för ansökan", icon: Globe, share: null },
+    { id: "facebook", label: "Facebook", hint: "Dela i flödet eller grupper", icon: Share2, share: "https://www.facebook.com/sharer/sharer.php?u=" + enc(link("facebook")) },
+    { id: "hemsida", label: "Egen hemsida", hint: "Länka från er karriärsida", icon: Globe, share: null },
+  ];
+  return <Modal title="Kanaler & publicering" onClose={onClose} wide>
+    <div className="ats-chan">
+      <p className="ats-chan-intro">Plattformarna bäddar inte in formuläret – de länkar till din egen ansökningssida. Varje kanal får en <b>spårbar länk</b> så du ser exakt varifrån varje kandidat kom.</p>
+      <div className="ats-chan-list">{CH.map((c) => <div key={c.id} className="ats-chan-row"><div className="ats-chan-ic"><c.icon size={16} /></div><div className="ats-chan-main"><b>{c.label}</b><span className="ats-chan-hint">{c.hint}</span><span className="ats-chan-url">{link(c.id)}</span></div><div className="ats-chan-acts"><button className="ats-btn-primary is-sm" onClick={() => cp(link(c.id), c.label + "-länk kopierad")}><Copy size={13} /> Kopiera</button>{c.share && <button className="ats-ghost is-sm" onClick={() => open(c.share)}><Share2 size={13} /> Dela</button>}</div></div>)}</div>
+      <div className="ats-chan-two">
+        <div className="ats-chan-box"><div className="ats-chan-sec-h"><QrCode size={14} /> QR-kod</div><div className="ats-chan-qrwrap"><QRCode text={link("qr")} size={150} /></div><button className="ats-ghost is-sm" onClick={() => cp(link("qr"), "QR-länk kopierad")}><Copy size={13} /> Kopiera QR-länk</button></div>
+        <div className="ats-chan-box"><div className="ats-chan-sec-h"><Code2 size={14} /> Bädda in på er hemsida</div><div className="ats-envbox"><pre>{embed}</pre></div><button className="ats-ghost is-sm" onClick={() => cp(embed, "Inbäddningskod kopierad")}><Copy size={13} /> Kopiera kod</button></div>
+      </div>
     </div>
   </Modal>;
 }
@@ -1851,6 +1922,82 @@ function Style() {
 .ats-login-err{display:flex;align-items:center;gap:7px;background:var(--brick-soft);color:var(--brick);padding:9px 12px;border-radius:9px;font-size:12.5px;font-weight:500}
 .ats-login-btn{width:100%;justify-content:center;padding:12px;font-size:14px;margin-top:4px}
 .ats-login-switch{font-size:12.5px;color:var(--petrol);font-weight:600;padding:6px;text-align:center}
+/* ===== Publik jobbsida ===== */
+.ats-jobpage{min-height:100vh;background:var(--paper)}
+.ats-jp-top{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.82);backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
+.ats-jp-top-in{max-width:1000px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;justify-content:space-between}
+.ats-jp-brand{display:flex;align-items:center;gap:9px;font-family:'Bricolage Grotesque';font-weight:700;font-size:16px}
+.ats-jp-brand .ats-logo{width:30px;height:30px}
+.ats-jp-main{max-width:1000px;margin:0 auto;padding:34px 20px 10px}
+.ats-jp-hero{padding:6px 0 26px}
+.ats-jp-eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--petrol);background:var(--petrol-soft);padding:5px 11px;border-radius:20px}
+.ats-jp-src{color:var(--sub);background:none;padding:0;text-transform:none;letter-spacing:0}
+.ats-jp-hero h1{font-family:'Bricolage Grotesque';font-weight:700;font-size:38px;line-height:1.08;margin:16px 0 6px;letter-spacing:-.02em}
+.ats-jp-company{display:inline-flex;align-items:center;gap:7px;color:var(--sub);font-size:15px;font-weight:600}
+.ats-jp-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.ats-jp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;color:var(--ink)}
+.ats-jp-pitch{font-size:18px;line-height:1.55;color:var(--ink);margin:20px 0 0;max-width:680px;font-weight:500}
+.ats-jp-cta{margin-top:22px;padding:13px 22px;font-size:15px;gap:9px}
+.ats-jp-grid{display:grid;grid-template-columns:1fr 400px;gap:34px;align-items:start;padding:8px 0 40px}
+.ats-jp-content{min-width:0;display:flex;flex-direction:column;gap:28px}
+.ats-jp-sec h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:21px;margin-bottom:12px}
+.ats-jp-prose{font-size:15.5px;line-height:1.7;color:var(--sub);white-space:pre-wrap}
+.ats-jp-list{display:flex;flex-direction:column;gap:9px}
+.ats-jp-list li{display:flex;align-items:flex-start;gap:10px;font-size:15px;color:var(--ink)}
+.ats-jp-list li svg{color:var(--petrol);flex-shrink:0;margin-top:2px}
+.ats-jp-list.is-plus li svg{color:var(--amber)}
+.ats-jp-benefits{display:flex;flex-wrap:wrap;gap:9px}
+.ats-jp-benefit{display:inline-flex;align-items:center;gap:7px;background:var(--petrol-soft);color:var(--petrol-deep);border-radius:9px;padding:8px 13px;font-size:13.5px;font-weight:600}
+.ats-jp-steps{display:flex;flex-direction:column;gap:12px;counter-reset:step}
+.ats-jp-steps li{display:flex;align-items:center;gap:13px;font-size:15px;font-weight:500}
+.ats-jp-stepn{width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-family:'Bricolage Grotesque';font-weight:700;font-size:13px;flex-shrink:0}
+.ats-jp-faq{display:flex;flex-direction:column;gap:8px}
+.ats-jp-faq-item{border:1px solid var(--line);border-radius:11px;background:var(--surface);padding:2px 15px}
+.ats-jp-faq-item summary{cursor:pointer;padding:13px 0;font-weight:600;font-size:14.5px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.ats-jp-faq-item summary::-webkit-details-marker{display:none}
+.ats-jp-faq-item summary:after{content:"+";font-size:20px;color:var(--petrol);font-weight:400}
+.ats-jp-faq-item[open] summary:after{content:"−"}
+.ats-jp-faq-item p{padding:0 0 14px;font-size:14px;line-height:1.6;color:var(--sub)}
+.ats-jp-side{position:sticky;top:78px;display:flex;flex-direction:column;gap:16px}
+.ats-jp-form{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 20px 50px -30px rgba(0,0,0,.3)}
+.ats-jp-form h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:20px}
+.ats-jp-form-sub{font-size:13px;color:var(--muted);margin:2px 0 14px}
+.ats-jp-form .ats-apply{padding:0}
+.ats-jp-contact{background:var(--paper2);border:1px solid var(--line);border-radius:14px;padding:16px}
+.ats-jp-contact-h{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;margin-bottom:8px}
+.ats-jp-contact-n{font-size:14px;font-weight:600}
+.ats-jp-contact a{font-size:13.5px;color:var(--petrol);font-weight:600}
+.ats-jp-foot{max-width:1000px;margin:0 auto;padding:24px 20px 40px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+/* Kanaler */
+.ats-chan{display:flex;flex-direction:column;gap:16px;padding:18px 22px 22px}
+.ats-chan-intro{font-size:13.5px;line-height:1.6;color:var(--sub)}
+.ats-chan-list{display:flex;flex-direction:column;gap:9px}
+.ats-chan-row{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--surface)}
+.ats-chan-ic{width:38px;height:38px;border-radius:10px;background:var(--petrol-soft);color:var(--petrol);display:grid;place-items:center;flex-shrink:0}
+.ats-chan-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ats-chan-main b{font-size:14px}
+.ats-chan-hint{font-size:11.5px;color:var(--muted)}
+.ats-chan-url{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.ats-chan-acts{display:flex;gap:7px;flex-shrink:0}
+.ats-chan-two{display:grid;grid-template-columns:auto 1fr;gap:14px}
+.ats-chan-box{border:1px solid var(--line);border-radius:13px;padding:15px;background:var(--paper2);display:flex;flex-direction:column;gap:11px;align-items:flex-start}
+.ats-chan-sec-h{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px}
+.ats-chan-qrwrap{align-self:center}
+.ats-btn-primary.is-sm{padding:7px 12px;font-size:12.5px;box-shadow:none}
+@media(max-width:820px){.ats-jp-grid{grid-template-columns:1fr}.ats-jp-side{position:static}.ats-jp-hero h1{font-size:30px}.ats-chan-two{grid-template-columns:1fr}.ats-chan-qrwrap{align-self:center}.ats-chan-url{max-width:150px}}
+.ats-anned{display:flex;flex-direction:column;gap:14px;max-width:820px}
+.ats-anned-intro{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--sub);background:var(--petrol-soft);padding:11px 14px;border-radius:11px}
+.ats-anned-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ats-anned .ats-field{display:flex;flex-direction:column;gap:5px}
+.ats-anned .ats-field-l{font-size:12px;font-weight:600;color:var(--sub)}
+.ats-anned input,.ats-anned textarea{border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--surface);font-size:13.5px;width:100%;font-family:inherit;resize:vertical}
+.ats-anned input:focus,.ats-anned textarea:focus{border-color:var(--petrol);outline:none}
+.ats-anned-lists{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.ats-anned-list{display:flex;flex-direction:column;gap:7px;background:var(--paper2);border-radius:12px;padding:13px}
+.ats-anned-row{display:flex;gap:7px;align-items:center}
+.ats-anned-faq{display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:9px;position:relative}
+.ats-anned-faq .ats-optdel{position:absolute;top:7px;right:7px}
+@media(max-width:720px){.ats-anned-grid,.ats-anned-lists{grid-template-columns:1fr}}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
