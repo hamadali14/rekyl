@@ -21,7 +21,14 @@ const sbHead = () => ({ apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN, "Co
 async function sbGet(path) { if (!sbEnabled) return null; try { const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: sbHead() }); if (!r.ok) return null; return await r.json(); } catch (e) { return null; } }
 async function sbUpsert(table, row) { if (!sbEnabled) return false; try { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: { ...sbHead(), Prefer: "resolution=merge-duplicates,return=minimal" }, body: JSON.stringify(row) }); return r.ok; } catch (e) { return false; } }
 async function sbInsert(table, row) { if (!sbEnabled) return false; try { const r = await fetch(SB_URL + "/rest/v1/" + table, { method: "POST", headers: { ...sbHead(), Prefer: "return=minimal" }, body: JSON.stringify(row) }); return r.ok; } catch (e) { return false; } }
-async function sbUpload(bucket, path, file) { if (!sbEnabled || !file) return null; try { const r = await fetch(SB_URL + "/storage/v1/object/" + bucket + "/" + encodeURIComponent(path), { method: "POST", headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN, "x-upsert": "true" }, body: file }); if (!r.ok) return null; return SB_URL + "/storage/v1/object/public/" + bucket + "/" + encodeURIComponent(path); } catch (e) { return null; } }
+async function sbUpload(bucket, path, file) { if (!sbEnabled || !file) return null; const enc = path.split("/").map(encodeURIComponent).join("/"); try { const r = await fetch(SB_URL + "/storage/v1/object/" + bucket + "/" + enc, { method: "POST", headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN, "x-upsert": "true" }, body: file }); if (!r.ok) return null; return SB_URL + "/storage/v1/object/public/" + bucket + "/" + enc; } catch (e) { return null; } }
+let SB_UPLOAD_ORG = null;
+function sbSetUploadOrg(o) { SB_UPLOAD_ORG = o || null; }
+async function sbDelete(table, filter) { if (!sbEnabled) return false; try { const r = await fetch(SB_URL + "/rest/v1/" + table + "?" + filter, { method: "DELETE", headers: { ...sbHead(), Prefer: "return=minimal" } }); return r.ok; } catch (e) { return false; } }
+async function sbDeleteFile(bucket, path) { if (!sbEnabled || !path) return false; try { const r = await fetch(SB_URL + "/storage/v1/object/" + bucket + "/" + path.split("/").map(encodeURIComponent).join("/"), { method: "DELETE", headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN } }); return r.ok; } catch (e) { return false; } }
+function cvPathFromUrl(url) { if (!url) return null; const m = String(url).split("/object/public/cv/")[1]; return m ? m.split("/").map(decodeURIComponent).join("/") : null; }
+function downloadJSON(filename, obj) { try { const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); } catch (e) {} }
+async function eraseCandidate(c, D) { try { if (String(c.id).indexOf("sb_") === 0) await sbDelete("applications", "id=eq." + c.id.slice(3)); const files = Object.values(c.answers || {}).filter((v) => v && typeof v === "object" && v.url).map((v) => cvPathFromUrl(v.url)).filter(Boolean); for (const p of files) await sbDeleteFile("cv", p); } catch (e) {} D({ type: "REMOVE_CANDIDATE", id: c.id }); }
 async function sbLogin(email, password) { const r = await fetch(SB_URL + "/auth/v1/token?grant_type=password", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const d = await r.json().catch(() => ({})); if (r.ok && d.access_token) return d; throw new Error(d.error_description || d.msg || (d.error && d.error.message) || "Fel e-post eller lösenord."); }
 async function sbSignup(email, password) { const r = await fetch(SB_URL + "/auth/v1/signup", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const d = await r.json().catch(() => ({})); if (r.ok) return d; throw new Error(d.error_description || d.msg || (d.error && d.error.message) || "Kunde inte skapa konto."); }
 let SB_ORG = null;
@@ -319,6 +326,7 @@ function reducer(state, ac) {
     }
     case "UNDO": { if (!state.history.length) return state; const last = state.history[state.history.length - 1]; return { ...mapCand(state, last.id, (c) => ({ ...c, status: last.prev })), history: state.history.slice(0, -1) }; }
     case "STAR": return mapCand(state, ac.id, (c) => ({ ...c, starred: !c.starred }));
+    case "REMOVE_CANDIDATE": { const cc = state.candidates.find((x) => x.id === ac.id); const s2 = { ...state, candidates: state.candidates.filter((x) => x.id !== ac.id) }; return { ...s2, log: withLog(s2, "Kandidat raderad (GDPR)", cc ? cc.name : "") }; }
     case "RATE": return mapCand(state, ac.id, (c) => ({ ...c, rating: ac.rating }));
     case "COMMENT": { const s2 = mapCand(state, ac.id, (c) => addTL({ ...c, comments: [...c.comments, { id: uid(), by: who, text: ac.text, at: Date.now() }] }, "note", ac.text, who)); return { ...s2, log: withLog(s2, "Kommentar", state.candidates.find((c) => c.id === ac.id)?.name) }; }
     case "REVIEW": return mapCand(state, ac.id, (c) => addTL({ ...c, reviews: { ...c.reviews, [who]: ac.verdict } }, "vote", (ac.verdict === "yes" ? "Ja" : ac.verdict === "no" ? "Nej" : "Osäker") + " (team review)", who));
@@ -374,7 +382,7 @@ function reducer(state, ac) {
     case "REMOVE_TEMPLATE": return { ...state, templates: state.templates.filter((t) => t.id !== ac.id) };
     case "SET_ORG": return { ...state, org: { ...state.org, ...ac.patch } };
     case "LOAD_STATE": { const d = ac.data || {}; return { ...state, jobs: d.jobs || [], candidates: d.candidates || [], org: d.org || state.org, templates: d.templates || state.templates, messages: d.messages || [], log: d.log || state.log, team: d.team || state.team, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
-    case "SYNC_APPLICATIONS": { const job = state.jobs.find((j) => j.slug === ac.slug); if (!job) return state; const existing = new Set(state.candidates.map((c) => c.id)); const add = (ac.rows || []).filter((r) => !existing.has("sb_" + r.id)).map((r) => ({ id: "sb_" + r.id, jobId: job.id, name: r.name || "Namnlös", email: r.email || null, phone: r.phone || null, answers: r.answers || {}, source: r.source || "Länk", status: "new", managerStatus: null, starred: false, rating: 0, comments: [], reviews: {}, reason: null, interviewTime: null, formVersion: job.version, appliedAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(), timeline: [{ id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + (r.source || "länk"), at: Date.now(), actor: "System" }] })); if (!add.length) return state; return { ...state, candidates: [...add, ...state.candidates], jobs: state.jobs.map((j) => j.id === job.id ? { ...j, stats: { started: j.stats.started + add.length, submitted: j.stats.submitted + add.length } } : j) }; }
+    case "SYNC_APPLICATIONS": { const job = state.jobs.find((j) => j.slug === ac.slug); if (!job) return state; const existing = new Set(state.candidates.map((c) => c.id)); const add = (ac.rows || []).filter((r) => !existing.has("sb_" + r.id)).map((r) => ({ id: "sb_" + r.id, jobId: job.id, name: r.name || "Namnlös", email: r.email || null, phone: r.phone || null, answers: r.answers || {}, source: r.source || "Länk", status: "new", managerStatus: null, starred: false, rating: 0, comments: [], reviews: {}, reason: null, interviewTime: null, consentAt: r.consent_at ? new Date(r.consent_at).getTime() : null, formVersion: job.version, appliedAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(), timeline: [{ id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + (r.source || "länk"), at: Date.now(), actor: "System" }] })); if (!add.length) return state; return { ...state, candidates: [...add, ...state.candidates], jobs: state.jobs.map((j) => j.id === job.id ? { ...j, stats: { started: j.stats.started + add.length, submitted: j.stats.submitted + add.length } } : j) }; }
     default: return state;
   }
 }
@@ -426,6 +434,11 @@ function FirstJobScreen({ onCreate, onLogout, email }) {
     <button className="ats-login-switch" onClick={onLogout}>Logga ut{email ? " (" + email + ")" : ""}</button>
   </div></div></div>;
 }
+function CookieBanner() {
+  const [dismissed, setDismissed] = useState(() => store.get("rekyl_cookie", false));
+  if (dismissed) return null;
+  return <div className="ats-cookie"><div className="ats-cookie-in"><span><Info size={15} /> Vi använder endast nödvändiga cookies och lokal lagring för att appen ska fungera — inga spårningscookies.</span><button className="ats-btn-primary" onClick={() => { store.set("rekyl_cookie", true); setDismissed(true); }}>Okej</button></div></div>;
+}
 function LandingPage({ onGetStarted }) {
   const features = [
     { icon: "Blocks", title: "WYSIWYG-formulärbyggare", desc: "Dra och släpp fält, bygg flerstegsformulär och se förhandsvisningen live. Formuläret ÄR scoringmotorn." },
@@ -456,7 +469,7 @@ function LandingPage({ onGetStarted }) {
     <section className="ats-lp-sec ats-lp-pricing"><div className="ats-lp-sec-in"><div className="ats-lp-sec-head"><h2>Enkel prissättning</h2><p>Börja gratis. Väx när du är redo.</p></div><div className="ats-lp-plans">{pricing.map((p, i) => <div key={i} className={"ats-lp-plan" + (p.featured ? " is-featured" : "")}>{p.featured && <span className="ats-lp-plan-tag">Populärast</span>}<div className="ats-lp-plan-name">{p.name}</div><div className="ats-lp-plan-price"><b>{p.price}</b><span>{p.per}</span></div><ul>{p.features.map((f, j) => <li key={j}><Check size={14} /> {f}</li>)}</ul><button className={p.featured ? "ats-btn-primary" : "ats-ghost"} onClick={onGetStarted}>{p.cta}</button></div>)}</div></div></section>
     <section className="ats-lp-sec"><div className="ats-lp-sec-in ats-lp-faq"><div className="ats-lp-sec-head"><h2>Vanliga frågor</h2></div>{faq.map((f, i) => <details key={i} className="ats-jp-faq-item"><summary>{f.q}</summary><p>{f.a}</p></details>)}</div></section>
     <section className="ats-lp-final"><div className="ats-lp-final-in"><h2>Redo att rekrytera smartare?</h2><p>Skapa ditt konto på under en minut.</p><button className="ats-btn-primary ats-lp-cta-lg" onClick={onGetStarted}>Kom igång gratis <ArrowRight size={16} /></button></div></section>
-    <footer className="ats-lp-foot"><div className="ats-lp-foot-in"><div className="ats-lp-logo"><span className="ats-logo">R</span> Rekyl</div><span>Regelbaserad ATS för svenska HR-team · EU-hosting · Ingen AI</span></div></footer>
+    <footer className="ats-lp-foot"><div className="ats-lp-foot-in"><div className="ats-lp-logo"><span className="ats-logo">R</span> Rekyl</div><span>Regelbaserad ATS för svenska HR-team · EU-hosting · Ingen AI</span></div></footer><CookieBanner />
   </div></div>;
 }
 function SpinnerScreen({ text }) { return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>{text || "Laddar…"}</span></div></div></div>; }
@@ -497,12 +510,12 @@ function LoginScreen({ onAuthed, onBack }) {
 function PublicApply({ slug, localJobs, localOrg }) {
   const [remote, setRemote] = useState(undefined);
   const source = typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("source") || null) : null;
-  useEffect(() => { let alive = true; (async () => { if (sbEnabled) { const rows = await sbGet("jobs?slug=eq." + encodeURIComponent(slug) + "&published=eq.true&select=*"); if (alive) setRemote(rows && rows.length ? rows[0] : null); } else setRemote(null); })(); return () => { alive = false; }; }, [slug]);
+  useEffect(() => { let alive = true; (async () => { if (sbEnabled) { const rows = await sbGet("jobs?slug=eq." + encodeURIComponent(slug) + "&published=eq.true&select=*"); if (alive) { const rr = rows && rows.length ? rows[0] : null; setRemote(rr); if (rr) sbSetUploadOrg(rr.org_id); } } else setRemote(null); })(); return () => { alive = false; }; }, [slug]);
   const localJob = localJobs.find((j) => j.slug === slug);
   let job = null, org = localOrg, company = localOrg.companyName;
   if (remote && remote.form) { job = { id: "remote", slug, title: remote.title, version: remote.form.version || 1, criteria: remote.form.criteria || [], pages: remote.form.pages, pageLabels: remote.form.pageLabels || {}, annons: remote.form.annons || {}, profiles: [{ id: "std", name: "Standard" }], activeProfileId: "std", autoRejectBelow: 0, rules: [], autoRules: [], stats: { started: 0, submitted: 0 } }; org = remote.org || localOrg; company = remote.company || (remote.org && remote.org.companyName) || company; }
   else if (localJob) { job = localJob; company = localJob.company || company; }
-  const submitFn = async (cand) => { if (sbEnabled) await sbInsert("applications", { job_slug: slug, org_id: remote ? remote.org_id : null, name: cand.name, email: cand.email, phone: cand.phone, answers: cand.answers, source: cand.source, created_at: new Date().toISOString() }); };
+  const submitFn = async (cand) => { if (sbEnabled) await sbInsert("applications", { job_slug: slug, org_id: remote ? remote.org_id : null, name: cand.name, email: cand.email, phone: cand.phone, answers: cand.answers, source: cand.source, consent_at: cand.consentAt ? new Date(cand.consentAt).toISOString() : new Date().toISOString(), created_at: new Date().toISOString() }); };
   if (remote === undefined) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>Laddar…</span></div></div></div>;
   if (!job) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><h2>Tjänsten hittades inte</h2><p>Länken kan vara felaktig eller så är annonsen inte publicerad än.</p></div></div></div>;
   const a = job.annons || {};
@@ -832,6 +845,8 @@ function CandidatesView({ cands, D, me, job, state, showToast, setDetailId, comp
 function CandidateDrawer({ cand, state, D, me, job, onClose, showToast, setPrintDoc, dupIndex, compareIds, toggleCompare }) {
   const c = { ...cand, ...scoreCandidate(job, cand.answers), missing: missingInfo(job, cand) };
   const canVote = can(me.role, "vote"), canComment = can(me.role, "comment"), canDecide = can(me.role, "decide"), canMsg = can(me.role, "message");
+  const [erasing, setErasing] = useState(false); const [eraseBusy, setEraseBusy] = useState(false);
+  const doErase = async () => { setEraseBusy(true); await eraseCandidate(c, D); setEraseBusy(false); setErasing(false); showToast({ kind: "ok", msg: "Kandidatens data raderad permanent" }); onClose(); };
   const dupOf = (dupIndex[(c.email || "").toLowerCase()] || []).filter((x) => x.id !== c.id);
   const decide = (status, reason) => { D({ type: "DECIDE", id: c.id, status, reason }); showToast({ kind: c.email ? "ok" : "warn", msg: c.email ? `${statusLabel(status)} · mejl köat` : `${statusLabel(status)} · mejl EJ köat (saknar e-post)` }); };
   const sendMsg = (trigger) => { D({ type: "SEND_MESSAGE", id: c.id, trigger }); showToast({ kind: c.email ? "ok" : "warn", msg: c.email ? "Mejl köat i mejlloggen" : "EJ köat — saknar e-post" }); };
@@ -855,8 +870,12 @@ function CandidateDrawer({ cand, state, D, me, job, onClose, showToast, setPrint
 
         {canMsg && <div className="ats-drawer-msgs">{c.missing.length > 0 && <button className="ats-ghost" onClick={() => sendMsg("completion")}><Bell size={14} /> Begär komplettering</button>}<button className="ats-ghost" onClick={() => sendMsg("reminder")}><Mail size={14} /> Paminnelse</button><button className="ats-ghost" onClick={() => { toggleCompare(c.id); showToast({ kind: "ok", msg: compareIds.includes(c.id) ? "Borttagen från jämförelse" : "Tillagd i jämförelse" }); }}><GitCompare size={14} /> {compareIds.includes(c.id) ? "I jämförelse" : "Jämför"}</button></div>}
       </div>
+      {c.consentAt && <div className="ats-consent"><ShieldCheck size={12} /> Samtycke registrerat {new Date(c.consentAt).toLocaleDateString("sv-SE")} · rätt att bli glömd tillgänglig</div>}
       <div className="ats-drawer-foot">
         <button className="ats-ghost is-sm" onClick={() => setPrintDoc({ title: "Scorecard", node: <ScorecardDoc job={job} c={c} org={state.org} /> })}><FileText size={14} /> PDF</button>
+        <button className="ats-ghost is-sm" title="Exportera kandidatens data (GDPR-portabilitet)" onClick={() => downloadJSON("kandidat-" + (c.name || "data").replace(/\s+/g, "_") + ".json", { namn: c.name, epost: c.email, telefon: c.phone, kalla: c.source, status: statusLabel(c.status), matchning: c.total + "%", svar: c.answers, motivering: c.reason, samtycke: c.consentAt ? new Date(c.consentAt).toISOString() : null, ansokt: new Date(c.appliedAt).toISOString(), timeline: c.timeline })}><Download size={14} /> Exportera</button>
+        {me.role === "admin" && <button className="ats-ghost is-sm is-danger" title="Radera all data (rätt att bli glömd)" onClick={() => setErasing(true)}><Trash2 size={14} /> Radera</button>}
+        {erasing && <Modal title="Radera kandidatens data permanent?" onClose={() => !eraseBusy && setErasing(false)}><div className="ats-erase"><p><b>{c.name}</b> och all tillhörande data (svar, bilagor, motiveringar och timeline) raderas permanent från både appen och molnet. Detta går inte att ångra.</p><p className="ats-erase-note"><ShieldCheck size={13} /> Uppfyller den registrerades rätt att bli glömd enligt GDPR artikel 17.</p><div className="ats-erase-actions"><button className="ats-ghost" disabled={eraseBusy} onClick={() => setErasing(false)}>Avbryt</button><button className="ats-btn-danger" disabled={eraseBusy} onClick={doErase}>{eraseBusy ? "Raderar…" : "Radera permanent"}</button></div></div></Modal>}
         {canDecide && <div className="ats-drawer-decide">
           <Menu align="right" trigger={<button className="ats-dq-rej" title="Avslå"><X size={15} /></button>}><div className="ats-menu-label">Avslagsanledning</div>{REASONS.map((r) => <button key={r} className="ats-menu-item" onClick={() => decide("reject", r)}>{r}</button>)}</Menu>
           <button className="ats-dq-res" title="Reservlista" onClick={() => decide("reserve")}><PauseCircle size={15} /></button>
@@ -985,7 +1004,7 @@ function ApplyForm({ job, D, org, showToast, onSubmit, source }) {
 
   if (sent) return <div className="ats-applied"><div className="ats-empty-badge"><CheckCircle2 size={22} /></div><h3>Tack {base.name.split(" ")[0]}!</h3><p>Din ansökan till {job.title} är mottagen. En bekräftelse har köats till {base.email}. Ansökan syns nu i kön med {live.total}% matchning.</p><button className="ats-ghost" onClick={() => { setSent(false); setAnswers({}); setBase({ name: "", email: "", phone: "" }); setConsent(false); setStep(0); setTouched(false); }}>Fyll i en till</button></div>;
 
-  const submit = () => { if (!nameOk || !emailOk || !consent) { setTouched(true); return; } const cand = { id: "c" + uid(), name: base.name.trim(), email: base.email.trim(), phone: base.phone.trim() || null, source: source || (onSubmit ? "Länk" : "Förhandsvisning"), answers, rating: 0, comments: [], reviews: {}, status: "new", starred: false, appliedAt: Date.now(), reason: null, formVersion: job.version }; if (onSubmit) onSubmit(cand); else D({ type: "APPLY", cand }); setSent(true); showToast && showToast({ kind: "ok", msg: "Ansökan inskickad · bekräftelsemejl köat" }); };
+  const submit = () => { if (!nameOk || !emailOk || !consent) { setTouched(true); return; } const cand = { id: "c" + uid(), name: base.name.trim(), email: base.email.trim(), phone: base.phone.trim() || null, source: source || (onSubmit ? "Länk" : "Förhandsvisning"), answers, rating: 0, comments: [], reviews: {}, status: "new", starred: false, appliedAt: Date.now(), reason: null, consentAt: consent ? Date.now() : null, formVersion: job.version }; if (onSubmit) onSubmit(cand); else D({ type: "APPLY", cand }); setSent(true); showToast && showToast({ kind: "ok", msg: "Ansökan inskickad · bekräftelsemejl köat" }); };
 
   return (
     <div className="ats-apply">
@@ -1139,7 +1158,7 @@ function FileDrop({ value, onChange }) {
     if (sbEnabled) {
       setBusy(true);
       const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const path = Date.now() + "_" + Math.random().toString(36).slice(2, 8) + "_" + safe;
+      const path = (SB_UPLOAD_ORG || "public") + "/" + Date.now() + "_" + Math.random().toString(36).slice(2, 8) + "_" + safe;
       const url = await sbUpload("cv", path, file);
       setBusy(false); if (!url) setErr(true);
       onChange({ name: file.name, url: url || null, size: file.size });
@@ -1303,6 +1322,18 @@ function TeamView({ state, me, D }) {
 
 /* ===================== INSTALLNINGAR ===================== */
 const VAR_CHIPS = ["candidateName", "jobTitle", "companyName", "hrName", "hrEmail", "missingField", "interviewTime", "rejectionReason"];
+function RetentionPanel({ state, D, showToast, isAdmin }) {
+  const months = state.org.retentionMonths || 0;
+  const [busy, setBusy] = useState(false);
+  const cutoff = months > 0 ? Date.now() - months * 30 * 864e5 : 0;
+  const old = months > 0 ? state.candidates.filter((c) => (c.appliedAt || 0) < cutoff) : [];
+  const purge = async () => { if (!old.length) return; setBusy(true); for (const c of old) { await eraseCandidate(c, D); } setBusy(false); showToast({ kind: "ok", msg: old.length + " gamla ansökningar raderade" }); };
+  return <div className="ats-panel"><div className="ats-panel-h"><h2>Dataskydd och lagring</h2><span className="ats-summono">GDPR</span></div>
+    <label className="ats-field ats-ret-row"><span className="ats-field-l">Radera ansökningar äldre än</span><div className="ats-ret-input"><input type="number" min="0" value={months} disabled={!isAdmin} onChange={(e) => D({ type: "SET_ORG", patch: { retentionMonths: Math.max(0, Number(e.target.value) || 0) } })} /><span>månader (0 = av)</span></div></label>
+    {months > 0 && <div className={"ats-ret-status" + (old.length ? " is-warn" : "")}>{old.length ? <><CircleAlert size={14} /> {old.length} ansökningar är äldre än {months} månader.{isAdmin && <button className="ats-btn-danger is-sm" disabled={busy} onClick={purge}>{busy ? "Raderar…" : "Rensa nu"}</button>}</> : <><Check size={14} /> Inga ansökningar överskrider lagringstiden.</>}</div>}
+    <p className="ats-builder-note"><ShieldCheck size={12} /> Kandidaters uppgifter lagras inom EU och kan raderas på begäran (rätt att bli glömd) via varje kandidats panel. Sätt en lagringstid ovan för att regelbundet rensa gamla ansökningar. Samtycke registreras vid varje ansökan.</p>
+  </div>;
+}
 function SettingsView({ state, D, me, job, cands, showToast, onLogout, session }) {
   const canEdit = can(me.role, "edit");
   const [selId, setSelId] = useState(state.templates[0]?.id);
@@ -1318,6 +1349,7 @@ function SettingsView({ state, D, me, job, cands, showToast, onLogout, session }
     <div className="ats-view">
       <PageHeader title="Inställningar" meta={<><span>e-post</span><Dot /><span>mallar</span><Dot /><span>företag</span></>} />
       <div className="ats-panel"><div className="ats-panel-h"><h2>Inloggad som</h2></div><div className="ats-rolepick"><div className="ats-rolepick-btn is-on"><span className="ats-avatar is-xs">{me.initials}</span><div className="ats-rolepick-t"><b>{me.name}</b><small>{me.email} · {ROLE_LABEL[me.role]}</small></div></div></div>{sbEnabled && session && <button className="ats-ghost is-danger" style={{ marginTop: 12 }} onClick={onLogout}><LogOut size={14} /> Logga ut{session.email ? " (" + session.email + ")" : ""}</button>}</div>
+      <RetentionPanel state={state} D={D} showToast={showToast} isAdmin={me.role === "admin"} />
       <div className="ats-grid-2">
         <div className="ats-panel"><div className="ats-panel-h"><h2>Företag & avsändare</h2></div>
           <label className="ats-field"><span className="ats-field-l">Företagsnamn</span><input value={org.companyName} disabled={!canEdit} onChange={(e) => setOrg({ companyName: e.target.value })} /></label>
@@ -2266,6 +2298,28 @@ function Style() {
 .ats-lp-foot-in{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
 .ats-lp-foot span{font-size:12.5px;color:var(--muted)}
 @media(max-width:820px){.ats-lp-hero h1{font-size:36px}.ats-lp-hero p{font-size:16px}.ats-lp-sec-head h2{font-size:27px}.ats-lp-prob-grid,.ats-lp-features,.ats-lp-plans{grid-template-columns:1fr}.ats-lp-metrics{gap:30px}}
+.ats-btn-danger{display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:10px;background:var(--brick);color:#fff;font-weight:600;font-size:13.5px;transition:.15s}
+.ats-btn-danger:hover:not(:disabled){background:#8a3423}
+.ats-btn-danger:disabled{opacity:.6;cursor:not-allowed}
+.ats-btn-danger.is-sm{padding:6px 12px;font-size:12.5px}
+.ats-ghost.is-danger{color:var(--brick)}
+.ats-ghost.is-danger:hover{background:var(--brick-soft)}
+.ats-consent{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--petrol);background:var(--petrol-soft);padding:7px 14px;margin:0 18px 8px;border-radius:8px}
+.ats-erase{display:flex;flex-direction:column;gap:12px;padding:18px 22px 22px}
+.ats-erase p{font-size:14px;line-height:1.6;color:var(--sub)}
+.ats-erase-note{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--petrol-deep);background:var(--petrol-soft);padding:10px 12px;border-radius:9px}
+.ats-erase-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:4px}
+.ats-ret-row{margin-bottom:12px;display:flex;flex-direction:column;gap:5px}
+.ats-ret-input{display:flex;align-items:center;gap:10px}
+.ats-ret-input input{width:90px;border:1px solid var(--line);border-radius:9px;padding:9px 11px;background:var(--surface)}
+.ats-ret-input span{font-size:13px;color:var(--muted)}
+.ats-ret-status{display:flex;align-items:center;gap:9px;font-size:13px;padding:11px 13px;border-radius:10px;background:var(--petrol-soft);color:var(--petrol-deep);margin-bottom:12px;flex-wrap:wrap}
+.ats-ret-status.is-warn{background:var(--amber-soft);color:#7a4d0a}
+.ats-ret-status button{margin-left:auto}
+.ats-cookie{position:fixed;left:0;right:0;bottom:0;z-index:80;background:var(--ink);color:#fff;padding:12px 16px}
+.ats-cookie-in{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.ats-cookie-in span{display:flex;align-items:center;gap:9px;font-size:13px;line-height:1.5}
+.ats-cookie-in .ats-btn-primary{flex-shrink:0}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
