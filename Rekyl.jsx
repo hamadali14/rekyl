@@ -426,6 +426,39 @@ function FirstJobScreen({ onCreate, onLogout, email }) {
     <button className="ats-login-switch" onClick={onLogout}>Logga ut{email ? " (" + email + ")" : ""}</button>
   </div></div></div>;
 }
+function LandingPage({ onGetStarted }) {
+  const features = [
+    { icon: "Blocks", title: "WYSIWYG-formulärbyggare", desc: "Dra och släpp fält, bygg flerstegsformulär och se förhandsvisningen live. Formuläret ÄR scoringmotorn." },
+    { icon: "Gauge", title: "Deterministisk scoring", desc: "Viktade kriterier, knockout-regler och villkor. Helt regelbaserat och transparent — ingen AI, inga svarta lådor." },
+    { icon: "Layers", title: "Swipe-kandidatkort", desc: "Gå igenom kandidater som ett kortlek. Matchning, styrkor, risker och rekommenderad åtgärd på varje kort." },
+    { icon: "TrendingUp", title: "Källkvalitet", desc: "Se kvalitet per kanal — inte bara antal. Vilken kanal ger dina bästa kandidater?" },
+    { icon: "Share2", title: "Spårbara länkar", desc: "En egen ansökningssida per jobb. Publicera på LinkedIn, Indeed och Platsbanken med source-tracking." },
+    { icon: "Users", title: "Team och roller", desc: "Bjud in kollegor med roller. Beslut, kommentarer och team-röster — allt loggat och spårbart." },
+  ];
+  const compliance = ["GDPR-ready", "ISO/IEC 27001-aligned", "ISO 27701-aligned", "SOC 2-aligned", "WCAG / EN 301 549-aligned", "EU AI Act-aware", "ePrivacy / cookie-compliant", "DPA / SCC-stöd", "Revisionsloggar", "Rollbaserad åtkomst", "Kryptering", "EU-hosting"];
+  const pricing = [
+    { name: "Start", price: "0 kr", per: "för alltid", features: ["1 aktivt jobb", "Formulärbyggare", "Spårbara länkar", "Deterministisk scoring"], cta: "Kom igång gratis" },
+    { name: "Pro", price: "790 kr", per: "/mån", features: ["Obegränsat med jobb", "Team och roller", "Källkvalitet och rapporter", "Egen branding", "CV-lagring"], cta: "Kom igång", featured: true },
+    { name: "Enterprise", price: "Kontakt", per: "", features: ["White-label", "SSO och SCIM", "Anpassad datahantering", "Prioriterad support", "SLA"], cta: "Kontakta oss" },
+  ];
+  const faq = [
+    { q: "Använder ni AI för att sortera kandidater?", a: "Nej. All scoring är deterministisk och regelbaserad — viktade kriterier, knockout och villkor som du själv styr. Helt transparent och förklarbart." },
+    { q: "Var lagras kandidaternas data?", a: "Inom EU. Varje företags data är strikt isolerad, skyddad av rollbaserad åtkomst och kryptering." },
+    { q: "Kan flera personer jobba i samma arbetsyta?", a: "Ja. Bjud in kollegor med roller (admin, rekryterare, chef, insyn). Allt loggas och blir spårbart." },
+    { q: "Fungerar det med LinkedIn och Platsbanken?", a: "Ja. Varje jobb får en egen ansökningssida med spårbar länk. Plattformarna länkar dit — du ser exakt varifrån varje kandidat kom." },
+  ];
+  return <div className="ats-root"><Style /><div className="ats-lp">
+    <header className="ats-lp-nav"><div className="ats-lp-nav-in"><div className="ats-lp-logo"><span className="ats-logo">R</span> Rekyl</div><div className="ats-lp-nav-r"><button className="ats-lp-link" onClick={onGetStarted}>Logga in</button><button className="ats-btn-primary" onClick={onGetStarted}>Kom igång</button></div></div></header>
+    <section className="ats-lp-hero"><div className="ats-lp-hero-in"><span className="ats-lp-badge"><Sparkles size={13} /> Regelbaserad ATS — ingen AI, full transparens</span><h1>Rekrytera smartare med formulär som <span className="ats-lp-hl">är</span> scoringmotorn.</h1><p>Bygg smarta ansökningsformulär, poängsätt kandidater deterministiskt och gå igenom dem som ett kortlek. Byggt för svenska HR-team som vill ha kontroll, spårbarhet och fart.</p><div className="ats-lp-hero-cta"><button className="ats-btn-primary ats-lp-cta-lg" onClick={onGetStarted}>Kom igång gratis <ArrowRight size={16} /></button><span className="ats-lp-cta-note">Inget kort krävs</span></div><div className="ats-lp-metrics"><div><b>0%</b><span>AI-gissningar</span></div><div><b>100%</b><span>Förklarbara beslut</span></div><div><b>EU</b><span>Datahosting</span></div></div></div></section>
+    <section className="ats-lp-sec ats-lp-prob"><div className="ats-lp-sec-in ats-lp-prob-grid"><div className="ats-lp-prob-col"><div className="ats-lp-prob-h is-bad"><X size={14} /> Utan Rekyl</div><ul>{["Manuell sållning i mejl och kalkylark", "Svårt att motivera varför en kandidat valdes", "Ingen koll på vilken kanal som funkar", "Svarta AI-lådor du inte kan förklara"].map((t, i) => <li key={i}><X size={14} /> {t}</li>)}</ul></div><div className="ats-lp-prob-col is-good"><div className="ats-lp-prob-h is-ok"><Check size={14} /> Med Rekyl</div><ul>{["Automatisk, viktad poängsättning från formuläret", "Varje beslut spårbart med tydlig motivering", "Källkvalitet per kanal — inte bara antal", "Regelbaserat och transparent, helt utan AI"].map((t, i) => <li key={i}><Check size={14} /> {t}</li>)}</ul></div></div></section>
+    <section className="ats-lp-sec"><div className="ats-lp-sec-in"><div className="ats-lp-sec-head"><h2>Allt du behöver för modern rekrytering</h2><p>Från ansökan till anställning — i ett verktyg.</p></div><div className="ats-lp-features">{features.map((f, i) => { const Ic = ICONS[f.icon] || Sparkles; return <div key={i} className="ats-lp-feat"><span className="ats-lp-feat-ic"><Ic size={20} /></span><b>{f.title}</b><p>{f.desc}</p></div>; })}</div></div></section>
+    <section className="ats-lp-sec ats-lp-trust"><div className="ats-lp-sec-in"><div className="ats-lp-sec-head"><h2>Byggt för förtroende och efterlevnad</h2><p>Säkerhet och dataskydd i grunden. Vi visar var vi står — hederligt.</p></div><div className="ats-lp-badges">{compliance.map((c, i) => <span key={i} className="ats-lp-cbadge"><ShieldCheck size={13} /> {c}</span>)}</div><p className="ats-lp-trust-note">Neutrala "aligned/ready"-märkningar visar att produkten är byggd enligt respektive ramverk. Officiella certifieringslogotyper visas endast vid faktisk certifiering.</p></div></section>
+    <section className="ats-lp-sec ats-lp-pricing"><div className="ats-lp-sec-in"><div className="ats-lp-sec-head"><h2>Enkel prissättning</h2><p>Börja gratis. Väx när du är redo.</p></div><div className="ats-lp-plans">{pricing.map((p, i) => <div key={i} className={"ats-lp-plan" + (p.featured ? " is-featured" : "")}>{p.featured && <span className="ats-lp-plan-tag">Populärast</span>}<div className="ats-lp-plan-name">{p.name}</div><div className="ats-lp-plan-price"><b>{p.price}</b><span>{p.per}</span></div><ul>{p.features.map((f, j) => <li key={j}><Check size={14} /> {f}</li>)}</ul><button className={p.featured ? "ats-btn-primary" : "ats-ghost"} onClick={onGetStarted}>{p.cta}</button></div>)}</div></div></section>
+    <section className="ats-lp-sec"><div className="ats-lp-sec-in ats-lp-faq"><div className="ats-lp-sec-head"><h2>Vanliga frågor</h2></div>{faq.map((f, i) => <details key={i} className="ats-jp-faq-item"><summary>{f.q}</summary><p>{f.a}</p></details>)}</div></section>
+    <section className="ats-lp-final"><div className="ats-lp-final-in"><h2>Redo att rekrytera smartare?</h2><p>Skapa ditt konto på under en minut.</p><button className="ats-btn-primary ats-lp-cta-lg" onClick={onGetStarted}>Kom igång gratis <ArrowRight size={16} /></button></div></section>
+    <footer className="ats-lp-foot"><div className="ats-lp-foot-in"><div className="ats-lp-logo"><span className="ats-logo">R</span> Rekyl</div><span>Regelbaserad ATS för svenska HR-team · EU-hosting · Ingen AI</span></div></footer>
+  </div></div>;
+}
 function SpinnerScreen({ text }) { return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>{text || "Laddar…"}</span></div></div></div>; }
 function OrgSetupScreen({ session, onReady, onLogout }) {
   const [mode, setMode] = useState("create");
@@ -444,7 +477,7 @@ function OrgSetupScreen({ session, onReady, onLogout }) {
     <button className="ats-login-switch" onClick={onLogout}>Logga ut{session && session.email ? " (" + session.email + ")" : ""}</button>
   </div></div></div>;
 }
-function LoginScreen({ onAuthed }) {
+function LoginScreen({ onAuthed, onBack }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState(""); const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
@@ -458,6 +491,7 @@ function LoginScreen({ onAuthed }) {
     {err && <div className="ats-login-err"><CircleAlert size={13} /> {err}</div>}
     <button className="ats-btn-primary ats-login-btn" disabled={busy} onClick={submit}>{busy ? "Loggar in…" : mode === "login" ? "Logga in" : "Skapa konto & logga in"}</button>
     <button className="ats-login-switch" onClick={() => { setMode(mode === "login" ? "signup" : "login"); setErr(""); }}>{mode === "login" ? "Har du inget konto? Skapa ett" : "Har du redan konto? Logga in"}</button>
+    {onBack && <button className="ats-login-back" onClick={onBack}><ChevronLeft size={14} /> Till startsidan</button>}
   </div></div></div>;
 }
 function PublicApply({ slug, localJobs, localOrg }) {
@@ -514,6 +548,7 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [org, setOrgState] = useState(() => store.get("rekyl_org", null));
   const [orgChecked, setOrgChecked] = useState(false);
+  const [authView, setAuthView] = useState("landing");
   const setOrg = (o) => { setOrgState(o); store.set("rekyl_org", o); if (o) sbSetOrg(o.id); };
   const login = (sv) => { store.set("rekyl_session", sv); sbSetToken(sv.token); setSession(sv); };
   const logout = () => { store.set("rekyl_session", null); store.set("rekyl_state", null); store.set("rekyl_org", null); sbSetToken(null); sbSetOrg(null); setLoaded(false); setOrgState(null); setOrgChecked(true); setSession(null); dispatch({ type: "LOAD_STATE", data: {} }); dispatch({ type: "SET_TEAM", team: [] }); };
@@ -541,7 +576,7 @@ export default function App() {
 
   const pubMatch = typeof window !== "undefined" ? window.location.pathname.match(/^\/j\/([^/]+)/) : null;
   if (pubMatch) return <PublicApply slug={decodeURIComponent(pubMatch[1])} localJobs={state.jobs} localOrg={state.org} />;
-  if (sbEnabled && !session) return <LoginScreen onAuthed={login} />;
+  if (sbEnabled && !session) return authView === "login" ? <LoginScreen onAuthed={login} onBack={() => setAuthView("landing")} /> : <LandingPage onGetStarted={() => setAuthView("login")} />;
   if (sbEnabled && session && !orgChecked) return <SpinnerScreen text="Laddar…" />;
   if (sbEnabled && session && orgChecked && !org) return <OrgSetupScreen session={session} onReady={(o) => { setOrg(o); dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: o.role }); }} onLogout={logout} />;
   if (sbEnabled && session && org && !loaded) return <SpinnerScreen text="Synkar din data…" />;
@@ -742,6 +777,24 @@ function InterviewModal({ cand, onClose, onConfirm }) {
 
 /* ===================== KANDIDATER ===================== */
 function toCSV(list) { const head = ["Namn", "E-post", "Telefon", "Matchning", "Status", "Källa", "Betyg", "Diskvalificerad", "Saknar", "Avslagsanledning"]; const rows = list.map((c) => [c.name, c.email || "", c.phone || "", c.total + "%", statusLabel(c.status), c.source, c.rating || "", c.knockout ? "Ja" : "Nej", (c.missing || []).join("|"), c.reason || ""]); return [head, ...rows].map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n"); }
+function RecruitmentReport({ job, cands, state }) {
+  const org = state.org;
+  const byStatus = {}; STAGES.forEach((st) => { byStatus[st.id] = cands.filter((c) => c.status === st.id).length; });
+  const avg = cands.length ? Math.round(cands.reduce((x, c) => x + (c.total || 0), 0) / cands.length) : 0;
+  const sources = {}; cands.forEach((c) => { const s = c.source || "Okänd"; if (!sources[s]) sources[s] = { n: 0, sum: 0 }; sources[s].n++; sources[s].sum += c.total || 0; });
+  const decided = cands.filter((c) => c.status !== "new").sort((a, b) => b.total - a.total);
+  const hired = cands.filter((c) => c.status === "hired");
+  const a = job.annons || {};
+  return <div className="ats-pr ats-report">
+    <div className="ats-pr-head"><div><div className="ats-pr-co">{org.companyName}</div><div className="ats-pr-title">Rekryteringsrapport · {job.title}</div></div><div className="ats-pr-score"><b>{cands.length}</b><small>ansökningar</small></div></div>
+    <div className="ats-report-meta">{job.team}{a.location ? " · " + a.location : ""} · Genererad {new Date().toLocaleDateString("sv-SE")}</div>
+    <div className="ats-report-sec"><h3>Sammanfattning</h3><div className="ats-report-grid">{STAGES.map((st) => <div key={st.id} className="ats-report-stat"><b>{byStatus[st.id]}</b><span>{st.label}</span></div>)}<div className="ats-report-stat"><b>{avg}%</b><span>Snittmatchning</span></div></div></div>
+    {hired.length > 0 && <div className="ats-report-sec"><h3>Anställd kandidat</h3>{hired.map((c) => <div key={c.id} className="ats-report-hired"><Check size={15} /> <b>{c.name}</b> — {c.total}% matchning · {c.email} · källa: {c.source}</div>)}</div>}
+    <div className="ats-report-sec"><h3>Kanaler och kvalitet</h3><table className="ats-pr-table"><thead><tr><th>Kanal</th><th>Ansökningar</th><th>Snittmatchning</th></tr></thead><tbody>{Object.entries(sources).sort((x, y) => y[1].n - x[1].n).map(([s, v]) => <tr key={s}><td>{s}</td><td>{v.n}</td><td>{v.n ? Math.round(v.sum / v.n) : 0}%</td></tr>)}</tbody></table></div>
+    <div className="ats-report-sec"><h3>Beslutslogg och motiveringar</h3><table className="ats-pr-table"><thead><tr><th>Kandidat</th><th>Matchning</th><th>Beslut</th><th>Motivering</th></tr></thead><tbody>{decided.length === 0 ? <tr><td colSpan={4}>Inga beslut fattade än.</td></tr> : decided.map((c) => <tr key={c.id}><td>{c.name}</td><td>{c.total}%</td><td>{statusLabel(c.status)}</td><td>{c.reason || (c.knockout ? c.knockoutReasons.join(", ") : "—")}</td></tr>)}</tbody></table></div>
+    <div className="ats-pr-foot">Deterministiskt underlag från Rekyl · viktade kriterier, ingen AI · {org.companyName} · {new Date().toLocaleString("sv-SE")}</div>
+  </div>;
+}
 function ScorecardDoc({ job, c, org }) { return <div className="ats-pr"><div className="ats-pr-head"><div><div className="ats-pr-co">{org.companyName}</div><div className="ats-pr-title">Kandidatunderlag · {job.title}</div></div><div className="ats-pr-score"><b>{c.total}</b><small>% matchning</small></div></div><div className="ats-pr-name">{c.name} {c.knockout && <span className="ats-pr-ko">Diskvalificerad</span>}</div><div className="ats-pr-sub">{c.email} · {c.phone || "telefon saknas"} · {c.source} · formulär v{c.formVersion}</div><table className="ats-pr-table"><thead><tr><th>Kriterium</th><th>Kandidat</th><th>Uppfyllt</th><th>Bidrag</th></tr></thead><tbody>{c.parts.filter((p) => p.kind === "scored").map((p) => <tr key={p.id}><td>{p.label}</td><td>{p.detail}</td><td>{Math.round(p.frac * 100)}%</td><td>+{Math.round(p.earned)}</td></tr>)}{c.parts.filter((p) => p.kind === "must").map((p) => <tr key={p.id}><td>{p.label}</td><td>Obligatoriskt</td><td colSpan={2}>{p.ok ? "Uppfyllt" : "Saknas"}</td></tr>)}</tbody></table>{c.parts.find((p) => p.kind === "text")?.value && <div className="ats-pr-mot"><b>Motivering</b><p>{c.parts.find((p) => p.kind === "text").value}</p></div>}<div className="ats-pr-foot">Deterministiskt underlag från Rekyl · viktade kriterier, ingen AI · {new Date().toLocaleDateString("sv-SE")}</div></div>; }
 function CommentBox({ onAdd }) { const [t, setT] = useState(""); return <div className="ats-cmtbox"><input value={t} onChange={(e) => setT(e.target.value)} placeholder="Skriv en kommentar…" onKeyDown={(e) => { if (e.key === "Enter" && t.trim()) { onAdd(t.trim()); setT(""); } }} /><button disabled={!t.trim()} onClick={() => { if (t.trim()) { onAdd(t.trim()); setT(""); } }}><ArrowRight size={15} /></button></div>; }
 
@@ -1173,7 +1226,7 @@ function SourceQualityView({ allScored }) {
     </div>
   );
 }
-function StatsView({ cands, job, state, D }) {
+function StatsView({ cands, job, state, D, setPrintDoc }) {
   const started = job.stats.started, submitted = job.stats.submitted;
   const completion = Math.round((submitted / Math.max(1, started)) * 100);
   const advanced = cands.filter((c) => ["shortlist", "interview", "hired"].includes(c.status)).length;
@@ -1190,7 +1243,7 @@ function StatsView({ cands, job, state, D }) {
   const fMax = Math.max(1, ...funnel.map((f) => f[1]));
   return (
     <div className="ats-view">
-      <PageHeader title="Statistik" meta={<><JobSwitch state={state} D={D} /><Dot /><span>kvalitet och källor</span></>} />
+      <PageHeader title="Statistik" meta={<><JobSwitch state={state} D={D} /><Dot /><span>kvalitet och källor</span></>} right={<button className="ats-ghost is-accent" onClick={() => setPrintDoc({ title: "Rekryteringsrapport", node: <RecruitmentReport job={job} cands={cands} state={state} /> })}><Download size={15} /> Exportera rapport</button>} />
       <div className="ats-stats"><div className="ats-stat"><span className="ats-stat-ic is-green"><TrendingUp size={16} /></span><div><div className="ats-stat-v">{completion}%</div><div className="ats-stat-l">Completion rate</div></div></div><div className="ats-stat"><span className="ats-stat-ic is-petrol"><Check size={16} /></span><div><div className="ats-stat-v">{submitted}</div><div className="ats-stat-l">Skickade ansökningar</div></div></div><div className="ats-stat"><span className="ats-stat-ic is-brick"><ShieldAlert size={16} /></span><div><div className="ats-stat-v">{Math.round((ko / Math.max(1, cands.length)) * 100)}%</div><div className="ats-stat-l">Diskvalificerade</div></div></div><div className="ats-stat"><span className="ats-stat-ic is-amber"><Star size={16} /></span><div><div className="ats-stat-v">{advanced}</div><div className="ats-stat-l">Gick vidare</div></div></div></div>
       <div className="ats-grid-2">
         <div className="ats-panel"><div className="ats-panel-h"><h2>Rekryteringsfunnel</h2></div><div className="ats-funnel">{funnel.map(([label, n, tone]) => <div key={label} className="ats-funnel-row"><span className="ats-funnel-l">{label}</span><div className="ats-funnel-bar"><div className={"ats-funnel-fill is-" + tone} style={{ width: Math.max(4, (n / fMax) * 100) + "%" }}>{n}</div></div></div>)}</div></div>
@@ -2139,6 +2192,80 @@ function Style() {
 .ats-sq-avg b{font-size:13.5px;min-width:40px;text-align:right}
 .ats-sq-metric{font-weight:600;font-size:14px}
 .ats-sq-metric.is-hired{color:#8A6516}
+.ats-report-meta{font-size:12px;color:var(--muted);margin:-6px 0 18px}
+.ats-report-sec{margin-bottom:22px}
+.ats-report-sec h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--ink)}
+.ats-report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:10px}
+.ats-report-stat{background:var(--paper2);border-radius:10px;padding:12px;text-align:center}
+.ats-report-stat b{display:block;font-family:'Bricolage Grotesque';font-size:22px;font-weight:700}
+.ats-report-stat span{font-size:11px;color:var(--sub)}
+.ats-report-hired{display:flex;align-items:center;gap:8px;background:#EAF3EC;color:#1f6b3a;border-radius:10px;padding:12px 14px;font-size:14px;margin-bottom:6px}
+@media print{.ats-report-stat,.ats-report-hired{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+.ats-login-back{display:inline-flex;align-items:center;gap:5px;justify-content:center;font-size:12px;color:var(--muted);padding:4px;margin-top:2px}
+.ats-lp{background:var(--paper);color:var(--ink)}
+.ats-lp-nav{position:sticky;top:0;z-index:30;background:rgba(244,237,226,.82);backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
+.ats-lp-nav-in,.ats-lp-sec-in,.ats-lp-hero-in,.ats-lp-final-in,.ats-lp-foot-in{max-width:1080px;margin:0 auto;padding:0 22px}
+.ats-lp-nav-in{display:flex;align-items:center;justify-content:space-between;height:64px}
+.ats-lp-logo{display:flex;align-items:center;gap:9px;font-family:'Bricolage Grotesque';font-weight:700;font-size:19px}
+.ats-lp-nav-r{display:flex;align-items:center;gap:14px}
+.ats-lp-link{font-weight:600;font-size:14px;color:var(--ink)}
+.ats-lp-hero{padding:74px 0 60px;text-align:center;background:radial-gradient(120% 90% at 50% 0%, var(--petrol-soft) 0%, transparent 60%)}
+.ats-lp-badge{display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.03em;background:var(--surface);border:1px solid var(--line);color:var(--petrol-deep);padding:7px 14px;border-radius:20px}
+.ats-lp-hero h1{font-family:'Bricolage Grotesque';font-weight:700;font-size:52px;line-height:1.05;letter-spacing:-.025em;margin:22px auto 0;max-width:800px}
+.ats-lp-hl{color:var(--petrol);font-style:italic}
+.ats-lp-hero p{font-size:18px;line-height:1.6;color:var(--sub);max-width:620px;margin:20px auto 0}
+.ats-lp-hero-cta{display:flex;flex-direction:column;align-items:center;gap:9px;margin-top:30px}
+.ats-lp-cta-lg{padding:14px 26px;font-size:15.5px;gap:9px}
+.ats-lp-cta-note{font-size:12.5px;color:var(--muted)}
+.ats-lp-metrics{display:flex;justify-content:center;gap:44px;margin-top:48px;flex-wrap:wrap}
+.ats-lp-metrics b{display:block;font-family:'Bricolage Grotesque';font-weight:700;font-size:34px;color:var(--petrol)}
+.ats-lp-metrics span{font-size:12.5px;color:var(--muted)}
+.ats-lp-sec{padding:56px 0}
+.ats-lp-sec-head{text-align:center;max-width:600px;margin:0 auto 36px}
+.ats-lp-sec-head h2{font-family:'Bricolage Grotesque';font-weight:700;font-size:34px;letter-spacing:-.02em}
+.ats-lp-sec-head p{font-size:16px;color:var(--sub);margin-top:10px}
+.ats-lp-prob-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.ats-lp-prob-col{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px}
+.ats-lp-prob-col.is-good{border-color:var(--petrol);box-shadow:0 20px 50px -30px rgba(12,92,82,.5)}
+.ats-lp-prob-h{display:flex;align-items:center;gap:8px;font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;margin-bottom:14px}
+.ats-lp-prob-h.is-bad{color:var(--brick)}.ats-lp-prob-h.is-ok{color:var(--petrol)}
+.ats-lp-prob-col ul{display:flex;flex-direction:column;gap:11px}
+.ats-lp-prob-col li{display:flex;align-items:flex-start;gap:9px;font-size:14.5px;color:var(--ink)}
+.ats-lp-prob-col.is-good li svg{color:var(--petrol);flex-shrink:0;margin-top:2px}
+.ats-lp-prob-col li svg{color:var(--muted);flex-shrink:0;margin-top:2px}
+.ats-lp-features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.ats-lp-feat{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px;transition:transform .15s,box-shadow .15s}
+.ats-lp-feat:hover{transform:translateY(-3px);box-shadow:0 16px 40px -24px rgba(0,0,0,.35)}
+.ats-lp-feat-ic{width:44px;height:44px;border-radius:12px;background:var(--petrol-soft);color:var(--petrol);display:grid;place-items:center;margin-bottom:14px}
+.ats-lp-feat b{font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;display:block;margin-bottom:7px}
+.ats-lp-feat p{font-size:13.5px;line-height:1.6;color:var(--sub)}
+.ats-lp-trust{background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ats-lp-badges{display:flex;flex-wrap:wrap;gap:9px;justify-content:center;max-width:820px;margin:0 auto}
+.ats-lp-cbadge{display:inline-flex;align-items:center;gap:7px;background:var(--paper2);border:1px solid var(--line);border-radius:9px;padding:9px 13px;font-size:12.5px;font-weight:600;color:var(--sub)}
+.ats-lp-cbadge svg{color:var(--petrol)}
+.ats-lp-trust-note{text-align:center;font-size:12px;color:var(--muted);max-width:600px;margin:22px auto 0;line-height:1.6}
+.ats-lp-plans{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:stretch}
+.ats-lp-plan{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px;display:flex;flex-direction:column;position:relative}
+.ats-lp-plan.is-featured{border-color:var(--petrol);box-shadow:0 24px 60px -32px rgba(12,92,82,.55)}
+.ats-lp-plan-tag{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:var(--petrol);color:#fff;font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px}
+.ats-lp-plan-name{font-family:'Bricolage Grotesque';font-weight:600;font-size:17px}
+.ats-lp-plan-price{margin:10px 0 16px}
+.ats-lp-plan-price b{font-family:'Bricolage Grotesque';font-weight:700;font-size:32px}
+.ats-lp-plan-price span{font-size:14px;color:var(--muted);margin-left:4px}
+.ats-lp-plan ul{display:flex;flex-direction:column;gap:9px;flex:1;margin-bottom:18px}
+.ats-lp-plan li{display:flex;align-items:center;gap:8px;font-size:13.5px}
+.ats-lp-plan li svg{color:var(--petrol);flex-shrink:0}
+.ats-lp-plan>button{justify-content:center;width:100%}
+.ats-lp-faq{max-width:760px}
+.ats-lp-final{padding:64px 22px;text-align:center;background:linear-gradient(135deg,var(--petrol) 0%,var(--petrol-deep) 100%);color:#fff;margin:0 22px 56px;border-radius:24px}
+.ats-lp-final h2{font-family:'Bricolage Grotesque';font-weight:700;font-size:34px}
+.ats-lp-final p{font-size:16px;opacity:.9;margin:12px 0 26px}
+.ats-lp-final .ats-btn-primary{background:#fff;color:var(--petrol-deep)}
+.ats-lp-final .ats-btn-primary:hover{background:#f0ede6;transform:translateY(-1px)}
+.ats-lp-foot{border-top:1px solid var(--line);padding:26px 0}
+.ats-lp-foot-in{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.ats-lp-foot span{font-size:12.5px;color:var(--muted)}
+@media(max-width:820px){.ats-lp-hero h1{font-size:36px}.ats-lp-hero p{font-size:16px}.ats-lp-sec-head h2{font-size:27px}.ats-lp-prob-grid,.ats-lp-features,.ats-lp-plans{grid-template-columns:1fr}.ats-lp-metrics{gap:30px}}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
