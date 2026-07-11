@@ -34,6 +34,18 @@ async function sbDeleteFile(bucket, path) { if (!sbEnabled || !path) return fals
 function cvPathFromUrl(url) { if (!url) return null; const m = String(url).split("/object/public/cv/")[1]; return m ? m.split("/").map(decodeURIComponent).join("/") : null; }
 function downloadJSON(filename, obj) { try { const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); } catch (e) {} }
 async function eraseCandidate(c, D) { try { if (String(c.id).indexOf("sb_") === 0) await sbDelete("applications", "id=eq." + c.id.slice(3)); const files = Object.values(c.answers || {}).filter((v) => v && typeof v === "object" && v.url).map((v) => cvPathFromUrl(v.url)).filter(Boolean); for (const p of files) await sbDeleteFile("cv", p); } catch (e) {} D({ type: "REMOVE_CANDIDATE", id: c.id }); }
+function jobRow(job, org, published) { return { slug: job.slug, title: job.title, company: org.companyName, org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version, annons: job.annons }, published, org_id: SB_ORG }; }
+async function deleteJobFull(job, allCands, D) {
+  try {
+    if (sbEnabled) {
+      const files = (allCands || []).filter((c) => c.jobId === job.id).flatMap((c) => Object.values(c.answers || {}).filter((v) => v && typeof v === "object" && v.url).map((v) => cvPathFromUrl(v.url))).filter(Boolean);
+      for (const p of files) await sbDeleteFile("cv", p);
+      await sbDelete("applications", "job_slug=eq." + encodeURIComponent(job.slug));
+      await sbDelete("jobs", "slug=eq." + encodeURIComponent(job.slug));
+    }
+  } catch (e) {}
+  D({ type: "DELETE_JOB", jobId: job.id });
+}
 async function sbLogin(email, password) { const r = await fetch(SB_URL + "/auth/v1/token?grant_type=password", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const d = await r.json().catch(() => ({})); if (r.ok && d.access_token) return d; throw new Error(d.error_description || d.msg || (d.error && d.error.message) || "Fel e-post eller lösenord."); }
 async function sbSignup(email, password) { const r = await fetch(SB_URL + "/auth/v1/signup", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const d = await r.json().catch(() => ({})); if (r.ok) return d; throw new Error(d.error_description || d.msg || (d.error && d.error.message) || "Kunde inte skapa konto."); }
 let SB_ORG = null;
@@ -232,11 +244,13 @@ const _MOCKTEAM0 = [
   { id: "u4", name: "Karin Ek", role: "viewer", initials: "KE" },
 ];
 const ROLE_LABEL = { admin: "Admin", recruiter: "Rekryterare", manager: "Rekryterande chef", viewer: "Insyn" };
+const JOB_STATUS = { open: "Öppen", paused: "Pausad", closed: "Tillsatt", archived: "Arkiverad" };
 
 /* ---------- Tjänster ---------- */
 function makeJob(id, title, team, slug, tmplId, extra = {}) {
   return {
     id, title, team, slug, company: extra.company || "Nordpuls AB",
+    status: "open", published: false, createdAt: Date.now(),
     criteria: TEMPLATES.find((t) => t.id === tmplId).build(),
     profiles: [{ id: "std", name: "Standard", weights: {} }, ...(extra.profiles || [])], activeProfileId: "std",
     rules: extra.rules || [], autoRules: extra.autoRules || [], autoRejectBelow: extra.autoRejectBelow ?? 40,
@@ -350,6 +364,10 @@ function reducer(state, ac) {
       return { ...s2, messages: [msg, ...state.messages], log: withLog(s2, "Mejl", `${msg.trigger} · ${cand.name}`) };
     }
     case "SET_ACTIVE_JOB": return { ...state, activeJobId: ac.id };
+    case "SET_JOB_STATUS": { const jj = state.jobs.find((j) => j.id === ac.jobId); const s2 = { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? { ...j, status: ac.status } : j) }; return { ...s2, log: withLog(s2, "Tjänst: " + (JOB_STATUS[ac.status] || ac.status), jj ? jj.title : "") }; }
+    case "SET_JOB_PUBLISHED": return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? { ...j, published: ac.published } : j) };
+    case "DUPLICATE_JOB": { const src = state.jobs.find((j) => j.id === ac.jobId); if (!src) return state; const nid = "j" + uid(); const nslug = (src.title || "tjanst").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 22) + "-" + Math.random().toString(36).slice(2, 6); const who2 = state.team.find((r) => r.id === who)?.name || "—"; const clone = { ...JSON.parse(JSON.stringify(src)), id: nid, slug: nslug, title: src.title + " (kopia)", status: "open", published: false, createdAt: Date.now(), stats: { started: 0, submitted: 0 }, version: 1, versions: [{ v: 1, at: Date.now(), by: who2, note: "Duplicerad från " + src.title }] }; const s2 = { ...state, jobs: [...state.jobs, clone] }; return { ...s2, log: withLog(s2, "Tjänst duplicerad", clone.title) }; }
+    case "DELETE_JOB": { const jj = state.jobs.find((j) => j.id === ac.jobId); const jobs = state.jobs.filter((j) => j.id !== ac.jobId); const candidates = state.candidates.filter((c) => c.jobId !== ac.jobId); const activeJobId = state.activeJobId === ac.jobId ? (jobs[0] ? jobs[0].id : null) : state.activeJobId; const s2 = { ...state, jobs, candidates, activeJobId }; return { ...s2, log: withLog(s2, "Tjänst raderad (GDPR)", jj ? jj.title : "") }; }
     case "SET_USER": return { ...state, currentUserId: ac.id };
     case "SET_ME": { const has = state.team.some((m) => m.id === ac.id); const team = has ? state.team.map((m) => m.id === ac.id ? { ...m, role: ac.role || m.role, email: ac.email || m.email, name: m.name || ac.email } : m) : [...state.team, { id: ac.id, name: ac.name || (ac.email ? ac.email.split("@")[0] : "Jag"), email: ac.email, role: ac.role || "admin", initials: (((ac.name || ac.email || "J")[0]) || "J").toUpperCase() }]; return { ...state, currentUserId: ac.id, team }; }
     case "SET_TEAM": return { ...state, team: ac.team || [] };
@@ -412,6 +430,7 @@ function QRCode({ text, size = 124 }) { const m = useMemo(() => { try { return g
 const REASONS = ["Saknar krav", "Fel tillgänglighet", "För lite erfarenhet", "För högt löneanspråk", "Ej relevant profil", "Ofullstandig ansökan", "Annat"];
 const NAV = [
   { id: "dashboard", label: "Översikt", icon: LayoutDashboard },
+  { id: "jobs", label: "Tjänster", icon: Briefcase },
   { id: "queue", label: "Kö", icon: Layers },
   { id: "candidates", label: "Kandidater", icon: ClipboardList },
   { id: "form", label: "Formulär", icon: Blocks },
@@ -552,6 +571,7 @@ function PublicApply({ slug, localJobs, localOrg }) {
 const TOUR_STEPS = [
   { center: true, view: "dashboard", title: "Välkommen till Rekyl", body: "En snabb rundtur på under en minut genom de viktigaste funktionerna. Du kan hoppa över när som helst." },
   { target: "nav-dashboard", view: "dashboard", side: "right", title: "Översikt", body: "Din startsida: kön att beta av, snittmatchning och portfölj över alla tjänster." },
+  { target: "nav-jobs", view: "jobs", side: "right", title: "Tjänster", body: "Hantera alla tjänster på ett ställe — status, publicering, kandidater per tjänst, duplicera och arkivera." },
   { target: "nav-form", view: "form", side: "right", title: "Formulärbyggaren", body: "Dra och släpp fält för att bygga ansökningsformuläret. Formuläret är också din scoringmotor — vikter, knockout och villkor styr du här." },
   { target: "nav-queue", view: "queue", side: "right", title: "Kön", body: "Gå igenom kandidater som ett kortlek och swipa för beslut. Rätt mejl köas automatiskt och allt loggas." },
   { target: "nav-sources", view: "sources", side: "right", title: "Källkvalitet", body: "Se vilken kanal som ger dina bästa kandidater — snittmatchning, inte bara antal ansökningar." },
@@ -666,7 +686,7 @@ export default function App() {
 
   useEffect(() => { if (!sbEnabled || !job) return; let alive = true; const pull = async () => { const rows = await sbGet("applications?job_slug=eq." + encodeURIComponent(job.slug) + "&select=*&order=created_at.desc"); if (alive && rows) D({ type: "SYNC_APPLICATIONS", slug: job.slug, rows }); }; pull(); const t = setInterval(pull, 20000); return () => { alive = false; clearInterval(t); }; }, [job && job.slug]);
 
-  const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, allScored, dupIndex, onLogout: logout, session };
+  const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, setNewJob, allScored, dupIndex, onLogout: logout, session };
   const primary = NAV.slice(0, 5), more = NAV.slice(5);
 
   const pubMatch = typeof window !== "undefined" ? window.location.pathname.match(/^\/j\/([^/]+)/) : null;
@@ -690,6 +710,7 @@ export default function App() {
         <main className="ats-main">
           <div className="ats-canvas">
             {view === "dashboard" && <DashboardView {...shared} />}
+            {view === "jobs" && <JobsView {...shared} />}
             {view === "queue" && <QueueView {...shared} />}
             {view === "candidates" && <CandidatesView {...shared} />}
             {view === "form" && <FormView {...shared} />}
@@ -721,6 +742,70 @@ function NewJobModal({ onClose, onCreate }) { const [title, setTitle] = useState
 function ReasonModal({ onClose, onPick }) { return <Modal title="Anledning till avslag" onClose={onClose}><div className="ats-reasons">{REASONS.map((r) => <button key={r} className="ats-reason" onClick={() => onPick(r)}>{r}</button>)}</div><p className="ats-reason-note">Anledningen sparas i kandidatens timeline och i statistiken, och anvands i avslagsmejlet ({"{{rejectionReason}}"}).</p></Modal>; }
 function PrintModal({ doc, onClose }) { return <div className="ats-printwrap"><div className="ats-print-toolbar"><span>{doc.title}</span><div><button className="ats-ghost" onClick={() => window.print()}><Download size={15} /> Skriv ut / PDF</button><button className="ats-ghost" onClick={onClose}><X size={15} /> Stang</button></div></div><div className="ats-printdoc">{doc.node}</div></div>; }
 
+/* ===================== TJANSTER ===================== */
+function JobsView({ state, D, me, showToast, setView, allScored, setNewJob }) {
+  const [filter, setFilter] = useState("all");
+  const [q, setQ] = useState("");
+  const [confirmDel, setConfirmDel] = useState(null);
+  const canEdit = can(me.role, "edit");
+  const isAdmin = me.role === "admin";
+  const now = Date.now();
+  const byId = useMemo(() => { const m = {}; allScored.forEach(({ job, list }) => { m[job.id] = list; }); return m; }, [allScored]);
+  const jobs = state.jobs.map((j) => {
+    const list = byId[j.id] || [];
+    const created = j.createdAt || (j.versions && j.versions[0] && j.versions[0].at) || null;
+    return { ...j, status: j.status || "open", _n: list.length, _new: list.filter((c) => c.status === "new").length, _avg: list.length ? Math.round(list.reduce((x, c) => x + (c.total || 0), 0) / list.length) : 0, _hired: list.filter((c) => c.status === "hired").length, _days: created ? Math.max(0, Math.round((now - created) / 864e5)) : null };
+  });
+  const counts = { all: jobs.length }; ["open", "paused", "closed", "archived"].forEach((st) => counts[st] = jobs.filter((j) => j.status === st).length);
+  const shown = jobs
+    .filter((j) => filter === "all" ? true : j.status === filter)
+    .filter((j) => q.trim() ? j.title.toLowerCase().includes(q.toLowerCase()) : true)
+    .sort((a, b) => ((a.status === "archived" ? 1 : 0) - (b.status === "archived" ? 1 : 0)) || (b._new - a._new) || ((b._days || 0) - (a._days || 0)));
+  const openJob = (j, dest) => { D({ type: "SET_ACTIVE_JOB", id: j.id }); setView(dest || "dashboard"); };
+  const setStatus = (j, status) => { D({ type: "SET_JOB_STATUS", jobId: j.id, status }); showToast({ kind: "ok", msg: j.title + " · " + JOB_STATUS[status].toLowerCase() }); };
+  const togglePub = async (j, pub) => { D({ type: "SET_JOB_PUBLISHED", jobId: j.id, published: pub }); if (sbEnabled) { const ok = await sbUpsert("jobs", jobRow(j, state.org, pub)); showToast({ kind: ok ? "ok" : "warn", msg: ok ? (pub ? "Publicerad · länken är live" : "Avpublicerad · länken är nedtagen") : "Molnet svarar inte" }); } else showToast({ kind: "ok", msg: pub ? "Publicerad" : "Avpublicerad" }); };
+  const dupJob = (j) => { D({ type: "DUPLICATE_JOB", jobId: j.id }); showToast({ kind: "ok", msg: "Tjänst duplicerad" }); };
+  const doDelete = async (j) => { setConfirmDel(null); await deleteJobFull(j, state.candidates, D); showToast({ kind: "ok", msg: "Tjänsten och dess kandidater raderades" }); };
+  return (
+    <div className="ats-view">
+      <PageHeader title="Tjänster" meta={<><span>{jobs.length} totalt</span><Dot /><span>{counts.open} öppna</span></>} right={canEdit && <button className="ats-btn-primary is-sm" onClick={() => setNewJob(true)}><Plus size={15} /> Ny tjänst</button>} />
+      <div className="ats-tabs">{[["all", "Alla"], ["open", "Öppna"], ["paused", "Pausade"], ["closed", "Tillsatta"], ["archived", "Arkiverade"]].map(([id, label]) => <button key={id} className={"ats-tab" + (filter === id ? " is-on" : "")} onClick={() => setFilter(id)}>{label}<span className="ats-tab-n">{counts[id] || 0}</span></button>)}</div>
+      <div className="ats-jobs-tools"><div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sök tjänst…" /></div></div>
+      {shown.length === 0 ? <div className="ats-col-empty" style={{ padding: 40 }}>Inga tjänster i denna vy.{filter === "all" && canEdit && <> Skapa din första med <b>Ny tjänst</b>.</>}</div>
+        : <div className="ats-joblist">{shown.map((j) => <div key={j.id} className={"ats-jobcard is-" + j.status}>
+          <div className="ats-jobcard-main">
+            <div className="ats-jobcard-top">
+              <button className="ats-jobcard-title" onClick={() => openJob(j, "queue")}>{j.title}</button>
+              <span className={"ats-jobbadge is-" + j.status}>{JOB_STATUS[j.status]}</span>
+              {j.published ? <span className="ats-jobbadge is-pub"><Globe size={11} /> Publicerad</span> : <span className="ats-jobbadge is-unpub">Ej publicerad</span>}
+            </div>
+            <div className="ats-jobcard-meta">{j.company}{j._days != null ? " · " + (j._days === 0 ? "skapad idag" : "öppen " + j._days + " d") : ""}{j.team ? " · " + j.team : ""}</div>
+            <div className="ats-jobcard-stats"><span><b>{j._n}</b> ansökningar</span><span><b>{j._new}</b> i kö</span><span><b>{j._avg}%</b> snitt</span>{j._hired > 0 && <span className="is-hired"><BadgeCheck size={12} /> {j._hired} anställd</span>}</div>
+          </div>
+          <div className="ats-jobcard-acts">
+            <button className="ats-ghost is-sm" onClick={() => openJob(j, "queue")}><Layers size={13} /> Kö{j._new > 0 && <span className="ats-jobcard-qn">{j._new}</span>}</button>
+            <button className="ats-ghost is-sm" onClick={() => openJob(j, "form")}><Blocks size={13} /> Formulär</button>
+            {canEdit && <Menu align="right" trigger={<button className="ats-ghost is-sm ats-jobcard-more"><Settings2 size={14} /></button>}>
+              {j.published ? <button className="ats-menu-item" onClick={() => togglePub(j, false)}><EyeOff size={14} /> Avpublicera</button> : <button className="ats-menu-item" onClick={() => togglePub(j, true)}><Globe size={14} /> Publicera</button>}
+              <div className="ats-menu-sep" />
+              {j.status === "open" && <button className="ats-menu-item" onClick={() => setStatus(j, "paused")}><PauseCircle size={14} /> Pausa</button>}
+              {j.status !== "open" && <button className="ats-menu-item" onClick={() => setStatus(j, "open")}><RotateCcw size={14} /> Återöppna</button>}
+              {j.status !== "closed" && <button className="ats-menu-item" onClick={() => setStatus(j, "closed")}><BadgeCheck size={14} /> Markera tillsatt</button>}
+              {j.status !== "archived" ? <button className="ats-menu-item" onClick={() => setStatus(j, "archived")}><Layers size={14} /> Arkivera</button> : null}
+              <div className="ats-menu-sep" />
+              <button className="ats-menu-item" onClick={() => dupJob(j)}><Copy size={14} /> Duplicera</button>
+              {isAdmin && <button className="ats-menu-item is-danger" onClick={() => setConfirmDel(j)}><Trash2 size={14} /> Radera</button>}
+            </Menu>}
+          </div>
+        </div>)}</div>}
+      {confirmDel && <Modal title="Radera tjänsten permanent?" onClose={() => setConfirmDel(null)}><div className="ats-erase">
+        <p><b>{confirmDel.title}</b> och alla dess kandidater, ansökningar och bilagor raderas permanent från både appen och molnet. Detta går inte att ångra.</p>
+        <div className="ats-erase-note"><ShieldCheck size={14} /> Uppfyller rätt att bli glömd (GDPR) — all kandidatdata för tjänsten tas bort.</div>
+        <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setConfirmDel(null)}>Avbryt</button><button className="ats-btn-danger" onClick={() => doDelete(confirmDel)}><Trash2 size={15} /> Radera permanent</button></div>
+      </div></Modal>}
+    </div>
+  );
+}
 /* ===================== OVERSIKT ===================== */
 function DashboardView({ allScored, state, D, cands, job, setView, setDetailId }) {
   const now = Date.now();
@@ -1129,7 +1214,7 @@ function FormView({ job, D, me, state, showToast }) {
   const addPage = () => { setPages([...pages, Math.max(1, ...pages) + 1]); };
   const A = job.annons || {};
   const setA = (patch) => { D({ type: "SET_FORM", patch: { annons: { ...(job.annons || {}), ...patch } } }); setDirty(true); };
-  const publish = () => { D({ type: "SET_FORM", patch: {}, bump: true }); setDirty(false); if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1, annons: job.annons }, published: true, org_id: SB_ORG }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Molnet svarar inte — kontrollera anslutningen (ändringar sparas lokalt)" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); } };
+  const publish = () => { D({ type: "SET_FORM", patch: { published: true }, bump: true }); setDirty(false); if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1, annons: job.annons }, published: true, org_id: SB_ORG }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Molnet svarar inte — kontrollera anslutningen (ändringar sparas lokalt)" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); } };
   const skills = job.criteria.find((c) => c.id === "skills");
   const scored = job.criteria.filter((c) => c.scored && c.type !== "text" && c.type !== "file");
   const link = (typeof window !== "undefined" ? window.location.origin : state.org.appUrl) + "/j/" + job.slug; const embed = `<iframe src="${link}/inbäddad" width="100%" height="720" style="border:0" title="${job.title}"></iframe>`;
@@ -2428,6 +2513,32 @@ function Style() {
 .ats-cloudbar{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);display:flex;align-items:center;gap:9px;background:var(--brick);color:#fff;padding:10px 16px;border-radius:12px;font-size:12.5px;font-weight:600;box-shadow:0 12px 34px -10px rgba(0,0,0,.4);z-index:70;max-width:calc(100vw - 24px)}
 .ats-cloudbar button{background:rgba(255,255,255,.22);color:#fff;padding:4px 11px;border-radius:8px;font-weight:600;font-size:12px}
 .ats-cloudbar button:hover{background:rgba(255,255,255,.34)}
+.ats-jobs-tools{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.ats-joblist{display:flex;flex-direction:column;gap:11px}
+.ats-jobcard{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;transition:border-color .13s,box-shadow .13s}
+.ats-jobcard:hover{border-color:var(--petrol-soft);box-shadow:0 6px 20px -14px rgba(0,0,0,.3)}
+.ats-jobcard.is-archived{opacity:.6}
+.ats-jobcard.is-closed{background:var(--paper2)}
+.ats-jobcard-main{min-width:0;flex:1;display:flex;flex-direction:column;gap:6px}
+.ats-jobcard-top{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.ats-jobcard-title{font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;color:var(--ink);text-align:left}
+.ats-jobcard-title:hover{color:var(--petrol)}
+.ats-jobbadge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:13px;background:var(--paper2);color:var(--sub);white-space:nowrap}
+.ats-jobbadge.is-open{background:var(--petrol-soft);color:var(--petrol-deep)}
+.ats-jobbadge.is-paused{background:var(--amber-soft);color:var(--gold)}
+.ats-jobbadge.is-closed{background:var(--gold-soft);color:var(--gold)}
+.ats-jobbadge.is-archived{background:var(--line2);color:var(--muted)}
+.ats-jobbadge.is-pub{background:var(--petrol-soft);color:var(--petrol)}
+.ats-jobbadge.is-unpub{background:var(--paper2);color:var(--muted)}
+.ats-jobcard-meta{font-size:12.5px;color:var(--muted);font-family:'IBM Plex Mono'}
+.ats-jobcard-stats{display:flex;flex-wrap:wrap;gap:16px;font-size:12.5px;color:var(--sub);margin-top:2px}
+.ats-jobcard-stats b{font-family:'Bricolage Grotesque';color:var(--ink)}
+.ats-jobcard-stats .is-hired{display:inline-flex;align-items:center;gap:4px;color:var(--gold);font-weight:600}
+.ats-jobcard-acts{display:flex;align-items:center;gap:7px;flex-shrink:0}
+.ats-jobcard-qn{background:var(--petrol);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:9px;margin-left:4px}
+.ats-jobcard-more{padding:7px 9px}
+.ats-menu-item.is-danger{color:var(--brick)}
+.ats-menu-item.is-danger:hover{background:var(--brick-soft);color:var(--brick)}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
@@ -2444,6 +2555,7 @@ function Style() {
   .ats-ph-title{font-size:20px}
   .ats-msglog-head{display:none}.ats-msglog-row{grid-template-columns:60px 1fr;gap:6px}.ats-msglog-row>span:nth-child(3),.ats-msglog-row>span:nth-child(4),.ats-msglog-row>span:nth-child(5){display:none}
   .ats-flagcols{grid-template-columns:1fr}
+  .ats-jobcard{flex-direction:column;align-items:stretch}.ats-jobcard-acts{flex-wrap:wrap}
   /* Inställningssidan – luftigare på mobil */
   .ats-grid-2{gap:14px}
   .ats-tpl-two{grid-template-columns:1fr;gap:11px}
