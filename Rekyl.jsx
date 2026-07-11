@@ -16,13 +16,15 @@ const SB_URL = import.meta.env.VITE_SUPABASE_URL || "https://eaditrzamfhylmlrmkc
 const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhZGl0cnphbWZoeWxtbHJta2NhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODA4NjgsImV4cCI6MjA5OTE1Njg2OH0.jFzfeVow0P-46Vj7G-yTVjA1IHp8UN-Ts8Us719rYmE";
 const sbEnabled = !!(SB_URL && SB_KEY);
 let SB_TOKEN = SB_KEY, SB_REFRESH = null, SB_EXP = 0;
+let SB_LAST = { status: 0, msg: "" };
+function sbLastError() { return SB_LAST; }
 function sbSetToken(t) { SB_TOKEN = t || SB_KEY; }
 function sbSetAuth(token, refresh, exp) { SB_TOKEN = token || SB_KEY; SB_REFRESH = refresh || null; SB_EXP = exp || 0; }
 async function sbAutoRefresh() { if (!SB_REFRESH) return false; const d = await sbRefresh(SB_REFRESH); if (d && d.access_token) { SB_TOKEN = d.access_token; SB_REFRESH = d.refresh_token || SB_REFRESH; SB_EXP = Date.now() + (d.expires_in || 3600) * 1000; try { const sv = store.get("rekyl_session", null); if (sv) store.set("rekyl_session", { ...sv, token: SB_TOKEN, refresh: SB_REFRESH, exp: SB_EXP }); } catch (e) {} return true; } return false; }
 const sbHead = () => ({ apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN, "Content-Type": "application/json" });
 async function sbFetch(url, method, headersFn, body) { let r = await fetch(url, { method, headers: headersFn(), body }); if (r.status === 401 && SB_REFRESH) { if (await sbAutoRefresh()) r = await fetch(url, { method, headers: headersFn(), body }); } return r; }
-async function sbGet(path) { if (!sbEnabled) return null; try { const r = await sbFetch(SB_URL + "/rest/v1/" + path, "GET", sbHead); if (!r.ok) return null; return await r.json(); } catch (e) { return null; } }
-async function sbUpsert(table, row) { if (!sbEnabled) return false; try { const r = await sbFetch(SB_URL + "/rest/v1/" + table, "POST", () => ({ ...sbHead(), Prefer: "resolution=merge-duplicates,return=minimal" }), JSON.stringify(row)); return r.ok; } catch (e) { return false; } }
+async function sbGet(path) { if (!sbEnabled) return null; try { const r = await sbFetch(SB_URL + "/rest/v1/" + path, "GET", sbHead); if (!r.ok) { SB_LAST = { status: r.status, msg: await r.text().catch(() => "") }; return null; } SB_LAST = { status: 200, msg: "" }; return await r.json(); } catch (e) { SB_LAST = { status: 0, msg: String((e && e.message) || e) }; return null; } }
+async function sbUpsert(table, row) { if (!sbEnabled) return false; try { const r = await sbFetch(SB_URL + "/rest/v1/" + table, "POST", () => ({ ...sbHead(), Prefer: "resolution=merge-duplicates,return=minimal" }), JSON.stringify(row)); if (!r.ok) SB_LAST = { status: r.status, msg: await r.text().catch(() => "") }; else SB_LAST = { status: 200, msg: "" }; return r.ok; } catch (e) { SB_LAST = { status: 0, msg: String((e && e.message) || e) }; return false; } }
 async function sbInsert(table, row) { if (!sbEnabled) return false; try { const r = await sbFetch(SB_URL + "/rest/v1/" + table, "POST", () => ({ ...sbHead(), Prefer: "return=minimal" }), JSON.stringify(row)); return r.ok; } catch (e) { return false; } }
 async function sbUpload(bucket, path, file) { if (!sbEnabled || !file) return null; const enc = path.split("/").map(encodeURIComponent).join("/"); try { const r = await fetch(SB_URL + "/storage/v1/object/" + bucket + "/" + enc, { method: "POST", headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN, "x-upsert": "true" }, body: file }); if (!r.ok) return null; return SB_URL + "/storage/v1/object/public/" + bucket + "/" + enc; } catch (e) { return null; } }
 let SB_UPLOAD_ORG = null;
@@ -609,6 +611,16 @@ function ProductTour({ steps, onClose, setView }) {
     </div>
   </div>;
 }
+function cloudHint(e) {
+  if (!e) return "Molnet svarar inte.";
+  const m = (e.msg || "").toLowerCase();
+  if (m.includes("does not exist") || m.includes("could not find") || e.status === 404) return "En tabell eller funktion saknas i databasen — k\u00f6r hela SQL-upps\u00e4ttningen igen i Supabase.";
+  if (e.status === 401) return "Sessionen har g\u00e5tt ut \u2014 logga ut och in igen.";
+  if (e.status === 403 || m.includes("row-level security") || m.includes("policy")) return "Beh\u00f6righet nekad (RLS) \u2014 k\u00f6r SQL:en f\u00f6r org_state och members igen i Supabase.";
+  if (e.status === 409) return "Konflikt vid sparning \u2014 ladda om sidan.";
+  if (e.status === 0) return "Ingen anslutning till molnet \u2014 kontrollera internet.";
+  return "Molnfel (" + e.status + ")" + (e.msg ? ": " + e.msg.slice(0, 90) : "") + ".";
+}
 export default function App() {
   const [state, dispatch] = useReducer(reducer, INITIAL, (init) => { try { const sv = store.get("rekyl_state", null); return sv && sv.jobs && sv.candidates ? { ...init, ...sv, team: Array.isArray(sv.team) ? sv.team : [] } : init; } catch (e) { return init; } });
   const D = dispatch;
@@ -629,14 +641,15 @@ export default function App() {
   const [orgChecked, setOrgChecked] = useState(false);
   const [authView, setAuthView] = useState("landing");
   const [cloudOk, setCloudOk] = useState(true);
+  const [cloudErr, setCloudErr] = useState(null);
   const setOrg = (o) => { setOrgState(o); store.set("rekyl_org", o); if (o) sbSetOrg(o.id); };
   const login = (sv) => { const acct = store.get("rekyl_account", null); if (acct && sv.userId && acct !== sv.userId) { store.set("rekyl_state", null); store.set("rekyl_org", null); setOrgState(null); dispatch({ type: "LOAD_STATE", data: {} }); } store.set("rekyl_account", sv.userId); store.set("rekyl_session", sv); sbSetAuth(sv.token, sv.refresh, sv.exp); setOrgChecked(false); setLoaded(false); setCloudOk(true); setSession(sv); };
   const logout = () => { store.set("rekyl_session", null); store.set("rekyl_state", null); store.set("rekyl_org", null); store.set("rekyl_account", null); sbSetAuth(null, null, 0); sbSetOrg(null); setLoaded(false); setOrgState(null); setOrgChecked(true); setCloudOk(true); setSession(null); dispatch({ type: "LOAD_STATE", data: {} }); dispatch({ type: "SET_TEAM", team: [] }); };
-  const cloudRetry = async () => { if (!session) return; setCloudOk(true); const rows = await sbGet("members?user_id=eq." + session.userId + "&select=org_id,role"); if (rows === null) { setCloudOk(false); return; } if (rows.length) { const o = { id: rows[0].org_id, role: rows[0].role }; sbSetOrg(o.id); setOrgState(o); store.set("rekyl_org", o); const st = await sbGet("org_state?org_id=eq." + o.id + "&select=data"); if (st === null) { setCloudOk(false); return; } if (st.length && st[0].data) dispatch({ type: "LOAD_STATE", data: st[0].data }); dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: o.role }); setCloudOk(true); } else { store.set("rekyl_org", null); setOrgState(null); setOrgChecked(true); } };
+  const cloudRetry = async () => { if (!session) return; const rows = await sbGet("members?user_id=eq." + session.userId + "&select=org_id,role"); if (rows === null) { setCloudOk(false); setCloudErr(sbLastError()); return; } let o; if (rows.length) { o = { id: rows[0].org_id, role: rows[0].role }; sbSetOrg(o.id); setOrgState(o); store.set("rekyl_org", o); } else { store.set("rekyl_org", null); setOrgState(null); setOrgChecked(true); setCloudOk(false); setCloudErr({ status: 0, msg: "Ingen f\u00f6retagskoppling (members saknas)" }); return; } const okW = await sbUpsert("org_state", { org_id: o.id, data: state, updated_at: new Date().toISOString() }); setCloudOk(okW); setCloudErr(okW ? null : sbLastError()); if (okW) { const st = await sbGet("org_state?org_id=eq." + o.id + "&select=data"); if (st && st.length && st[0].data) dispatch({ type: "LOAD_STATE", data: st[0].data }); dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: o.role }); } };
   useEffect(() => { if (!sbEnabled || !session || !session.refresh) return; let alive = true; const doRefresh = async () => { const d = await sbRefresh(session.refresh); if (d && alive) { const ns = { ...session, token: d.access_token, refresh: d.refresh_token, exp: Date.now() + (d.expires_in || 3600) * 1000 }; store.set("rekyl_session", ns); sbSetAuth(ns.token, ns.refresh, ns.exp); setSession(ns); } }; if (session.exp && session.exp < Date.now() + 5 * 60000) doRefresh(); const t = setInterval(doRefresh, 45 * 60000); return () => { alive = false; clearInterval(t); }; }, [session && session.userId]);
   useEffect(() => { if (!sbEnabled || !session) { setOrgChecked(true); return; } let alive = true; (async () => { const rows = await sbGet("members?user_id=eq." + session.userId + "&select=org_id,role"); if (!alive) return; if (rows === null) { setCloudOk(false); if (org) sbSetOrg(org.id); setOrgChecked(true); return; } setCloudOk(true); if (rows.length) { const o = { id: rows[0].org_id, role: rows[0].role }; sbSetOrg(o.id); setOrgState(o); store.set("rekyl_org", o); } else { store.set("rekyl_org", null); setOrgState(null); sbSetOrg(null); } setOrgChecked(true); })(); return () => { alive = false; }; }, [session && session.userId]);
   useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } if (!org) return; let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data"); if (!alive) return; if (rows === null) setCloudOk(false); else { setCloudOk(true); if (rows.length && rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); } dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: org.role }); setLoaded(true); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
-  useEffect(() => { if (!sbEnabled || !session || !org || !loaded) return; const t = setTimeout(async () => { const ok = await sbUpsert("org_state", { org_id: org.id, data: state, updated_at: new Date().toISOString() }); setCloudOk(ok); }, 1600); return () => clearTimeout(t); }, [state, loaded, org && org.id]);
+  useEffect(() => { if (!sbEnabled || !session || !org || !loaded) return; const t = setTimeout(async () => { const ok = await sbUpsert("org_state", { org_id: org.id, data: state, updated_at: new Date().toISOString() }); setCloudOk(ok); setCloudErr(ok ? null : sbLastError()); }, 1600); return () => clearTimeout(t); }, [state, loaded, org && org.id]);
   useEffect(() => { store.set("rekyl_state", state); }, [state]);
   useEffect(() => { if (!session || !org || !loaded || !state.jobs.length) return; if (store.get("rekyl_tour_done", false)) return; const t = setTimeout(() => setTourOpen(true), 700); return () => clearTimeout(t); }, [session && session.userId, org && org.id, loaded, state.jobs.length]);
 
@@ -699,7 +712,7 @@ export default function App() {
       {printDoc && <PrintModal doc={printDoc} onClose={() => setPrintDoc(null)} />}
       <button className="ats-fab" data-tour="new-job" onClick={() => setNewJob(true)} title="Ny tjänst"><Plus size={20} /></button>
       {tourOpen && <ProductTour steps={TOUR_STEPS} setView={go} onClose={(done) => { setTourOpen(false); if (done) store.set("rekyl_tour_done", true); }} />}
-      {sbEnabled && session && org && !cloudOk && <div className="ats-cloudbar"><AlertTriangle size={14} /> Molnet svarar inte — ändringar sparas lokalt. <button onClick={cloudRetry}>Försök igen</button></div>}
+      {sbEnabled && session && org && !cloudOk && <div className="ats-cloudbar"><AlertTriangle size={14} /> {cloudHint(cloudErr)} <button onClick={cloudRetry}>Försök igen</button></div>}
     </div>
   );
 }
