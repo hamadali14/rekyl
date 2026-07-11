@@ -8,7 +8,7 @@ import {
   Phone, Upload, CalendarClock, ListChecks, Send, Bell, CircleAlert, Blocks, Settings2, History,
   ShieldAlert, Pin, PinOff, Server, AtSign, Info, CheckCircle2, Settings, ThumbsUp, ThumbsDown,
   HelpCircle, BadgeCheck, PauseCircle, CalendarCheck, Menu as MenuIcon, PanelLeftClose,
-  RotateCw, Rocket, GripVertical, Lock, MousePointerClick, Share2, MessageCircle, Globe, LogOut
+  RotateCw, Rocket, GripVertical, Lock, MousePointerClick, Share2, MessageCircle, Globe, LogOut, UserPlus
 } from "lucide-react";
 
 // ---- Supabase (via REST, inget paket kravs) ----
@@ -24,8 +24,9 @@ async function sbInsert(table, row) { if (!sbEnabled) return false; try { const 
 async function sbUpload(bucket, path, file) { if (!sbEnabled || !file) return null; try { const r = await fetch(SB_URL + "/storage/v1/object/" + bucket + "/" + encodeURIComponent(path), { method: "POST", headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN, "x-upsert": "true" }, body: file }); if (!r.ok) return null; return SB_URL + "/storage/v1/object/public/" + bucket + "/" + encodeURIComponent(path); } catch (e) { return null; } }
 async function sbLogin(email, password) { const r = await fetch(SB_URL + "/auth/v1/token?grant_type=password", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const d = await r.json().catch(() => ({})); if (r.ok && d.access_token) return d; throw new Error(d.error_description || d.msg || (d.error && d.error.message) || "Fel e-post eller lösenord."); }
 async function sbSignup(email, password) { const r = await fetch(SB_URL + "/auth/v1/signup", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) }); const d = await r.json().catch(() => ({})); if (r.ok) return d; throw new Error(d.error_description || d.msg || (d.error && d.error.message) || "Kunde inte skapa konto."); }
-let SB_UID = null;
-function sbSetUid(u) { SB_UID = u || null; }
+let SB_ORG = null;
+function sbSetOrg(u) { SB_ORG = u || null; }
+async function sbRpc(fn, args) { const r = await fetch(SB_URL + "/rest/v1/rpc/" + fn, { method: "POST", headers: sbHead(), body: JSON.stringify(args || {}) }); const d = await r.json().catch(() => null); if (!r.ok) throw new Error((d && (d.message || d.hint || d.error)) || "Serverfel"); return d; }
 async function sbRefresh(refresh_token) { try { const r = await fetch(SB_URL + "/auth/v1/token?grant_type=refresh_token", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token }) }); const d = await r.json().catch(() => ({})); if (r.ok && d.access_token) return d; return null; } catch (e) { return null; } }
 
 
@@ -212,7 +213,7 @@ function evalAutoRules(job, cand) {
 const ACTION_LABEL = { shortlist: "Shortlist", reject: "Avslagspool", maybe: "Reservlista", flag: "Flagga", completion: "Begär komplettering" };
 
 /* ---------- Team ---------- */
-const REVIEWERS = [
+const _MOCKTEAM0 = [
   { id: "u1", name: "Du", role: "recruiter", initials: "DU" },
   { id: "u2", name: "Mona Berg", role: "manager", initials: "MB" },
   { id: "u3", name: "Ali Reza", role: "recruiter", initials: "AR" },
@@ -284,10 +285,11 @@ function tplVars(state, cand, job) { return { candidateName: cand.name, jobTitle
 const TRIGGER_FOR = { shortlist: "shortlist", interview: "interview", reserve: "reserve", reject: "reject", hired: "offer" };
 
 /* ---------- Reducer-hjalpare ---------- */
-function withLog(state, action, detail) { const who = REVIEWERS.find((r) => r.id === state.currentUserId)?.name || "—"; return [{ id: uid(), at: Date.now(), who, action, detail }, ...state.log].slice(0, 200); }
+function withLog(state, action, detail) { const who = state.team.find((r) => r.id === state.currentUserId)?.name || "—"; return [{ id: uid(), at: Date.now(), who, action, detail }, ...state.log].slice(0, 200); }
 function updateActiveJob(state, fn) { return { ...state, jobs: state.jobs.map((j) => (j.id === state.activeJobId ? fn(j) : j)) }; }
 function bumpVersion(job, note, who) { const v = (job.version || 1) + 1; return { ...job, version: v, versions: [...job.versions, { v, at: Date.now(), by: who, note }] }; }
-function addTL(cand, kind, detail, actorId) { const actor = REVIEWERS.find((r) => r.id === actorId)?.name || "System"; return { ...cand, timeline: [{ id: uid(), kind, detail, at: Date.now(), actor }, ...(cand.timeline || [])] }; }
+let _TEAM = [];
+function addTL(cand, kind, detail, actorId) { const actor = _TEAM.find((r) => r.id === actorId)?.name || "System"; return { ...cand, timeline: [{ id: uid(), kind, detail, at: Date.now(), actor }, ...(cand.timeline || [])] }; }
 function mapCand(state, id, fn) { return { ...state, candidates: state.candidates.map((c) => (c.id === id ? fn(c) : c)) }; }
 function buildMessage(state, cand, job, trigger, who) {
   const tpl = state.templates.find((t) => t.trigger === trigger && t.active) || state.templates.find((t) => t.trigger === trigger);
@@ -305,6 +307,7 @@ function applyDecision(state, cand, job, status, reason, who, extra) {
 }
 
 function reducer(state, ac) {
+  _TEAM = state.team || [];
   const who = state.currentUserId;
   switch (ac.type) {
     case "DECIDE": {
@@ -335,14 +338,16 @@ function reducer(state, ac) {
     }
     case "SET_ACTIVE_JOB": return { ...state, activeJobId: ac.id };
     case "SET_USER": return { ...state, currentUserId: ac.id };
-    case "ADD_JOB": { const id = "j" + uid(); const job = makeJob(id, ac.title, ac.team || "Nytt team", (ac.title || "tjänst").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 22), ac.tmplId, { company: state.org.companyName }); const s2 = { ...state, jobs: [...state.jobs, job], activeJobId: id }; return { ...s2, log: withLog(s2, "Ny tjänst", ac.title) }; }
+    case "SET_ME": { const has = state.team.some((m) => m.id === ac.id); const team = has ? state.team.map((m) => m.id === ac.id ? { ...m, role: ac.role || m.role, email: ac.email || m.email, name: m.name || ac.email } : m) : [...state.team, { id: ac.id, name: ac.name || (ac.email ? ac.email.split("@")[0] : "Jag"), email: ac.email, role: ac.role || "admin", initials: (((ac.name || ac.email || "J")[0]) || "J").toUpperCase() }]; return { ...state, currentUserId: ac.id, team }; }
+    case "SET_TEAM": return { ...state, team: ac.team || [] };
+    case "ADD_JOB": { const id = "j" + uid(); const job = makeJob(id, ac.title, ac.team || "Nytt team", ((ac.title || "tjänst").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 26) + "-" + Math.random().toString(36).slice(2, 6)), ac.tmplId, { company: state.org.companyName }); const s2 = { ...state, jobs: [...state.jobs, job], activeJobId: id }; return { ...s2, log: withLog(s2, "Ny tjänst", ac.title) }; }
     case "SET_WEIGHT": return updateActiveJob(state, (job) => job.activeProfileId === "std" ? { ...job, criteria: job.criteria.map((c) => c.id === ac.critId ? { ...c, weight: ac.weight } : c) } : { ...job, profiles: job.profiles.map((p) => p.id === job.activeProfileId ? { ...p, weights: { ...p.weights, [ac.critId]: ac.weight } } : p) });
-    case "SET_FIELD_FLAG": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: job.criteria.map((c) => c.id === ac.critId ? { ...c, ...ac.patch } : c) }, "Ändrade fält: " + ac.critId, REVIEWERS.find((r) => r.id === who)?.name));
+    case "SET_FIELD_FLAG": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: job.criteria.map((c) => c.id === ac.critId ? { ...c, ...ac.patch } : c) }, "Ändrade fält: " + ac.critId, state.team.find((r) => r.id === who)?.name));
     case "TOGGLE_SKILL_MUST": return updateActiveJob(state, (job) => ({ ...job, criteria: job.criteria.map((c) => c.id === "skills" ? { ...c, options: c.options.map((o, i) => i === ac.idx ? { ...o, must: !o.must } : o) } : c) }));
-    case "ADD_FIELD": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: [...job.criteria.filter((c) => c.block !== "text"), ac.field, ...job.criteria.filter((c) => c.block === "text")] }, "La till fält: " + ac.field.label, REVIEWERS.find((r) => r.id === who)?.name));
-    case "REMOVE_FIELD": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: job.criteria.filter((c) => c.id !== ac.critId) }, "Tog bort fält", REVIEWERS.find((r) => r.id === who)?.name));
+    case "ADD_FIELD": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: [...job.criteria.filter((c) => c.block !== "text"), ac.field, ...job.criteria.filter((c) => c.block === "text")] }, "La till fält: " + ac.field.label, state.team.find((r) => r.id === who)?.name));
+    case "REMOVE_FIELD": return updateActiveJob(state, (job) => bumpVersion({ ...job, criteria: job.criteria.filter((c) => c.id !== ac.critId) }, "Tog bort fält", state.team.find((r) => r.id === who)?.name));
     case "MOVE_FIELD": return updateActiveJob(state, (job) => { const arr = [...job.criteria]; const i = arr.findIndex((c) => c.id === ac.critId); const j = i + ac.dir; if (i < 0 || j < 0 || j >= arr.length) return job; [arr[i], arr[j]] = [arr[j], arr[i]]; return { ...job, criteria: arr }; });
-    case "SET_FORM": return updateActiveJob(state, (job) => { const j = { ...job, ...(ac.patch || {}) }; return ac.bump ? bumpVersion(j, "Formulär publicerat", REVIEWERS.find((r) => r.id === who)?.name) : j; });
+    case "SET_FORM": return updateActiveJob(state, (job) => { const j = { ...job, ...(ac.patch || {}) }; return ac.bump ? bumpVersion(j, "Formulär publicerat", state.team.find((r) => r.id === who)?.name) : j; });
     case "SET_PROFILE": return updateActiveJob(state, (job) => ({ ...job, activeProfileId: ac.id }));
     case "SAVE_PROFILE": return updateActiveJob(state, (job) => { const weights = {}; job.criteria.forEach((c) => { if (c.scored && c.weight != null) weights[c.id] = weightOf(job, c); }); const id = "p" + uid(); return { ...job, profiles: [...job.profiles, { id, name: ac.name, weights }], activeProfileId: id }; });
     case "ADD_RULE": return updateActiveJob(state, (job) => ({ ...job, rules: [...job.rules, { ...ac.rule, id: uid() }] }));
@@ -368,13 +373,13 @@ function reducer(state, ac) {
     case "UPDATE_TEMPLATE": return { ...state, templates: state.templates.map((t) => t.id === ac.id ? { ...t, ...ac.patch } : t) };
     case "REMOVE_TEMPLATE": return { ...state, templates: state.templates.filter((t) => t.id !== ac.id) };
     case "SET_ORG": return { ...state, org: { ...state.org, ...ac.patch } };
-    case "LOAD_STATE": { const d = ac.data || {}; return { ...state, jobs: d.jobs || [], candidates: d.candidates || [], org: d.org || state.org, templates: d.templates || state.templates, messages: d.messages || [], log: d.log || state.log, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
+    case "LOAD_STATE": { const d = ac.data || {}; return { ...state, jobs: d.jobs || [], candidates: d.candidates || [], org: d.org || state.org, templates: d.templates || state.templates, messages: d.messages || [], log: d.log || state.log, team: d.team || state.team, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
     case "SYNC_APPLICATIONS": { const job = state.jobs.find((j) => j.slug === ac.slug); if (!job) return state; const existing = new Set(state.candidates.map((c) => c.id)); const add = (ac.rows || []).filter((r) => !existing.has("sb_" + r.id)).map((r) => ({ id: "sb_" + r.id, jobId: job.id, name: r.name || "Namnlös", email: r.email || null, phone: r.phone || null, answers: r.answers || {}, source: r.source || "Länk", status: "new", managerStatus: null, starred: false, rating: 0, comments: [], reviews: {}, reason: null, interviewTime: null, formVersion: job.version, appliedAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(), timeline: [{ id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + (r.source || "länk"), at: Date.now(), actor: "System" }] })); if (!add.length) return state; return { ...state, candidates: [...add, ...state.candidates], jobs: state.jobs.map((j) => j.id === job.id ? { ...j, stats: { started: j.stats.started + add.length, submitted: j.stats.submitted + add.length } } : j) }; }
     default: return state;
   }
 }
 const INITIAL = {
-  jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: null, candidates: CANDIDATES0, currentUserId: "u1",
+  jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: null, candidates: CANDIDATES0, team: [], currentUserId: null,
   history: [], templates: DEFAULT_TEMPLATES, messages: [],
   org: { companyName: "Nordpuls AB", hrName: "Mona Berg", hrEmail: "mona.berg@nordpuls.se", fromEmail: "noreply@nordpuls.se", appUrl: "https://rekyl.app", defaultInterviewTime: "onsdag 14:00" },
   log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjänst öppnad", detail: "Account Manager · B2B" }],
@@ -418,6 +423,24 @@ function FirstJobScreen({ onCreate, onLogout, email }) {
     <div className="ats-tmplgrid">{TEMPLATES.map((t) => { const Ic = ICONS[t.icon] || Briefcase; return <button key={t.id} className={"ats-tmpl" + (tmpl === t.id ? " is-on" : "")} onClick={() => setTmpl(t.id)}><span className="ats-tmpl-ic"><Ic size={16} /></span><b>{t.name}</b><span>{t.desc}</span></button>; })}</div>
     <button className={"ats-send" + (title.trim().length > 1 ? "" : " is-off")} onClick={() => title.trim().length > 1 && onCreate(title.trim(), tmpl)}>Skapa tjänst <ArrowRight size={16} /></button>
     <button className="ats-login-switch" onClick={onLogout}>Logga ut{email ? " (" + email + ")" : ""}</button>
+  </div></div></div>;
+}
+function SpinnerScreen({ text }) { return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>{text || "Laddar…"}</span></div></div></div>; }
+function OrgSetupScreen({ session, onReady, onLogout }) {
+  const [mode, setMode] = useState("create");
+  const [name, setName] = useState(""); const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const go = async () => { setErr(""); if (mode === "create" && name.trim().length < 2) { setErr("Ange ett företagsnamn."); return; } if (mode === "join" && !code.trim()) { setErr("Ange en inbjudningskod."); return; } setBusy(true); try { if (mode === "create") { const oid = await sbRpc("create_org", { p_name: name.trim() }); onReady({ id: oid, role: "admin" }); } else { const oid = await sbRpc("join_org", { p_code: code.trim() }); onReady({ id: oid, role: "recruiter" }); } } catch (e) { setErr(e.message || "Något gick fel."); setBusy(false); } };
+  return <div className="ats-root"><Style /><div className="ats-login"><div className="ats-login-card">
+    <div className="ats-login-brand"><span className="ats-logo">R</span> Rekyl</div>
+    <h2>{mode === "create" ? "Skapa ditt företag" : "Gå med i ett team"}</h2>
+    <p className="ats-login-sub">{mode === "create" ? "Skapa en arbetsyta för ditt företag. Du blir admin och kan bjuda in kollegor med roller." : "Har du fått en inbjudningskod av en kollega? Klistra in den här."}</p>
+    <div className="ats-setup-toggle"><button className={mode === "create" ? "is-on" : ""} onClick={() => { setMode("create"); setErr(""); }}>Skapa företag</button><button className={mode === "join" ? "is-on" : ""} onClick={() => { setMode("join"); setErr(""); }}>Gå med i team</button></div>
+    {mode === "create" ? <label className="ats-field"><span className="ats-field-l">Företagsnamn</span><input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} placeholder="t.ex. Nordpuls AB" /></label>
+      : <label className="ats-field"><span className="ats-field-l">Inbjudningskod</span><input value={code} onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === "Enter" && go()} placeholder="8-teckenskod från din kollega" /></label>}
+    {err && <div className="ats-login-err"><CircleAlert size={13} /> {err}</div>}
+    <button className="ats-btn-primary ats-login-btn" disabled={busy} onClick={go}>{busy ? "…" : mode === "create" ? "Skapa företag" : "Gå med"}</button>
+    <button className="ats-login-switch" onClick={onLogout}>Logga ut{session && session.email ? " (" + session.email + ")" : ""}</button>
   </div></div></div>;
 }
 function LoginScreen({ onAuthed }) {
@@ -486,17 +509,21 @@ export default function App() {
   const [compareIds, setCompareIds] = useState([]);
   const [compareOpen, setCompareOpen] = useState(false);
   const [printDoc, setPrintDoc] = useState(null);
-  const [session, setSession] = useState(() => { const sv = store.get("rekyl_session", null); if (sv && sv.token) { sbSetToken(sv.token); sbSetUid(sv.userId); } return sv; });
+  const [session, setSession] = useState(() => { const sv = store.get("rekyl_session", null); if (sv && sv.token) sbSetToken(sv.token); return sv; });
   const [loaded, setLoaded] = useState(false);
-  const login = (sv) => { store.set("rekyl_session", sv); sbSetToken(sv.token); sbSetUid(sv.userId); setSession(sv); };
-  const logout = () => { store.set("rekyl_session", null); store.set("rekyl_state", null); sbSetToken(null); sbSetUid(null); setLoaded(false); setSession(null); dispatch({ type: "LOAD_STATE", data: {} }); };
-  useEffect(() => { if (!sbEnabled || !session || !session.refresh) return; let alive = true; const doRefresh = async () => { const d = await sbRefresh(session.refresh); if (d && alive) { const ns = { ...session, token: d.access_token, refresh: d.refresh_token, exp: Date.now() + (d.expires_in || 3600) * 1000 }; store.set("rekyl_session", ns); sbSetToken(ns.token); sbSetUid(ns.userId); setSession(ns); } }; if (session.exp && session.exp < Date.now() + 5 * 60000) doRefresh(); const t = setInterval(doRefresh, 45 * 60000); return () => { alive = false; clearInterval(t); }; }, [session && session.userId]);
-  useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + session.userId + "&select=data"); if (alive) { if (rows && rows.length && rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); setLoaded(true); } })(); return () => { alive = false; }; }, [session && session.userId]);
-  useEffect(() => { if (!sbEnabled || !session || !loaded) return; const t = setTimeout(() => { sbUpsert("org_state", { org_id: session.userId, data: state, updated_at: new Date().toISOString() }); }, 1600); return () => clearTimeout(t); }, [state, loaded]);
+  const [org, setOrgState] = useState(() => store.get("rekyl_org", null));
+  const [orgChecked, setOrgChecked] = useState(false);
+  const setOrg = (o) => { setOrgState(o); store.set("rekyl_org", o); if (o) sbSetOrg(o.id); };
+  const login = (sv) => { store.set("rekyl_session", sv); sbSetToken(sv.token); setSession(sv); };
+  const logout = () => { store.set("rekyl_session", null); store.set("rekyl_state", null); store.set("rekyl_org", null); sbSetToken(null); sbSetOrg(null); setLoaded(false); setOrgState(null); setOrgChecked(true); setSession(null); dispatch({ type: "LOAD_STATE", data: {} }); dispatch({ type: "SET_TEAM", team: [] }); };
+  useEffect(() => { if (!sbEnabled || !session || !session.refresh) return; let alive = true; const doRefresh = async () => { const d = await sbRefresh(session.refresh); if (d && alive) { const ns = { ...session, token: d.access_token, refresh: d.refresh_token, exp: Date.now() + (d.expires_in || 3600) * 1000 }; store.set("rekyl_session", ns); sbSetToken(ns.token); setSession(ns); } }; if (session.exp && session.exp < Date.now() + 5 * 60000) doRefresh(); const t = setInterval(doRefresh, 45 * 60000); return () => { alive = false; clearInterval(t); }; }, [session && session.userId]);
+  useEffect(() => { if (!sbEnabled || !session) { setOrgChecked(true); return; } if (org) { sbSetOrg(org.id); setOrgChecked(true); return; } let alive = true; (async () => { const rows = await sbGet("members?user_id=eq." + session.userId + "&select=org_id,role"); if (alive) { if (rows && rows.length) { const o = { id: rows[0].org_id, role: rows[0].role }; sbSetOrg(o.id); setOrgState(o); store.set("rekyl_org", o); } setOrgChecked(true); } })(); return () => { alive = false; }; }, [session && session.userId]);
+  useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } if (!org) return; let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data"); if (alive) { if (rows && rows.length && rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: org.role }); setLoaded(true); } })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
+  useEffect(() => { if (!sbEnabled || !session || !org || !loaded) return; const t = setTimeout(() => { sbUpsert("org_state", { org_id: org.id, data: state, updated_at: new Date().toISOString() }); }, 1600); return () => clearTimeout(t); }, [state, loaded, org && org.id]);
   useEffect(() => { store.set("rekyl_state", state); }, [state]);
 
   const job = state.jobs.find((j) => j.id === state.activeJobId) || state.jobs[0];
-  const me = REVIEWERS.find((r) => r.id === state.currentUserId);
+  const me = state.team.find((r) => r.id === state.currentUserId) || { id: state.currentUserId || "me", name: (session && session.email) || "Jag", email: session && session.email, role: (org && org.role) || "admin", initials: (((session && session.email) || "J")[0] || "J").toUpperCase() };
   const cands = useMemo(() => state.candidates.filter((c) => c.jobId === state.activeJobId).map((c) => ({ ...c, ...scoreCandidate(job, c.answers), missing: missingInfo(job, c) })), [state.candidates, job]);
   const allScored = useMemo(() => state.jobs.map((j) => ({ job: j, list: state.candidates.filter((c) => c.jobId === j.id).map((c) => ({ ...c, ...scoreCandidate(j, c.answers) })) })), [state.candidates, state.jobs]);
   const dupIndex = useMemo(() => { const by = {}; state.candidates.forEach((c) => { const k = (c.email || "").toLowerCase(); if (!k) return; (by[k] ||= []).push(c); }); return by; }, [state.candidates]);
@@ -514,7 +541,9 @@ export default function App() {
   const pubMatch = typeof window !== "undefined" ? window.location.pathname.match(/^\/j\/([^/]+)/) : null;
   if (pubMatch) return <PublicApply slug={decodeURIComponent(pubMatch[1])} localJobs={state.jobs} localOrg={state.org} />;
   if (sbEnabled && !session) return <LoginScreen onAuthed={login} />;
-  if (sbEnabled && session && !loaded) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>Synkar din data…</span></div></div></div>;
+  if (sbEnabled && session && !orgChecked) return <SpinnerScreen text="Laddar…" />;
+  if (sbEnabled && session && orgChecked && !org) return <OrgSetupScreen session={session} onReady={(o) => { setOrg(o); dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: o.role }); }} onLogout={logout} />;
+  if (sbEnabled && session && org && !loaded) return <SpinnerScreen text="Synkar din data…" />;
   if (session && loaded && !state.jobs.length) return <FirstJobScreen onCreate={(t, tmpl) => dispatch({ type: "ADD_JOB", title: t, tmplId: tmpl })} onLogout={logout} email={session && session.email} />;
 
   return (
@@ -524,7 +553,7 @@ export default function App() {
         <aside className="ats-side">
           <div className="ats-side-top"><div className="ats-brand"><span className="ats-logo">R</span><span className="ats-lbl ats-brandtxt">Rekyl</span></div><button className="ats-pin" onClick={togglePin} title={pinned ? "Las upp meny" : "Las fast meny"}>{pinned ? <Pin size={15} /> : <PinOff size={15} />}</button></div>
           <nav className="ats-nav">{NAV.map((n) => <button key={n.id} className={"ats-side-item" + (view === n.id ? " is-active" : "")} onClick={() => go(n.id)}><n.icon size={18} strokeWidth={2} /><span className="ats-lbl">{n.label}</span></button>)}</nav>
-          <div className="ats-side-foot"><Menu trigger={<button className="ats-side-user"><span className="ats-avatar is-sm">{me.initials}</span><span className="ats-lbl ats-side-userinfo"><b>{me.name}</b><small>{ROLE_LABEL[me.role]}</small></span></button>}><div className="ats-menu-label">Visa som roll</div>{REVIEWERS.map((r) => <button key={r.id} className={"ats-menu-item" + (r.id === state.currentUserId ? " is-active" : "")} onClick={() => D({ type: "SET_USER", id: r.id })}><span className="ats-avatar is-xs">{r.initials}</span>{r.name} · {ROLE_LABEL[r.role]}</button>)}{sbEnabled && session && <><div className="ats-menu-sep" /><button className="ats-menu-item is-danger" onClick={logout}><LogOut size={14} /> Logga ut</button></>}</Menu></div>
+          <div className="ats-side-foot"><Menu trigger={<button className="ats-side-user"><span className="ats-avatar is-sm">{me.initials}</span><span className="ats-lbl ats-side-userinfo"><b>{me.name}</b><small>{ROLE_LABEL[me.role]}</small></span></button>}><div className="ats-menu-label">{me.name}</div>{me.email && <div style={{ padding: "0 12px 7px", fontSize: 11, color: "var(--muted)" }}>{me.email} · {ROLE_LABEL[me.role]}</div>}{sbEnabled && session && <><div className="ats-menu-sep" /><button className="ats-menu-item is-danger" onClick={logout}><LogOut size={14} /> Logga ut</button></>}</Menu></div>
         </aside>
 
         <main className="ats-main">
@@ -607,6 +636,14 @@ function flagsOf(c) {
   if (c.belowThreshold) red.push("Under tröskeln");
   return { green: green.slice(0, 3), red: red.slice(0, 3) };
 }
+function recommendation(c) {
+  if (c.knockout) return { action: "Avslag", tone: "brick", icon: "ShieldAlert", why: "Uppfyller inte obligatoriska krav" };
+  if (c.missing && c.missing.length > 0) return { action: "Begär komplettering", tone: "amber", icon: "Info", why: "Saknar: " + c.missing.slice(0, 2).join(", ") };
+  if (c.total >= 75) return { action: "Boka intervju", tone: "petrol", icon: "CalendarCheck", why: "Stark matchning · " + c.total + "%" };
+  if (c.total >= 55) return { action: "Shortlist", tone: "green", icon: "ThumbsUp", why: "God matchning · " + c.total + "%" };
+  if (c.total < 42) return { action: "Reservlista", tone: "amber", icon: "PauseCircle", why: "Låg matchning · " + c.total + "%" };
+  return { action: "Granska närmare", tone: "blue", icon: "Eye", why: "Mittemellan · " + c.total + "%" };
+}
 function CardFace({ c, onStar, onOpen, showActions }) {
   const musts = c.parts.filter((p) => p.kind === "must");
   const scored = c.parts.filter((p) => p.kind === "scored").sort((a, b) => b.earned - a.earned).slice(0, 3);
@@ -616,6 +653,7 @@ function CardFace({ c, onStar, onOpen, showActions }) {
     <div className="ats-face">
       <div className="ats-face-top"><div className="ats-face-id"><div className="ats-avatar">{initials(c.name)}</div><div className="ats-face-idtxt"><div className="ats-name">{c.name}{c.starred && <Star size={13} className="ats-starred" fill="currentColor" />}</div><div className="ats-face-mail"><Mail size={11} /> {c.email}</div></div></div><ScoreDial value={c.total} knockout={c.knockout} size={70} /></div>
       <div className="ats-face-statusrow"><span className={"ats-statuspill is-" + c.status}>{statusLabel(c.status)}</span><span className="ats-face-src">{c.source} · {timeAgo(c.appliedAt)}</span></div>
+      {(() => { const r = recommendation(c); const RIc = ICONS[r.icon] || Sparkles; return <div className={"ats-reco tone-" + r.tone}><span className="ats-reco-ic"><RIc size={16} /></span><div className="ats-reco-txt"><span className="ats-reco-lbl">Rekommenderad åtgärd</span><b>{r.action}</b></div><span className="ats-reco-why">{r.why}</span></div>; })()}
       {c.knockout && <div className="ats-ko"><ShieldAlert size={14} /> Diskvalificerad — {c.knockoutReasons.join(", ").toLowerCase()}</div>}
       {musts.length > 0 && <div className="ats-musts">{musts.map((m) => { const Icon = ICONS[m.icon] || ShieldCheck; return <span key={m.id} className={"ats-must" + (m.ok ? " is-ok" : " is-no")}><Icon size={12} /> {m.label} {m.ok ? "OK" : "saknas"}</span>; })}</div>}
       <div className="ats-flagcols">
@@ -623,7 +661,7 @@ function CardFace({ c, onStar, onOpen, showActions }) {
         <div className="ats-flagcol"><div className="ats-flagcol-h is-red"><AlertTriangle size={12} /> Red flags</div>{red.length ? red.map((g, i) => <span key={i} className="ats-flag is-red">{g}</span>) : <span className="ats-flag-none">Inga</span>}</div>
       </div>
       <div className="ats-break"><div className="ats-break-h"><span>Viktigaste krav</span><span className="ats-break-max">bidrag</span></div>
-        {scored.map((p) => { const Icon = ICONS[p.icon] || Award; return <div key={p.id} className="ats-break-row"><span className="ats-break-ic"><Icon size={13} /></span><div className="ats-break-main"><div className="ats-break-label"><span>{p.label}</span><span className="ats-break-detail">{p.detail}</span></div><div className="ats-break-bar"><div className="ats-break-bar-fill" style={{ width: Math.round(p.frac * 100) + "%" }} /></div></div><span className="ats-break-pts">+{Math.round(p.earned)}</span></div>; })}
+        {scored.map((p) => { const Icon = ICONS[p.icon] || Award; return <div key={p.id} className="ats-break-row"><span className="ats-break-ic"><Icon size={13} /></span><div className="ats-break-main"><div className="ats-break-label"><span>{p.label}</span><span className="ats-break-detail">{p.detail}</span></div><div className="ats-break-bar"><div className={"ats-break-bar-fill" + (p.frac >= 0.66 ? " is-strong" : p.frac <= 0.34 ? " is-weak" : "")} style={{ width: Math.round(p.frac * 100) + "%" }} /></div></div><span className="ats-break-pts">+{Math.round(p.earned)}</span></div>; })}
       </div>
       {c.missing?.length > 0 && <div className="ats-face-missing"><MissingChips items={c.missing} /></div>}
       <div className="ats-face-foot"><div className="ats-face-foot-l">{last && <span className="ats-face-last"><Activity size={11} /> {TL_LABEL[last.kind] || last.kind} · {timeAgo(last.at)}</span>}<VoteSummary reviews={c.reviews} /></div><div className="ats-face-foot-r">{onStar && <button className={"ats-iconbtn" + (c.starred ? " is-on" : "")} onClick={(e) => { e.stopPropagation(); onStar(); }} title="Stjärnmarkera"><Star size={14} fill={c.starred ? "currentColor" : "none"} /></button>}{onOpen && <button className="ats-openbtn" onClick={(e) => { e.stopPropagation(); onOpen(); }}>Öppna kandidat <ChevronRight size={13} /></button>}</div></div>
@@ -747,9 +785,10 @@ function CandidateDrawer({ cand, state, D, me, job, onClose, showToast, setPrint
       <div className="ats-drawer-h"><div><h3>{c.name}</h3><span>{c.email || "e-post saknas"} · {c.phone || "telefon saknas"}</span></div><button onClick={onClose}><X size={18} /></button></div>
       <div className="ats-drawer-body">
         <div className="ats-drawer-score"><ScoreDial value={c.total} knockout={c.knockout} size={84} /><div><span className={"ats-statuspill is-" + c.status}>{statusLabel(c.status)}</span>{c.knockout ? <div className="ats-ko is-mini"><ShieldAlert size={13} /> {c.knockoutReasons.join(", ")}</div> : <div className="ats-below is-ok"><Check size={13} /> Uppfyller obligatoriska krav</div>}<TagPills tags={c.tags} /><MissingChips items={c.missing} /></div></div>
+        {(() => { const r = recommendation(c); const RIc = ICONS[r.icon] || Sparkles; return <div className={"ats-reco tone-" + r.tone} style={{ marginTop: 12 }}><span className="ats-reco-ic"><RIc size={16} /></span><div className="ats-reco-txt"><span className="ats-reco-lbl">Rekommenderad åtgärd</span><b>{r.action}</b></div><span className="ats-reco-why">{r.why}</span></div>; })()}
         {dupOf.length > 0 && <div className="ats-dupbox"><History size={13} /> Har sökt {dupOf.length + 1} gånger. {dupOf.map((d) => { const j = state.jobs.find((x) => x.id === d.jobId); return <span key={d.id} className="ats-dup-item">{j ? j.title : d.jobId} · {statusLabel(d.status)}</span>; })}</div>}
 
-        <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><UserCheck size={12} /> Team review</div><div className="ats-verdicts">{[["yes", "Ja", ThumbsUp], ["maybe", "Osäker", HelpCircle], ["no", "Nej", ThumbsDown]].map(([v, label, Ic]) => <button key={v} disabled={!canVote} className={"ats-verdict is-" + v + (c.reviews[me.id] === v ? " is-on" : "")} onClick={() => D({ type: "REVIEW", id: c.id, verdict: v })}><Ic size={14} /> {label}</button>)}</div>{Object.keys(c.reviews).length > 0 && <div className="ats-cons-pills">{REVIEWERS.filter((r) => c.reviews[r.id]).map((r) => <span key={r.id} className={"ats-cons is-" + c.reviews[r.id]}>{r.initials}: {c.reviews[r.id] === "yes" ? "Ja" : c.reviews[r.id] === "no" ? "Nej" : "Osäker"}</span>)}</div>}</div>
+        <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><UserCheck size={12} /> Team review</div><div className="ats-verdicts">{[["yes", "Ja", ThumbsUp], ["maybe", "Osäker", HelpCircle], ["no", "Nej", ThumbsDown]].map(([v, label, Ic]) => <button key={v} disabled={!canVote} className={"ats-verdict is-" + v + (c.reviews[me.id] === v ? " is-on" : "")} onClick={() => D({ type: "REVIEW", id: c.id, verdict: v })}><Ic size={14} /> {label}</button>)}</div>{Object.keys(c.reviews).length > 0 && <div className="ats-cons-pills">{state.team.filter((r) => c.reviews[r.id]).map((r) => <span key={r.id} className={"ats-cons is-" + c.reviews[r.id]}>{r.initials}: {c.reviews[r.id] === "yes" ? "Ja" : c.reviews[r.id] === "no" ? "Nej" : "Osäker"}</span>)}</div>}</div>
 
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><Activity size={12} /> Timeline</div><div className="ats-tline">{(c.timeline || []).slice(0, 9).map((e) => <div key={e.id} className="ats-tline-row"><span className="ats-tline-dot" /><div className="ats-tline-main"><b>{TL_LABEL[e.kind] || e.kind}</b>{e.detail && <span> · {e.detail}</span>}</div><span className="ats-tline-time">{timeAgo(e.at)}</span></div>)}</div></div>
 
@@ -757,7 +796,7 @@ function CandidateDrawer({ cand, state, D, me, job, onClose, showToast, setPrint
 
         {c.parts.filter((p) => p.kind === "file" || p.kind === "text").length > 0 && <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><FileText size={12} /> Svar & bilagor</div>{c.parts.filter((p) => p.kind === "file" || p.kind === "text").map((p) => { const fv = p.kind === "file" ? fileVal(p.value) : null; return <div key={p.id} className="ats-answer-row"><span className="ats-answer-l">{p.label}</span>{p.kind === "file" ? (fv ? (fv.url ? <a className="ats-answer-file" href={fv.url} target="_blank" rel="noreferrer"><FileText size={13} /> {fv.name} <Download size={12} /></a> : <span className="ats-answer-file is-nolink"><FileText size={13} /> {fv.name}</span>) : <span className="ats-answer-empty">Ingen fil</span>) : <span className="ats-answer-v">{p.value || "—"}</span>}</div>; })}</div>}
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><Star size={12} /> Betyg</div><Stars value={c.rating} readOnly={!canComment} onSet={(n) => D({ type: "RATE", id: c.id, rating: n })} /></div>
-        <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><FileText size={12} /> Kommentarer</div>{c.comments.map((m) => { const a = REVIEWERS.find((r) => r.id === m.by); return <div key={m.id} className="ats-cmt"><span className="ats-avatar is-xs">{a?.initials || "?"}</span><div><b>{a?.name}</b> <small>{timeAgo(m.at)}</small><p>{m.text}</p></div></div>; })}{canComment && <CommentBox onAdd={(t) => D({ type: "COMMENT", id: c.id, text: t })} />}</div>
+        <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><FileText size={12} /> Kommentarer</div>{c.comments.map((m) => { const a = state.team.find((r) => r.id === m.by); return <div key={m.id} className="ats-cmt"><span className="ats-avatar is-xs">{a?.initials || "?"}</span><div><b>{a?.name}</b> <small>{timeAgo(m.at)}</small><p>{m.text}</p></div></div>; })}{canComment && <CommentBox onAdd={(t) => D({ type: "COMMENT", id: c.id, text: t })} />}</div>
 
         {canMsg && <div className="ats-drawer-msgs">{c.missing.length > 0 && <button className="ats-ghost" onClick={() => sendMsg("completion")}><Bell size={14} /> Begär komplettering</button>}<button className="ats-ghost" onClick={() => sendMsg("reminder")}><Mail size={14} /> Paminnelse</button><button className="ats-ghost" onClick={() => { toggleCompare(c.id); showToast({ kind: "ok", msg: compareIds.includes(c.id) ? "Borttagen från jämförelse" : "Tillagd i jämförelse" }); }}><GitCompare size={14} /> {compareIds.includes(c.id) ? "I jämförelse" : "Jämför"}</button></div>}
       </div>
@@ -932,7 +971,7 @@ function FormView({ job, D, me, state, showToast }) {
   const addPage = () => { setPages([...pages, Math.max(1, ...pages) + 1]); };
   const A = job.annons || {};
   const setA = (patch) => { D({ type: "SET_FORM", patch: { annons: { ...(job.annons || {}), ...patch } } }); setDirty(true); };
-  const publish = () => { D({ type: "SET_FORM", patch: {}, bump: true }); setDirty(false); if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1, annons: job.annons }, published: true, org_id: SB_UID }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Publicerat lokalt · molnet svarade inte" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); } };
+  const publish = () => { D({ type: "SET_FORM", patch: {}, bump: true }); setDirty(false); if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1, annons: job.annons }, published: true, org_id: SB_ORG }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Publicerat lokalt · molnet svarade inte" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); } };
   const skills = job.criteria.find((c) => c.id === "skills");
   const scored = job.criteria.filter((c) => c.scored && c.type !== "text" && c.type !== "file");
   const link = (typeof window !== "undefined" ? window.location.origin : state.org.appUrl) + "/j/" + job.slug; const embed = `<iframe src="${link}/inbäddad" width="100%" height="720" style="border:0" title="${job.title}"></iframe>`;
@@ -1129,17 +1168,30 @@ function StatsView({ cands, job, state, D }) {
 }
 
 /* ===================== TEAM & LOGG ===================== */
-function TeamView({ state, me }) {
+function TeamManagePanel({ state, me, D }) {
+  const isAdmin = me.role === "admin";
+  const [inviteRole, setInviteRole] = useState("recruiter");
+  const [code, setCode] = useState(""); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
+  const invite = async () => { setErr(""); setBusy(true); try { const c = await sbRpc("make_invite", { p_role: inviteRole }); setCode(typeof c === "string" ? c : (c && c[0]) || ""); } catch (e) { setErr(e.message || "Fel"); } setBusy(false); };
+  const changeRole = async (uid, role) => { try { await sbRpc("set_member_role", { p_user: uid, p_role: role }); D({ type: "SET_TEAM", team: state.team.map((m) => m.id === uid ? { ...m, role } : m) }); } catch (e) { alert(e.message || "Kunde inte ändra roll"); } };
+  return <div className="ats-panel"><div className="ats-panel-h"><h2>Team</h2><span className="ats-summono">{state.team.length} medlemmar</span></div>
+    <div className="ats-team-list">{state.team.map((m) => <div key={m.id} className="ats-team-row"><span className="ats-avatar is-sm">{m.initials}</span><div className="ats-team-info"><b>{m.name}{m.id === me.id && <span className="ats-team-you">du</span>}</b><small>{m.email}</small></div>{isAdmin && m.id !== me.id ? <select className="ats-select is-sm" value={m.role} onChange={(e) => changeRole(m.id, e.target.value)}>{Object.keys(ROLE_LABEL).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select> : <span className="ats-team-role">{ROLE_LABEL[m.role]}</span>}</div>)}</div>
+    {isAdmin ? <div className="ats-invite"><div className="ats-invite-h"><UserPlus size={14} /> Bjud in en kollega</div><div className="ats-invite-row"><select className="ats-select is-sm" value={inviteRole} onChange={(e) => setInviteRole(e.target.value)}>{Object.keys(ROLE_LABEL).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select><button className="ats-btn-primary is-sm" disabled={busy} onClick={invite}>{busy ? "…" : "Skapa inbjudningskod"}</button></div>{err && <div className="ats-login-err" style={{ marginTop: 8 }}><CircleAlert size={12} /> {err}</div>}{code && <div className="ats-invite-code"><div className="ats-invite-code-t">Skicka koden till din kollega. De skapar ett konto, väljer "Gå med i team" och klistrar in koden:</div><div className="ats-invite-code-box"><code>{code}</code><button className="ats-ghost is-sm" onClick={() => { copyText(code); }}><Copy size={12} /> Kopiera</button></div></div>}</div>
+      : <p className="ats-builder-note"><ShieldCheck size={12} /> Din roll: <b>{ROLE_LABEL[me.role]}</b>. Kontakta en admin för att ändra behörigheter eller bjuda in fler.</p>}
+  </div>;
+}
+function TeamView({ state, me, D }) {
   const perms = [["decide", "Beslut"], ["vote", "Team review"], ["message", "Mejl"], ["edit", "Redigera"], ["comment", "Kommentera"], ["export", "Export"]];
   const msgs = state.messages.slice(0, 24);
   const cName = (id) => state.candidates.find((c) => c.id === id)?.name || "—";
   return (
     <div className="ats-view">
-      <PageHeader title="Team & logg" meta={<><span>{REVIEWERS.length} personer</span><Dot /><span>{state.log.length} händelser</span></>} />
+      <PageHeader title="Team & logg" meta={<><span>{state.team.length} personer</span><Dot /><span>{state.log.length} händelser</span></>} />
+      <TeamManagePanel state={state} me={me} D={D} />
       <div className="ats-grid-2">
         <div className="ats-panel"><div className="ats-panel-h"><h2>Team & behörigheter</h2></div>
           <div className="ats-permtable"><div className="ats-permrow ats-permhead"><span>Person</span>{perms.map((p) => <span key={p[0]}>{p[1]}</span>)}</div>
-            {REVIEWERS.map((r) => <div key={r.id} className={"ats-permrow" + (r.id === me.id ? " is-me" : "")}><span className="ats-permname"><span className="ats-avatar is-xs">{r.initials}</span><span>{r.name}<small>{ROLE_LABEL[r.role]}</small></span></span>{perms.map((p) => <span key={p[0]}>{can(r.role, p[0]) ? <Check size={14} className="ats-permyes" /> : <X size={13} className="ats-permno" />}</span>)}</div>)}
+            {state.team.map((r) => <div key={r.id} className={"ats-permrow" + (r.id === me.id ? " is-me" : "")}><span className="ats-permname"><span className="ats-avatar is-xs">{r.initials}</span><span>{r.name}<small>{ROLE_LABEL[r.role]}</small></span></span>{perms.map((p) => <span key={p[0]}>{can(r.role, p[0]) ? <Check size={14} className="ats-permyes" /> : <X size={13} className="ats-permno" />}</span>)}</div>)}
           </div>
           <p className="ats-builder-note"><ShieldCheck size={12} /> Team review, beslut i kön och per-kandidat-timeline gor processen sparbar och rättssäker.</p>
         </div>
@@ -1172,7 +1224,7 @@ function SettingsView({ state, D, me, job, cands, showToast, onLogout, session }
   return (
     <div className="ats-view">
       <PageHeader title="Inställningar" meta={<><span>e-post</span><Dot /><span>mallar</span><Dot /><span>företag</span></>} />
-      <div className="ats-panel"><div className="ats-panel-h"><h2>Visa som roll</h2><span className="ats-summono">förhandsvisa behörigheter</span></div><div className="ats-rolepick">{REVIEWERS.map((r) => <button key={r.id} className={"ats-rolepick-btn" + (r.id === state.currentUserId ? " is-on" : "")} onClick={() => D({ type: "SET_USER", id: r.id })}><span className="ats-avatar is-xs">{r.initials}</span><div className="ats-rolepick-t"><b>{r.name}</b><small>{ROLE_LABEL[r.role]}</small></div>{r.id === state.currentUserId && <Check size={14} />}</button>)}</div>{sbEnabled && session && <button className="ats-ghost is-danger" style={{ marginTop: 12 }} onClick={onLogout}><LogOut size={14} /> Logga ut{session.email ? " (" + session.email + ")" : ""}</button>}</div>
+      <div className="ats-panel"><div className="ats-panel-h"><h2>Inloggad som</h2></div><div className="ats-rolepick"><div className="ats-rolepick-btn is-on"><span className="ats-avatar is-xs">{me.initials}</span><div className="ats-rolepick-t"><b>{me.name}</b><small>{me.email} · {ROLE_LABEL[me.role]}</small></div></div></div>{sbEnabled && session && <button className="ats-ghost is-danger" style={{ marginTop: 12 }} onClick={onLogout}><LogOut size={14} /> Logga ut{session.email ? " (" + session.email + ")" : ""}</button>}</div>
       <div className="ats-grid-2">
         <div className="ats-panel"><div className="ats-panel-h"><h2>Företag & avsändare</h2></div>
           <label className="ats-field"><span className="ats-field-l">Företagsnamn</span><input value={org.companyName} disabled={!canEdit} onChange={(e) => setOrg({ companyName: e.target.value })} /></label>
@@ -1990,6 +2042,36 @@ function Style() {
 .ats-first-card{width:100%;max-width:640px;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:30px;box-shadow:0 30px 70px -30px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:12px}
 .ats-first-card h2{font-family:'Bricolage Grotesque';font-size:24px}
 .ats-first-sub{font-size:13.5px;color:var(--sub);line-height:1.55}
+.ats-setup-toggle{display:flex;gap:6px;background:var(--paper2);padding:5px;border-radius:11px}
+.ats-setup-toggle button{flex:1;padding:9px;border-radius:8px;font-weight:600;font-size:13px;color:var(--sub);transition:.13s}
+.ats-setup-toggle button.is-on{background:var(--surface);color:var(--petrol);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.ats-team-list{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.ats-team-row{display:flex;align-items:center;gap:11px;padding:9px 11px;border:1px solid var(--line);border-radius:11px;background:var(--surface)}
+.ats-team-info{flex:1;min-width:0}
+.ats-team-info b{display:flex;align-items:center;gap:8px;font-size:13.5px}
+.ats-team-info small{font-size:11.5px;color:var(--muted)}
+.ats-team-you{font-size:9.5px;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;background:var(--petrol-soft);color:var(--petrol);padding:1px 6px;border-radius:5px}
+.ats-team-role{font-size:12px;font-weight:600;color:var(--sub);background:var(--paper2);padding:5px 10px;border-radius:8px}
+.ats-invite{background:var(--paper2);border-radius:12px;padding:14px;margin-top:4px}
+.ats-invite-h{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;margin-bottom:10px}
+.ats-invite-row{display:flex;gap:8px}
+.ats-invite-code{margin-top:12px}
+.ats-invite-code-t{font-size:12px;color:var(--sub);margin-bottom:7px;line-height:1.5}
+.ats-invite-code-box{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px dashed var(--petrol);border-radius:9px;padding:10px 12px}
+.ats-invite-code-box code{flex:1;font-family:'IBM Plex Mono',monospace;font-size:17px;font-weight:600;letter-spacing:.12em;color:var(--petrol-deep)}
+.ats-reco{display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:12px;border:1px solid;margin:2px 0}
+.ats-reco-ic{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;flex-shrink:0}
+.ats-reco-txt{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.2}
+.ats-reco-lbl{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.08em;text-transform:uppercase;opacity:.7}
+.ats-reco-txt b{font-size:15px;font-family:'Bricolage Grotesque';font-weight:600}
+.ats-reco-why{font-size:11.5px;text-align:right;opacity:.85;max-width:44%}
+.ats-reco.tone-petrol{background:var(--petrol-soft);border-color:transparent;color:var(--petrol-deep)}.ats-reco.tone-petrol .ats-reco-ic{background:var(--petrol);color:#fff}
+.ats-reco.tone-green{background:#EAF3EC;border-color:transparent;color:#1f6b3a}.ats-reco.tone-green .ats-reco-ic{background:#2e8b57;color:#fff}
+.ats-reco.tone-amber{background:var(--amber-soft);border-color:transparent;color:#7a4d0a}.ats-reco.tone-amber .ats-reco-ic{background:var(--amber);color:#fff}
+.ats-reco.tone-brick{background:var(--brick-soft);border-color:transparent;color:var(--brick)}.ats-reco.tone-brick .ats-reco-ic{background:var(--brick);color:#fff}
+.ats-reco.tone-blue{background:var(--blue-soft);border-color:transparent;color:var(--blue)}.ats-reco.tone-blue .ats-reco-ic{background:var(--blue);color:#fff}
+.ats-break-bar-fill.is-strong{background:var(--petrol)}
+.ats-break-bar-fill.is-weak{background:var(--amber)}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
