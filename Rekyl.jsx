@@ -544,6 +544,68 @@ function PublicApply({ slug, localJobs, localOrg }) {
     <footer className="ats-jp-foot"><span>Drivs av Rekyl{!sbEnabled && " · förhandsläge"}</span><span>Dina uppgifter hanteras enligt GDPR.</span></footer>
   </div></div>;
 }
+const TOUR_STEPS = [
+  { center: true, view: "dashboard", title: "Välkommen till Rekyl", body: "En snabb rundtur på under en minut genom de viktigaste funktionerna. Du kan hoppa över när som helst." },
+  { target: "nav-dashboard", view: "dashboard", side: "right", title: "Översikt", body: "Din startsida: kön att beta av, snittmatchning och portfölj över alla tjänster." },
+  { target: "nav-form", view: "form", side: "right", title: "Formulärbyggaren", body: "Dra och släpp fält för att bygga ansökningsformuläret. Formuläret är också din scoringmotor — vikter, knockout och villkor styr du här." },
+  { target: "nav-queue", view: "queue", side: "right", title: "Kön", body: "Gå igenom kandidater som ett kortlek och swipa för beslut. Rätt mejl köas automatiskt och allt loggas." },
+  { target: "nav-sources", view: "sources", side: "right", title: "Källkvalitet", body: "Se vilken kanal som ger dina bästa kandidater — snittmatchning, inte bara antal ansökningar." },
+  { target: "nav-team", view: "team", side: "right", title: "Team och roller", body: "Bjud in kollegor med roller (admin, rekryterare, chef, insyn). All aktivitet blir spårbar i revisionsloggen." },
+  { target: "new-job", side: "left", title: "Skapa en tjänst", body: "Här skapar du en ny tjänst från en färdig branschmall — scoring och kandidatkort förladdas automatiskt." },
+  { center: true, view: "dashboard", title: "Klart!", body: "Nu är du redo. Skapa din första riktiga tjänst eller utforska fritt — du hittar rundturen igen via hjälpknappen uppe till vänster." },
+];
+function ProductTour({ steps, onClose, setView }) {
+  const [i, setI] = useState(0);
+  const [rect, setRect] = useState(null);
+  const step = steps[i];
+  useEffect(() => {
+    if (step.view) setView(step.view);
+    let raf, t;
+    const measure = () => {
+      if (step.center || !step.target) { setRect(null); return; }
+      const els = Array.from(document.querySelectorAll('[data-tour="' + step.target + '"]'));
+      const el = els.find((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+      if (!el) { setRect(null); return; }
+      const r = el.getBoundingClientRect();
+      setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+    };
+    t = setTimeout(() => { measure(); raf = requestAnimationFrame(measure); }, step.view ? 130 : 20);
+    const onWin = () => measure();
+    window.addEventListener("resize", onWin); window.addEventListener("scroll", onWin, true);
+    return () => { clearTimeout(t); cancelAnimationFrame(raf); window.removeEventListener("resize", onWin); window.removeEventListener("scroll", onWin, true); };
+  }, [i]);
+  const next = () => { if (i < steps.length - 1) setI(i + 1); else onClose(true); };
+  const back = () => { if (i > 0) setI(i - 1); };
+  const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+  let ttStyle = {};
+  const centered = !rect;
+  if (rect) {
+    const tw = Math.min(320, vw - 32);
+    if (vw < 720) {
+      const below = rect.top + rect.height + 12 + 180 < vh;
+      const left = Math.max(16, Math.min(vw - tw - 16, rect.left + rect.width / 2 - tw / 2));
+      ttStyle = below ? { top: rect.top + rect.height + 14, left, width: tw } : { top: Math.max(16, rect.top - 14 - 190), left, width: tw };
+    } else {
+      const side = step.side || "right";
+      const top = Math.max(16, Math.min(vh - 220, rect.top - 8));
+      ttStyle = side === "right" ? { top, left: Math.min(vw - tw - 16, rect.left + rect.width + 16), width: tw } : { top, left: Math.max(16, rect.left - tw - 16), width: tw };
+    }
+  }
+  return <div className="ats-tour">
+    {rect ? <div className="ats-tour-spot" style={{ top: rect.top - 8, left: rect.left - 8, width: rect.width + 16, height: rect.height + 16 }} /> : <div className="ats-tour-dim" />}
+    <div className={"ats-tour-card" + (centered ? " is-centered" : "")} style={centered ? undefined : ttStyle}>
+      <div className="ats-tour-step">{i + 1} / {steps.length}</div>
+      <h3>{step.title}</h3>
+      <p>{step.body}</p>
+      <div className="ats-tour-dots">{steps.map((_, k) => <span key={k} className={k === i ? "is-on" : ""} />)}</div>
+      <div className="ats-tour-actions">
+        <button className="ats-tour-skip" onClick={() => onClose(true)}>Hoppa över</button>
+        <div className="ats-tour-nav">{i > 0 && <button className="ats-ghost is-sm" onClick={back}>Tillbaka</button>}<button className="ats-btn-primary is-sm" onClick={next}>{i < steps.length - 1 ? "Nästa" : "Klart"}</button></div>
+      </div>
+    </div>
+  </div>;
+}
 export default function App() {
   const [state, dispatch] = useReducer(reducer, INITIAL, (init) => { try { const sv = store.get("rekyl_state", null); return sv && sv.jobs && sv.candidates ? { ...init, ...sv, team: Array.isArray(sv.team) ? sv.team : [] } : init; } catch (e) { return init; } });
   const D = dispatch;
@@ -552,6 +614,7 @@ export default function App() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [newJob, setNewJob] = useState(false);
+  const [tourOpen, setTourOpen] = useState(false);
   const [reasonFor, setReasonFor] = useState(null);
   const [detailId, setDetailId] = useState(null);
   const [compareIds, setCompareIds] = useState([]);
@@ -570,6 +633,7 @@ export default function App() {
   useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } if (!org) return; let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data"); if (alive) { if (rows && rows.length && rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: org.role }); setLoaded(true); } })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
   useEffect(() => { if (!sbEnabled || !session || !org || !loaded) return; const t = setTimeout(() => { sbUpsert("org_state", { org_id: org.id, data: state, updated_at: new Date().toISOString() }); }, 1600); return () => clearTimeout(t); }, [state, loaded, org && org.id]);
   useEffect(() => { store.set("rekyl_state", state); }, [state]);
+  useEffect(() => { if (!session || !org || !loaded || !state.jobs.length) return; if (store.get("rekyl_tour_done", false)) return; const t = setTimeout(() => setTourOpen(true), 700); return () => clearTimeout(t); }, [session && session.userId, org && org.id, loaded, state.jobs.length]);
 
   const job = state.jobs.find((j) => j.id === state.activeJobId) || state.jobs[0];
   const me = (state.team || []).find((r) => r.id === state.currentUserId) || { id: state.currentUserId || "me", name: (session && session.email) || "Jag", email: session && session.email, role: (org && org.role) || "admin", initials: (((session && session.email) || "J")[0] || "J").toUpperCase() };
@@ -600,8 +664,8 @@ export default function App() {
       <Style />
       <div className={"ats-app" + (pinned ? " is-pinned" : "")}>
         <aside className="ats-side">
-          <div className="ats-side-top"><div className="ats-brand"><span className="ats-logo">R</span><span className="ats-lbl ats-brandtxt">Rekyl</span></div><button className="ats-pin" onClick={togglePin} title={pinned ? "Las upp meny" : "Las fast meny"}>{pinned ? <Pin size={15} /> : <PinOff size={15} />}</button></div>
-          <nav className="ats-nav">{NAV.map((n) => <button key={n.id} className={"ats-side-item" + (view === n.id ? " is-active" : "")} onClick={() => go(n.id)}><n.icon size={18} strokeWidth={2} /><span className="ats-lbl">{n.label}</span></button>)}</nav>
+          <div className="ats-side-top"><div className="ats-brand"><span className="ats-logo">R</span><span className="ats-lbl ats-brandtxt">Rekyl</span></div><div className="ats-side-top-btns"><button className="ats-help" onClick={() => setTourOpen(true)} title="Rundtur"><HelpCircle size={15} /></button><button className="ats-pin" onClick={togglePin} title={pinned ? "Las upp meny" : "Las fast meny"}>{pinned ? <Pin size={15} /> : <PinOff size={15} />}</button></div></div>
+          <nav className="ats-nav">{NAV.map((n) => <button key={n.id} data-tour={"nav-" + n.id} className={"ats-side-item" + (view === n.id ? " is-active" : "")} onClick={() => go(n.id)}><n.icon size={18} strokeWidth={2} /><span className="ats-lbl">{n.label}</span></button>)}</nav>
           <div className="ats-side-foot"><Menu trigger={<button className="ats-side-user"><span className="ats-avatar is-sm">{me.initials}</span><span className="ats-lbl ats-side-userinfo"><b>{me.name}</b><small>{ROLE_LABEL[me.role]}</small></span></button>}><div className="ats-menu-label">{me.name}</div>{me.email && <div style={{ padding: "0 12px 7px", fontSize: 11, color: "var(--muted)" }}>{me.email} · {ROLE_LABEL[me.role]}</div>}{sbEnabled && session && <><div className="ats-menu-sep" /><button className="ats-menu-item is-danger" onClick={logout}><LogOut size={14} /> Logga ut</button></>}</Menu></div>
         </aside>
 
@@ -618,8 +682,8 @@ export default function App() {
           </div>
         </main>
 
-        <nav className="ats-bottomnav">{primary.map((n) => <button key={n.id} className={"ats-bn" + (view === n.id ? " is-active" : "")} onClick={() => go(n.id)}><n.icon size={19} /><span>{n.label}</span></button>)}<button className={"ats-bn" + (moreOpen || more.some((m) => m.id === view) ? " is-active" : "")} onClick={() => setMoreOpen((o) => !o)}><MenuIcon size={19} /><span>Mer</span></button></nav>
-        {moreOpen && <div className="ats-more-sheet" onClick={() => setMoreOpen(false)}><div className="ats-more-inner" onClick={(e) => e.stopPropagation()}>{more.map((n) => <button key={n.id} className="ats-more-item" onClick={() => go(n.id)}><n.icon size={18} /> {n.label}</button>)}</div></div>}
+        <nav className="ats-bottomnav">{primary.map((n) => <button key={n.id} data-tour={"nav-" + n.id} className={"ats-bn" + (view === n.id ? " is-active" : "")} onClick={() => go(n.id)}><n.icon size={19} /><span>{n.label}</span></button>)}<button className={"ats-bn" + (moreOpen || more.some((m) => m.id === view) ? " is-active" : "")} onClick={() => setMoreOpen((o) => !o)}><MenuIcon size={19} /><span>Mer</span></button></nav>
+        {moreOpen && <div className="ats-more-sheet" onClick={() => setMoreOpen(false)}><div className="ats-more-inner" onClick={(e) => e.stopPropagation()}>{more.map((n) => <button key={n.id} className="ats-more-item" onClick={() => go(n.id)}><n.icon size={18} /> {n.label}</button>)}<button className="ats-more-item" onClick={() => { setMoreOpen(false); setTourOpen(true); }}><HelpCircle size={18} /> Rundtur</button></div></div>}
       </div>
 
       {toast && <div className={"ats-toast is-" + toast.kind}>{toast.kind === "ok" ? <Check size={16} /> : toast.kind === "warn" ? <AlertTriangle size={16} /> : <Info size={16} />}{toast.msg}</div>}
@@ -628,7 +692,8 @@ export default function App() {
       {newJob && <NewJobModal onClose={() => setNewJob(false)} onCreate={(t, tmpl) => { D({ type: "ADD_JOB", title: t, tmplId: tmpl }); setNewJob(false); go("form"); }} />}
       {reasonFor && <ReasonModal onClose={() => setReasonFor(null)} onPick={(reason) => { D({ type: "DECIDE", id: reasonFor.id, status: "reject", reason }); showToast({ kind: "ok", msg: "Avslag · avslagsmejl köat" }); if (reasonFor.after) reasonFor.after(); setReasonFor(null); }} />}
       {printDoc && <PrintModal doc={printDoc} onClose={() => setPrintDoc(null)} />}
-      <button className="ats-fab" onClick={() => setNewJob(true)} title="Ny tjänst"><Plus size={20} /></button>
+      <button className="ats-fab" data-tour="new-job" onClick={() => setNewJob(true)} title="Ny tjänst"><Plus size={20} /></button>
+      {tourOpen && <ProductTour steps={TOUR_STEPS} setView={go} onClose={(done) => { setTourOpen(false); if (done) store.set("rekyl_tour_done", true); }} />}
     </div>
   );
 }
@@ -2320,6 +2385,27 @@ function Style() {
 .ats-cookie-in{max-width:1000px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
 .ats-cookie-in span{display:flex;align-items:center;gap:9px;font-size:13px;line-height:1.5}
 .ats-cookie-in .ats-btn-primary{flex-shrink:0}
+.ats-side-top-btns{display:flex;gap:2px;align-items:center}
+.ats-help{opacity:0;color:var(--muted);flex-shrink:0;transition:.16s;padding:4px;border-radius:7px}
+.ats-side:hover .ats-help,.ats-app.is-pinned .ats-help{opacity:1}
+.ats-help:hover{color:var(--petrol);background:rgba(0,0,0,.05)}
+.ats-tour{position:fixed;inset:0;z-index:95}
+.ats-tour-dim{position:absolute;inset:0;background:rgba(20,18,14,.62)}
+.ats-tour-spot{position:absolute;border-radius:12px;box-shadow:0 0 0 9999px rgba(20,18,14,.62),0 0 0 2px var(--petrol),0 0 0 6px rgba(12,92,82,.25);pointer-events:none;transition:top .26s cubic-bezier(.4,0,.2,1),left .26s cubic-bezier(.4,0,.2,1),width .26s cubic-bezier(.4,0,.2,1),height .26s cubic-bezier(.4,0,.2,1)}
+.ats-tour-card{position:absolute;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 24px 60px -20px rgba(0,0,0,.5);max-width:320px;animation:tourpop .22s ease}
+.ats-tour-card.is-centered{top:50%;left:50%;transform:translate(-50%,-50%);width:min(360px,calc(100vw - 32px));animation:tourfade .22s ease}
+@keyframes tourpop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes tourfade{from{opacity:0}to{opacity:1}}
+.ats-tour-step{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--petrol);letter-spacing:.05em}
+.ats-tour-card h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:18px;margin:6px 0 7px}
+.ats-tour-card p{font-size:13.5px;line-height:1.6;color:var(--sub)}
+.ats-tour-dots{display:flex;gap:5px;margin:15px 0}
+.ats-tour-dots span{width:6px;height:6px;border-radius:50%;background:var(--line2);transition:.2s}
+.ats-tour-dots span.is-on{background:var(--petrol);width:18px;border-radius:3px}
+.ats-tour-actions{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.ats-tour-skip{font-size:12.5px;color:var(--muted);font-weight:600;padding:6px 2px}
+.ats-tour-skip:hover{color:var(--ink)}
+.ats-tour-nav{display:flex;gap:8px}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
@@ -2355,5 +2441,3 @@ function Style() {
 @media(prefers-reduced-motion:reduce){.ats-root *{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 `}</style>;
 }
-
-export { scoreCandidate, missingInfo, weightOf, isVisible, evalTagRules, evalAutoRules, buildField, getPages, pageLabel, recommendation, can, statusLabel, renderTpl, tplVars, mk, FIELD, TEMPLATES, STAGES, ROLE_LABEL, STEP_LABEL, ADDABLE, uid };
