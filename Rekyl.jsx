@@ -403,6 +403,7 @@ const NAV = [
   { id: "candidates", label: "Kandidater", icon: ClipboardList },
   { id: "form", label: "Formulär", icon: Blocks },
   { id: "stats", label: "Statistik", icon: BarChart3 },
+  { id: "sources", label: "Källkvalitet", icon: TrendingUp },
   { id: "team", label: "Team & logg", icon: Activity },
   { id: "settings", label: "Inställningar", icon: Settings },
 ];
@@ -497,7 +498,7 @@ function PublicApply({ slug, localJobs, localOrg }) {
   </div></div>;
 }
 export default function App() {
-  const [state, dispatch] = useReducer(reducer, INITIAL, (init) => { try { const sv = store.get("rekyl_state", null); return sv && sv.jobs && sv.candidates ? sv : init; } catch (e) { return init; } });
+  const [state, dispatch] = useReducer(reducer, INITIAL, (init) => { try { const sv = store.get("rekyl_state", null); return sv && sv.jobs && sv.candidates ? { ...init, ...sv, team: Array.isArray(sv.team) ? sv.team : [] } : init; } catch (e) { return init; } });
   const D = dispatch;
   const [view, setView] = useState("dashboard");
   const [pinned, setPinned] = useState(() => store.get("rekyl_pin", false));
@@ -523,7 +524,7 @@ export default function App() {
   useEffect(() => { store.set("rekyl_state", state); }, [state]);
 
   const job = state.jobs.find((j) => j.id === state.activeJobId) || state.jobs[0];
-  const me = state.team.find((r) => r.id === state.currentUserId) || { id: state.currentUserId || "me", name: (session && session.email) || "Jag", email: session && session.email, role: (org && org.role) || "admin", initials: (((session && session.email) || "J")[0] || "J").toUpperCase() };
+  const me = (state.team || []).find((r) => r.id === state.currentUserId) || { id: state.currentUserId || "me", name: (session && session.email) || "Jag", email: session && session.email, role: (org && org.role) || "admin", initials: (((session && session.email) || "J")[0] || "J").toUpperCase() };
   const cands = useMemo(() => state.candidates.filter((c) => c.jobId === state.activeJobId).map((c) => ({ ...c, ...scoreCandidate(job, c.answers), missing: missingInfo(job, c) })), [state.candidates, job]);
   const allScored = useMemo(() => state.jobs.map((j) => ({ job: j, list: state.candidates.filter((c) => c.jobId === j.id).map((c) => ({ ...c, ...scoreCandidate(j, c.answers) })) })), [state.candidates, state.jobs]);
   const dupIndex = useMemo(() => { const by = {}; state.candidates.forEach((c) => { const k = (c.email || "").toLowerCase(); if (!k) return; (by[k] ||= []).push(c); }); return by; }, [state.candidates]);
@@ -563,6 +564,7 @@ export default function App() {
             {view === "candidates" && <CandidatesView {...shared} />}
             {view === "form" && <FormView {...shared} />}
             {view === "stats" && <StatsView {...shared} />}
+            {view === "sources" && <SourceQualityView {...shared} />}
             {view === "team" && <TeamView {...shared} />}
             {view === "settings" && <SettingsView {...shared} />}
           </div>
@@ -1133,6 +1135,44 @@ function RuleAdder({ criteria, onAdd }) { const [field, setField] = useState("to
 function AutoRuleAdder({ onAdd }) { const [field, setField] = useState("total"); const [op, setOp] = useState(">="); const [value, setValue] = useState(85); const [then, setThen] = useState("shortlist"); return <><select className="ats-select is-sm" value={field} onChange={(e) => setField(e.target.value)}><option value="total">Matchning</option><option value="knockout">Diskvalificerad</option></select><select className="ats-select is-sm" value={op} onChange={(e) => setOp(e.target.value)}>{[">=", ">", "<=", "<", "="].map((o) => <option key={o}>{o}</option>)}</select><input className="ats-inp is-sm" type="number" value={value} onChange={(e) => setValue(Number(e.target.value))} /><ArrowRight size={14} /><select className="ats-select is-sm" value={then} onChange={(e) => setThen(e.target.value)}>{["shortlist", "interview", "reserve", "reject", "flag"].map((t) => <option key={t} value={t}>{statusLabel(t) === t ? "Flagga" : statusLabel(t)}</option>)}</select><button className="ats-ghost is-sm" onClick={() => onAdd({ field, op, value, then })}><Plus size={13} /></button></>; }
 
 /* ===================== STATISTIK ===================== */
+function SourceQualityView({ allScored }) {
+  const all = allScored.flatMap((a) => a.list);
+  const groups = {};
+  all.forEach((c) => { const s = c.source || "Okänd"; (groups[s] = groups[s] || []).push(c); });
+  const rows = Object.entries(groups).map(([source, list]) => {
+    const n = list.length;
+    const avg = n ? Math.round(list.reduce((x, c) => x + (c.total || 0), 0) / n) : 0;
+    const top = list.filter((c) => (c.total || 0) >= 75 && !c.knockout).length;
+    const interviews = list.filter((c) => c.status === "interview").length;
+    const hired = list.filter((c) => c.status === "hired").length;
+    return { source, n, avg, top, interviews, hired };
+  }).sort((a, b) => b.avg - a.avg || b.n - a.n);
+  const best = rows[0];
+  const maxN = Math.max(1, ...rows.map((r) => r.n));
+  const SRCIC = { LinkedIn: Share2, Indeed: Globe, Platsbanken: Globe, Facebook: Share2, Hemsida: Globe, "Länk": Link2, QR: QrCode, Direkt: UserCheck };
+  return (
+    <div className="ats-view">
+      <PageHeader title="Källkvalitet" meta={<><span>{all.length} kandidater</span><Dot /><span>{rows.length} kanaler</span></>} />
+      {rows.length === 0 ? <div className="ats-col-empty" style={{ padding: 40 }}>Inga kandidater än. När ansökningar kommer in via dina spårbara länkar (LinkedIn, Indeed, Platsbanken m.fl.) syns kvaliteten per kanal här.</div> : <>
+        {best && <div className="ats-sq-hero"><div className="ats-sq-hero-l"><span className="ats-sq-hero-lbl"><TrendingUp size={13} /> Bästa kanal</span><div className="ats-sq-hero-src">{best.source}</div><div className="ats-sq-hero-sub">{best.avg}% snittmatchning · {best.n} ansökningar · {best.hired} anställda</div></div><ScoreDial value={best.avg} knockout={false} size={72} /></div>}
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Kvalitet per kanal</h2><span className="ats-summono">sorterat på snittmatchning</span></div>
+          <div className="ats-sq-scroll"><div className="ats-sq-table">
+            <div className="ats-sq-head"><span>Kanal</span><span>Ansökningar</span><span>Snittmatchning</span><span>Toppmatch</span><span>Intervjuer</span><span>Anställda</span></div>
+            {rows.map((r) => { const Ic = SRCIC[r.source] || Globe; const tone = r.avg >= 70 ? " is-strong" : r.avg <= 45 ? " is-weak" : ""; return <div key={r.source} className="ats-sq-row">
+              <span className="ats-sq-src"><span className="ats-sq-ic"><Ic size={14} /></span>{r.source}</span>
+              <span className="ats-sq-n"><div className="ats-sq-nbar"><div className="ats-sq-nbar-fill" style={{ width: Math.round((r.n / maxN) * 100) + "%" }} /></div><b>{r.n}</b></span>
+              <span className="ats-sq-avg"><div className="ats-sq-avgbar"><div className={"ats-sq-avgbar-fill" + tone} style={{ width: r.avg + "%" }} /></div><b>{r.avg}%</b></span>
+              <span className="ats-sq-metric">{r.top}</span>
+              <span className="ats-sq-metric">{r.interviews}</span>
+              <span className="ats-sq-metric is-hired">{r.hired}</span>
+            </div>; })}
+          </div></div>
+          <p className="ats-builder-note"><Info size={12} /> Kvalitet mäts som kandidaternas snittmatchning per kanal — inte bara antal. En kanal med färre men bättre kandidater rankas högre. Datan kommer från source-taggarna i dina delningslänkar.</p>
+        </div>
+      </>}
+    </div>
+  );
+}
 function StatsView({ cands, job, state, D }) {
   const started = job.stats.started, submitted = job.stats.submitted;
   const completion = Math.round((submitted / Math.max(1, started)) * 100);
@@ -2072,6 +2112,33 @@ function Style() {
 .ats-reco.tone-blue{background:var(--blue-soft);border-color:transparent;color:var(--blue)}.ats-reco.tone-blue .ats-reco-ic{background:var(--blue);color:#fff}
 .ats-break-bar-fill.is-strong{background:var(--petrol)}
 .ats-break-bar-fill.is-weak{background:var(--amber)}
+.ats-sq-hero{display:flex;align-items:center;justify-content:space-between;gap:16px;background:linear-gradient(135deg,var(--petrol) 0%,var(--petrol-deep) 100%);color:#fff;border-radius:16px;padding:20px 24px;margin-bottom:16px}
+.ats-sq-hero-lbl{display:inline-flex;align-items:center;gap:7px;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.85}
+.ats-sq-hero-src{font-family:'Bricolage Grotesque';font-weight:700;font-size:28px;margin:6px 0 3px}
+.ats-sq-hero-sub{font-size:13px;opacity:.9}
+.ats-sq-hero .ats-dial-track{stroke:rgba(255,255,255,.22)}
+.ats-sq-hero .ats-dial-arc{stroke:#fff}
+.ats-sq-hero .ats-dial-num{color:#fff}
+.ats-sq-scroll{overflow-x:auto}
+.ats-sq-table{display:flex;flex-direction:column;min-width:600px}
+.ats-sq-head,.ats-sq-row{display:grid;grid-template-columns:1.7fr 1.2fr 1.7fr .8fr .8fr .8fr;gap:12px;align-items:center;padding:11px 6px}
+.ats-sq-head{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600;border-bottom:1px solid var(--line2)}
+.ats-sq-head span:nth-child(n+4),.ats-sq-row span.ats-sq-metric{text-align:center}
+.ats-sq-row{border-bottom:1px solid var(--line2)}
+.ats-sq-row:last-child{border-bottom:none}
+.ats-sq-src{display:flex;align-items:center;gap:9px;font-weight:600;font-size:13.5px}
+.ats-sq-ic{width:28px;height:28px;border-radius:8px;background:var(--petrol-soft);color:var(--petrol);display:grid;place-items:center;flex-shrink:0}
+.ats-sq-n{display:flex;align-items:center;gap:9px;font-size:13px}
+.ats-sq-nbar{flex:1;height:6px;background:var(--paper2);border-radius:4px;overflow:hidden}
+.ats-sq-nbar-fill{height:100%;background:var(--blue);border-radius:4px}
+.ats-sq-avg{display:flex;align-items:center;gap:10px}
+.ats-sq-avgbar{flex:1;height:8px;background:var(--paper2);border-radius:5px;overflow:hidden}
+.ats-sq-avgbar-fill{height:100%;background:var(--amber);border-radius:5px}
+.ats-sq-avgbar-fill.is-strong{background:var(--petrol)}
+.ats-sq-avgbar-fill.is-weak{background:var(--brick)}
+.ats-sq-avg b{font-size:13.5px;min-width:40px;text-align:right}
+.ats-sq-metric{font-weight:600;font-size:14px}
+.ats-sq-metric.is-hired{color:#8A6516}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
