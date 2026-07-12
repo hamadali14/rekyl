@@ -72,6 +72,13 @@ const ADMIN_FN = "/.netlify/functions/admin";
 async function adminCall(action, args) { try { const r = await sbFetch(ADMIN_FN, "POST", () => ({ "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }), JSON.stringify({ action, ...(args || {}) })); const d = await r.json().catch(() => ({})); if (!r.ok) return { ok: false, error: (d && d.error) || ("Fel (" + r.status + ")") }; return { ok: true, ...d }; } catch (e) { return { ok: false, error: "Ingen kontakt med admin-tjänsten." }; } }
 const PLAN_LABEL = { start: "Start", pro: "Pro", enterprise: "Enterprise" };
 const kb = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : n > 1024 ? Math.round(n / 1024) + " kB" : n + " B");
+/* Schemalagda utskick läggs i molnkön — den betas av var femte minut av servern,
+ * så mejlet går ut även om ingen är inloggad. */
+async function outboxPush(m, org) {
+  if (!sbEnabled || !m.sendAt) return false;
+  return sbInsert("outbox", { id: m.id, org_id: SB_ORG, to_addr: m.to, subject: m.subject, body: m.body,
+    from_name: org.companyName, reply_to: org.hrEmail, send_at: new Date(m.sendAt).toISOString(), status: "pending" });
+}
 async function runRemindersNow() { try { const r = await sbFetch(MAIL_FN, "POST", () => ({ "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }), JSON.stringify({ action: "run-reminders" })); const d = await r.json().catch(() => ({})); if (!r.ok) return { ok: false, error: (d && d.error) || ("Fel (" + r.status + ")") }; return { ok: true, ...d }; } catch (e) { return { ok: false, error: "Ingen kontakt med utskickstjänsten." }; } }
 async function sendMail(payload) { try { const r = await sbFetch(MAIL_FN, "POST", () => ({ "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }), JSON.stringify(payload)); const d = await r.json().catch(() => ({})); if (!r.ok) return { ok: false, error: (d && d.error) || ("Utskicksfel (" + r.status + ")") }; return { ok: true, id: (d && d.id) || null }; } catch (e) { return { ok: false, error: "Ingen kontakt med utskickstjänsten." }; } }
 
@@ -967,6 +974,38 @@ function reducer(state, ac) {
     }
     case "MSG_CANCEL": return { ...state, messages: state.messages.map((m) => m.id === ac.id && ["queued", "scheduled"].includes(m.status) ? { ...m, status: "cancelled" } : m) };
     case "MSG_CANCEL_BATCH": return { ...state, messages: state.messages.map((m) => m.batchId === ac.batchId && ["queued", "scheduled"].includes(m.status) ? { ...m, status: "cancelled" } : m) };
+    case "PORTAL_ISSUE": { const cand = state.candidates.find((c) => c.id === ac.candId); if (!cand) return state;
+      const days = ac.days || 90;
+      const portal = { token: (cand.portal && !ac.regenerate && !cand.portal.revoked) ? cand.portal.token : mkToken(), issuedAt: Date.now(), expiresAt: Date.now() + days * 864e5, revoked: false, by: who };
+      const c2 = addTL({ ...cand, portal }, "note", ac.regenerate ? "Ny portallänk utfärdad (den gamla slutade gälla)" : "Portallänk utfärdad", who);
+      return { ...state, candidates: state.candidates.map((c) => c.id === cand.id ? c2 : c) }; }
+    case "PORTAL_REVOKE": { const cand = state.candidates.find((c) => c.id === ac.candId); if (!cand || !cand.portal) return state;
+      const c2 = addTL({ ...cand, portal: { ...cand.portal, revoked: true, revokedAt: Date.now() } }, "note", "Portallänken spärrades", who);
+      return { ...state, candidates: state.candidates.map((c) => c.id === cand.id ? c2 : c) }; }
+    case "PORTAL_ACTIONS": { /* Åtgärder som kandidaten gjort i portalen — hämtade från molnet. */
+      const seen = new Set((state.portalActions || []).map((x) => x.id));
+      const add = (ac.rows || []).filter((r) => !seen.has(r.id));
+      if (!add.length) return state;
+      return { ...state, portalActions: [...add, ...(state.portalActions || [])].slice(0, 300) }; }
+    case "PORTAL_ACCEPT": { const pa = (state.portalActions || []).find((x) => x.id === ac.id); if (!pa || pa.handled) return state;
+      const cand = state.candidates.find((c) => c.portal && c.portal.token === pa.token); if (!cand) return state;
+      let c2 = cand;
+      if (pa.kind === "completion") {
+        c2 = { ...c2, completions: (c2.completions || []).map((x) => x.id === pa.payload.completionId ? { ...x, status: "received", receivedAt: Date.now(), answer: pa.payload.text || "", file: pa.payload.file || null } : x) };
+        if (pa.payload.file) c2 = { ...c2, answers: { ...c2.answers, ["_compl_" + pa.payload.completionId]: pa.payload.file } };
+        c2 = addTL(c2, "note", "Kandidaten kompletterade via portalen", who);
+      }
+      if (pa.kind === "contact") { c2 = addTL({ ...c2, email: pa.payload.email || c2.email, phone: pa.payload.phone || c2.phone }, "note", "Kandidaten uppdaterade sina kontaktuppgifter", who); }
+      if (pa.kind === "withdraw") {
+        const job = state.jobs.find((j) => j.id === cand.jobId);
+        const wd = job && job.pipeline && stageByKey(job.pipeline, "withdrawn");
+        if (wd) c2 = { ...c2, stageId: wd.id, status: legacyOf(wd), rev: (c2.rev || 0) + 1, reason: "Återkallad av kandidaten",
+          visits: [{ id: "v" + uid(), stageId: wd.id, stageKey: wd.key, stageName: wd.name, enteredAt: Date.now(), exitedAt: null, movedBy: null, reason: "Kandidaten återkallade sin ansökan", comment: "", pauses: [], exception: null, pipeVersion: job.pipeline.version }, ...(c2.visits || []).map((v) => v.exitedAt ? v : { ...v, exitedAt: Date.now() })] };
+        c2 = addTL(c2, "status_change", "Kandidaten återkallade sin ansökan via portalen", who);
+      }
+      let s2 = { ...state, candidates: state.candidates.map((c) => c.id === cand.id ? c2 : c), portalActions: state.portalActions.map((x) => x.id === ac.id ? { ...x, handled: true, handledAt: Date.now(), handledBy: who } : x) };
+      if (pa.kind === "optout" && cand.personId) s2 = { ...s2, people: s2.people.map((p) => p.id === cand.personId ? ptl({ ...p, optOut: { at: Date.now(), by: null, reason: "Kandidatens eget val i portalen" } }, "note", "Avregistrerade sig via portalen", null) : p) };
+      return { ...s2, log: withLog(s2, "Portal", (PA_KINDS[pa.kind] || pa.kind) + " · " + cand.name) }; }
     case "MSG_STATUS": {
       const prev = state.messages.find((m) => m.id === ac.id); if (!prev) return state;
       const messages = state.messages.map((m) => m.id === ac.id ? { ...m, status: ac.status, error: ac.error || null, sentAt: ac.status === "sent" ? Date.now() : (m.sentAt || null), providerId: ac.providerId || m.providerId || null } : m);
@@ -1039,7 +1078,7 @@ const INITIAL = {
   jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: null, candidates: CANDIDATES0, team: [], currentUserId: null,
   history: [], templates: DEFAULT_TEMPLATES, messages: [],
   career: null, tags: [], jobViews: [], moves: [], moveIds: [], events: [], recalcs: [],
-  people: [], ctags: [], pools: [], candViews: [], tpls: [],
+  people: [], ctags: [], pools: [], candViews: [], tpls: [], portalActions: [],
   org: { companyName: "Nordpuls AB", hrName: "Mona Berg", hrEmail: "mona.berg@nordpuls.se", fromEmail: "noreply@nordpuls.se", appUrl: "https://rekyl.app", defaultInterviewTime: "onsdag 14:00" },
   log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjänst öppnad", detail: "Account Manager · B2B" }],
 };
@@ -1678,6 +1717,49 @@ function AppInner() {
       if (m.status === "scheduled") return m.sendAt && m.sendAt <= Date.now();
       return m.status === "queued";
     }).filter((m) => m.at >= bootRef.current && validEmail(m.to) && !MAIL_INFLIGHT.has(m.id)).forEach((m) => sendMailNow(m)); }, [state.messages, mail.configured, session, org, loaded, sendMailNow]);
+  /* Publicera den kandidatsäkra projektionen när något som kandidaten ser ändras. */
+  useEffect(() => {
+    if (!sbEnabled || !org || !loaded) return;
+    const t2 = setTimeout(() => { state.candidates.filter((c) => c.portal && !c.portal.revoked).forEach((c) => portalPush(state, c)); }, 2000);
+    return () => clearTimeout(t2);
+  }, [state.candidates, state.messages, org && org.id, loaded]);
+  /* Hämta det kandidaterna gjort i portalen. */
+  useEffect(() => {
+    if (!sbEnabled || !org || !loaded) return;
+    let alive = true;
+    const pull = async () => {
+      const rows = await sbGet("portal_actions?org_id=eq." + org.id + "&select=id,token,kind,payload,at&order=at.desc&limit=100");
+      if (alive && Array.isArray(rows) && rows.length) dispatch({ type: "PORTAL_ACTIONS", rows });
+    };
+    pull();
+    const iv2 = setInterval(pull, 60000);
+    return () => { alive = false; clearInterval(iv2); };
+  }, [org && org.id, loaded]);
+  /* Nya schemalagda meddelanden skjuts upp till molnkön en gång. */
+  const pushedRef = useRef(new Set());
+  useEffect(() => {
+    if (!sbEnabled || !org || !loaded || !mail.configured) return;
+    state.messages.filter((m) => m.status === "scheduled" && m.sendAt && !pushedRef.current.has(m.id)).forEach(async (m) => {
+      pushedRef.current.add(m.id);
+      const ok = await outboxPush(m, state.org);
+      if (!ok) pushedRef.current.delete(m.id);
+    });
+  }, [state.messages, org && org.id, loaded, mail.configured]);
+  /* Hämta tillbaka verklig leveransstatus från molnkön. */
+  useEffect(() => {
+    if (!sbEnabled || !org || !loaded) return;
+    let alive = true;
+    const pull = async () => {
+      const ids = state.messages.filter((m) => m.status === "scheduled").map((m) => m.id);
+      if (!ids.length) return;
+      const rows = await sbGet("outbox?org_id=eq." + org.id + "&status=in.(sent,failed)&select=id,status,error,sent_at&limit=200");
+      if (!alive || !Array.isArray(rows)) return;
+      rows.filter((r) => ids.includes(r.id)).forEach((r) => dispatch({ type: "MSG_STATUS", id: r.id, status: r.status, error: r.error || null }));
+    };
+    pull();
+    const iv2 = setInterval(pull, 60000);
+    return () => { alive = false; clearInterval(iv2); };
+  }, [org && org.id, loaded, state.messages.length]);
   const [tick, setTick] = useState(0);
   useEffect(() => { const t2 = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(t2); }, []);
   useEffect(() => { store.set("rekyl_state", state); }, [state]);
@@ -1714,6 +1796,8 @@ function AppInner() {
   const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, setNewJob: openNewJob, allScored, dupIndex, onLogout: logout, session, mail, sendMailNow, plan, isSuper };
   const primary = navList.slice(0, 5), more = navList.slice(5);
 
+  const ptMatch = path.match(/^\/status\/([^/]+)/);
+  if (ptMatch) return <PortalPage token={decodeURIComponent(ptMatch[1])} />;
   const csMatch = path.match(/^\/karriar\/([^/]+)(?:\/([^/]+))?/);
   if (csMatch) return <CareerSite slug={decodeURIComponent(csMatch[1])} sub={csMatch[2] ? decodeURIComponent(csMatch[2]) : ""} localState={state} />;
   const pubMatch = path.match(/^\/j\/([^/]+)/);
@@ -1812,7 +1896,7 @@ function hydrate(init, d) {
     candidates: arr(d.candidates).map((c) => (pipeOf[c.jobId] ? migrateCandidate(c, pipeOf[c.jobId]) : c)),
     team: arr(d.team), tags: arr(d.tags), jobViews: arr(d.jobViews),
     moves: arr(d.moves), moveIds: arr(d.moveIds), events: arr(d.events), recalcs: arr(d.recalcs),
-    people: arr(d.people), ctags: arr(d.ctags), pools: arr(d.pools), candViews: arr(d.candViews), tpls: arr(d.tpls),
+    people: arr(d.people), ctags: arr(d.ctags), pools: arr(d.pools), candViews: arr(d.candViews), tpls: arr(d.tpls), portalActions: arr(d.portalActions),
     messages: arr(d.messages), log: arr(d.log), history: arr(d.history),
     templates: arr(d.templates).length ? d.templates : init.templates,
     org: { ...init.org, ...(d.org || {}) },
@@ -2596,6 +2680,88 @@ function unmergePeople(state, primaryId, mergeIdx, who) {
 /* ---- Kandidattaggar och talangpooler (separata från jobbtaggar) ---- */
 const mkCTag = (name, cat, color) => ({ id: "ct" + uid(), name: String(name).trim(), cat: cat || "other", color: color || TAG_COLORS[0], archived: false });
 const mkPool = (name, ownerId) => ({ id: "pl" + uid(), name, desc: "", ownerId: ownerId || null, visibility: "org", tags: [], archived: false, createdAt: Date.now() });
+/* ===================== KANDIDATPORTAL ===================== */
+/* Portalen läser ALDRIG org_state. Den läser en särskilt byggd, kandidatsäker projektion.
+ * Intern data (poäng, regler, knockout, anteckningar, bedömningar) finns inte i nyttolasten
+ * och kan därför inte läcka — inte ens vid ett fel. */
+const PUB_STATUS = {
+  incoming: { label: "Ansökan mottagen", desc: "Vi har tagit emot din ansökan och går igenom den.", step: 1 },
+  review: { label: "Under granskning", desc: "Din ansökan läses igenom av rekryteringsteamet.", step: 2 },
+  screening: { label: "Under granskning", desc: "Din ansökan läses igenom av rekryteringsteamet.", step: 2 },
+  shortlist: { label: "Går vidare", desc: "Du är aktuell för nästa steg. Vi återkommer med mer information.", step: 3 },
+  interview: { label: "Intervju", desc: "Du är inbjuden till intervju.", step: 4 },
+  assessment: { label: "Bedömning", desc: "Vi gör en fördjupad bedömning.", step: 4 },
+  references: { label: "Referenstagning", desc: "Vi tar referenser.", step: 5 },
+  offer: { label: "Erbjudande", desc: "Vi vill erbjuda dig tjänsten.", step: 6 },
+  hired: { label: "Välkommen", desc: "Vi har kommit överens. Välkommen till oss.", step: 6 },
+  reserve: { label: "Reservlista", desc: "Vi går vidare med andra just nu, men behåller din profil.", step: 6 },
+  rejected: { label: "Avslutad", desc: "Vi går vidare med andra kandidater den här gången.", step: 6 },
+  withdrawn: { label: "Återkallad", desc: "Du har återkallat din ansökan.", step: 6 },
+  custom: { label: "Pågår", desc: "Din ansökan är under behandling.", step: 3 },
+};
+const PORTAL_STEPS = ["Mottagen", "Granskning", "Urval", "Intervju", "Referenser", "Beslut"];
+const PA_KINDS = { withdraw: "Återkallade sin ansökan", completion: "Kompletterade uppgifter", contact: "Uppdaterade kontaktuppgifter", optout: "Avregistrerade sig" };
+const mkToken = () => "pt_" + uid() + uid() + uid();
+
+/* Bygger den kandidatsäkra nyttolasten. Vitlista — allt som inte står här kommer aldrig ut. */
+function portalPayload(state, cand) {
+  const job = state.jobs.find((j) => j.id === cand.jobId);
+  if (!job) return null;
+  const st = job.pipeline ? stageById(job.pipeline, cand.stageId) : null;
+  const type = st ? st.type : "incoming";
+  const S = PUB_STATUS[type] || PUB_STATUS.custom;
+  const a = job.annons || {};
+  const iv = ivActive(cand) ? cand.interview : null;
+  const mode = iv ? (INTERVIEW_MODES[iv.mode] || {}) : null;
+  const opens = (cand.completions || []).filter((c) => c.status === "open" || c.status === "received");
+  /* Endast mejl som FAKTISKT skickats till kandidaten. Interna noteringar och köade utskick utesluts. */
+  const msgs = (state.messages || []).filter((m) => m.candidateId === cand.id && m.status === "sent" && m.channel !== "note")
+    .map((m) => ({ at: m.sentAt || m.at, subject: m.subject, body: m.body }));
+  const docs = Object.values(cand.answers || {}).filter((v) => v && typeof v === "object" && v.url).map((v) => ({ name: v.name || "Bilaga" }));
+  return {
+    company: state.org.companyName,
+    jobTitle: job.publicTitle || job.title,
+    jobRef: job.ref,
+    location: a.location || "",
+    employment: a.employment || "",
+    appliedAt: cand.at,
+    name: cand.name,
+    email: cand.email,
+    phone: cand.phone || "",
+    status: S.label, statusDesc: S.desc, step: S.step, steps: PORTAL_STEPS,
+    closed: ["rejected", "withdrawn", "hired", "reserve"].includes(type),
+    interview: iv ? { at: iv.at, duration: iv.duration, mode: mode.label || "", location: iv.location || "" } : null,
+    completions: opens.map((c) => ({ id: c.id, text: c.text, deadline: c.deadline, status: c.status })),
+    messages: msgs,
+    documents: docs,
+    contact: { name: (a.contact && a.contact.name) || state.org.hrName, email: (a.contact && a.contact.email) || state.org.hrEmail },
+    consentAt: cand.consentAt || null,
+    careerSlug: (state.career && state.career.slug) || null,
+    updatedAt: Date.now(),
+  };
+}
+/* Vaktposten: nyttolasten får ALDRIG innehålla interna nycklar. */
+const FORBIDDEN = ["scores", "qual", "knockouts", "rules", "notes", "assessments", "reason", "total", "percent", "ownerId", "stageId", "personId", "overrides", "tags", "pools", "answers", "timeline", "visits", "rating", "votes"];
+function payloadIsSafe(p) {
+  const json = JSON.stringify(p || {});
+  const hit = FORBIDDEN.find((k) => new RegExp('"' + k + '"').test(json));
+  return { safe: !hit, leak: hit || null };
+}
+
+async function portalPush(state, cand) {
+  if (!sbEnabled || !cand.portal || cand.portal.revoked) return false;
+  const data = portalPayload(state, cand);
+  if (!data) return false;
+  const chk = payloadIsSafe(data);
+  if (!chk.safe) { console.error("[rekyl] portal: blockerade publicering, intern nyckel hittad: " + chk.leak); return false; }
+  return sbUpsert("portal", { token: cand.portal.token, org_id: SB_ORG, data, expires_at: new Date(cand.portal.expiresAt).toISOString(), revoked: false, updated_at: new Date().toISOString() });
+}
+async function portalRevoke(token) {
+  if (!sbEnabled || !token) return false;
+  return sbUpsert("portal", { token, org_id: SB_ORG, revoked: true, updated_at: new Date().toISOString() });
+}
+const portalUrl = (state, cand) => cand.portal && !cand.portal.revoked
+  ? (state.org.appUrl || (typeof window !== "undefined" ? window.location.origin : "")).replace(/\/$/, "") + "/status/" + cand.portal.token : "";
 /* ===================== KOMMUNIKATION: MALLAR OCH UTSKICK ===================== */
 const TPL_CATS = {
   received: "Bekräftelse", screening: "Screening", interview: "Intervju", assessment: "Bedömning",
@@ -2625,6 +2791,7 @@ const VARS = [
   { k: "score", g: "Bedömning", d: "Matchning i procent", f: (c) => { const s2 = currentScore(c); return s2 ? s2.percent + "%" : null; } },
   { k: "completionText", g: "Komplettering", d: "Vad kandidaten ska komplettera", f: (c) => { const x = (c.completions || []).find((y) => y.status === "open"); return x ? x.text : null; } },
   { k: "completionDeadline", g: "Komplettering", d: "Sista dag för komplettering", f: (c) => { const x = (c.completions || []).find((y) => y.status === "open"); return x ? new Date(x.deadline).toLocaleDateString("sv-SE") : null; } },
+  { k: "portalLink", g: "Portal", d: "Länk till kandidatens statussida", f: (c, j, o) => (c.portal && !c.portal.revoked ? (o.appUrl || "").replace(/\/$/, "") + "/status/" + c.portal.token : null) },
 ];
 const VAR_MAP = {}; VARS.forEach((v) => { VAR_MAP[v.k] = v; });
 
@@ -5246,6 +5413,163 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
     </div></Modal>}
   </div>;
 }
+/* ---- Publik statussida för kandidaten ---- */
+function PortalPage({ token }) {
+  const [row, setRow] = useState(undefined);
+  const [err, setErr] = useState(false);
+  const [sent, setSent] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState("status");
+  const [ctext, setCtext] = useState("");
+  const [cfile, setCfile] = useState(null);
+  const [contact, setContact] = useState({ email: "", phone: "" });
+  const [confirmWd, setConfirmWd] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!sbEnabled) { setRow(null); return; }
+      const rows = await sbGet("portal?token=eq." + encodeURIComponent(token) + "&revoked=eq.false&select=data,expires_at");
+      if (!alive) return;
+      if (rows === null) { setErr(true); setRow(null); return; }
+      const r = rows[0];
+      if (r && r.expires_at && new Date(r.expires_at).getTime() < Date.now()) { setRow("expired"); return; }
+      setRow(r ? r.data : null);
+      if (r && r.data) setContact({ email: r.data.email || "", phone: r.data.phone || "" });
+    })();
+    return () => { alive = false; };
+  }, [token]);
+
+  const act = async (kind, payload) => {
+    setBusy(true);
+    const ok = await sbInsert("portal_actions", { token, kind, payload: payload || {}, at: new Date().toISOString() });
+    setBusy(false);
+    setSent(ok ? kind : "error");
+  };
+  const upload = async (file) => {
+    if (!file) return;
+    setBusy(true);
+    const path = "portal/" + token + "/" + Date.now() + "-" + file.name;
+    const url = await sbUpload("cv", path, file);
+    setBusy(false);
+    if (url) setCfile({ name: file.name, url });
+  };
+
+  const d = row;
+  useSeo(d && d !== "expired" ? "Din ansökan — " + d.company : "Din ansökan", "Följ din ansökan.");
+
+  const Card = ({ children }) => <div className="ats-root"><Style /><div className="ats-pt"><div className="ats-pt-wrap"><div className="ats-pt-card">{children}</div></div></div></div>;
+  if (row === undefined) return <Card><div className="ats-spinner" /><p>Hämtar din ansökan…</p></Card>;
+  if (err) return <Card><h2>Kunde inte hämta din ansökan</h2><p>Något gick fel på vägen. Prova att ladda om sidan.</p><button className="ats-lp-cta" onClick={() => window.location.reload()}>Ladda om</button></Card>;
+  if (row === "expired") return <Card><div className="ats-pt-i"><Clock size={26} /></div><h2>Länken har gått ut</h2><p>Av säkerhetsskäl slutar länken att gälla efter en tid. Kontakta arbetsgivaren så får du en ny.</p></Card>;
+  if (!row) return <Card><div className="ats-pt-i"><CircleAlert size={26} /></div><h2>Länken gäller inte</h2><p>Länken kan vara felaktig eller ha spärrats. Kontakta arbetsgivaren om du behöver hjälp.</p></Card>;
+
+  const open = (d.completions || []).filter((c) => c.status === "open");
+  const iv = d.interview;
+
+  return <div className="ats-root"><Style /><div className="ats-pt">
+    <header className="ats-pt-top">
+      <div className="ats-pt-wrap ats-pt-top-in">
+        <div className="ats-jp-brand"><span className="ats-jp-mark">{(d.company || "R")[0].toUpperCase()}</span><span className="ats-jp-co">{d.company}</span></div>
+        {d.careerSlug && <button className="ats-jp-back" onClick={() => navTo("/karriar/" + d.careerSlug + "/jobb")}>Lediga jobb</button>}
+      </div>
+    </header>
+
+    <main className="ats-pt-wrap ats-pt-main">
+      <div className="ats-pt-hero">
+        <span className="ats-lp-eyebrow">Din ansökan</span>
+        <h1>{d.jobTitle}</h1>
+        <p>{[d.location, d.employment].filter(Boolean).join(" · ")}{d.jobRef ? " · " + d.jobRef : ""} · Skickad {new Date(d.appliedAt).toLocaleDateString("sv-SE")}</p>
+      </div>
+
+      <div className="ats-pt-status">
+        <div className="ats-pt-badge"><b>{d.status}</b><span>{d.statusDesc}</span></div>
+        <ol className="ats-pt-steps">{(d.steps || []).map((st, i) => <li key={st} className={i + 1 < d.step ? "is-done" : i + 1 === d.step ? "is-now" : ""}>
+          <span>{i + 1 < d.step ? <Check size={13} /> : i + 1}</span><em>{st}</em>
+        </li>)}</ol>
+      </div>
+
+      {open.length > 0 && <section className="ats-pt-sec is-todo">
+        <h2><Upload size={17} /> Vi behöver en komplettering</h2>
+        {open.map((c) => <div key={c.id} className="ats-pt-compl">
+          <b>{c.text}</b>
+          <span>Senast {new Date(c.deadline).toLocaleDateString("sv-SE")}</span>
+          {sent === "completion" ? <div className="ats-pt-ok"><Check size={15} /> Tack! Vi har tagit emot din komplettering.</div> : <>
+            <textarea className="ats-inp" rows={2} value={ctext} onChange={(e) => setCtext(e.target.value)} placeholder="Skriv ditt svar (valfritt)" />
+            <label className="ats-filedrop ats-pt-file">
+              <input type="file" style={{ display: "none" }} onChange={(e) => upload(e.target.files[0])} />
+              {cfile ? <><Check size={18} /> {cfile.name}</> : busy ? <>Laddar upp…</> : <><Upload size={18} /> Ladda upp en fil</>}
+            </label>
+            <button className="ats-jp-cta" disabled={busy || (!ctext.trim() && !cfile)} onClick={() => act("completion", { completionId: c.id, text: ctext.trim(), file: cfile })}>Skicka komplettering</button>
+          </>}
+        </div>)}
+      </section>}
+
+      {iv && <section className="ats-pt-sec">
+        <h2><CalendarCheck size={17} /> Din intervju</h2>
+        <div className="ats-pt-iv">
+          <div><span>Tid</span><b>{fmtInterview(iv.at)}</b></div>
+          <div><span>Längd</span><b>{iv.duration} minuter</b></div>
+          <div><span>Form</span><b>{iv.mode}</b></div>
+          {iv.location && <div><span>Plats</span><b>{/^https?:/.test(iv.location) ? <a href={iv.location} target="_blank" rel="noreferrer noopener">{iv.location}</a> : iv.location}</b></div>}
+        </div>
+      </section>}
+
+      <div className="ats-tabs is-sub ats-pt-tabs">{[["status", "Detaljer"], ["msgs", "Meddelanden (" + (d.messages || []).length + ")"], ["privacy", "Dina uppgifter"]].map(([id, l]) =>
+        <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}</button>)}</div>
+
+      {tab === "status" && <section className="ats-pt-sec">
+        <h2>Sammanfattning</h2>
+        <dl className="ats-jp-facts">
+          <div><dt>Tjänst</dt><dd>{d.jobTitle}</dd></div>
+          <div><dt>Företag</dt><dd>{d.company}</dd></div>
+          {d.location && <div><dt>Plats</dt><dd>{d.location}</dd></div>}
+          <div><dt>Ansökan skickad</dt><dd>{new Date(d.appliedAt).toLocaleDateString("sv-SE")}</dd></div>
+          {(d.documents || []).length > 0 && <div><dt>Dina bilagor</dt><dd>{d.documents.map((x) => x.name).join(", ")}</dd></div>}
+        </dl>
+        {d.contact && d.contact.email && <div className="ats-pt-contact">
+          <span className="ats-jp-avatar">{(d.contact.name || "?")[0].toUpperCase()}</span>
+          <div><b>{d.contact.name}</b><a href={"mailto:" + d.contact.email}>{d.contact.email}</a><span>Hör av dig om du har frågor.</span></div>
+        </div>}
+      </section>}
+
+      {tab === "msgs" && <section className="ats-pt-sec">
+        <h2>Meddelanden från oss</h2>
+        {(d.messages || []).length === 0 ? <p className="ats-pt-empty">Inga meddelanden än. Vi hör av oss så snart vi vet mer.</p>
+          : <div className="ats-pt-msgs">{d.messages.sort((a, b) => b.at - a.at).map((m, i) => <details key={i}>
+            <summary>{m.subject}<em>{new Date(m.at).toLocaleDateString("sv-SE")}</em></summary>
+            <pre>{m.body}</pre>
+          </details>)}</div>}
+      </section>}
+
+      {tab === "privacy" && <section className="ats-pt-sec">
+        <h2>Dina uppgifter</h2>
+        {d.consentAt && <p className="ats-pt-ok"><ShieldCheck size={15} /> Du lämnade ditt samtycke {new Date(d.consentAt).toLocaleDateString("sv-SE")}. Uppgifterna används bara för den här rekryteringen.</p>}
+        <div className="ats-tpl-two">
+          <label className="ats-field"><span className="ats-field-l">E-post</span><input className="ats-inp" value={contact.email} onChange={(e) => setContact({ ...contact, email: e.target.value })} /></label>
+          <label className="ats-field"><span className="ats-field-l">Telefon</span><input className="ats-inp" value={contact.phone} onChange={(e) => setContact({ ...contact, phone: e.target.value })} /></label>
+        </div>
+        {sent === "contact" ? <div className="ats-pt-ok"><Check size={15} /> Tack, vi har uppdaterat dina uppgifter.</div>
+          : <button className="ats-lp-ghost" disabled={busy || !validEmail(contact.email)} onClick={() => act("contact", contact)}>Uppdatera uppgifter</button>}
+
+        <h3>Vad du kan göra</h3>
+        <div className="ats-pt-rights">
+          {sent === "optout" ? <div className="ats-pt-ok"><Check size={15} /> Du får bara nödvändiga besked från och med nu.</div>
+            : <button className="ats-lp-ghost" disabled={busy} onClick={() => act("optout", {})}><EyeOff size={15} /> Sluta ta emot annat än besked</button>}
+          {!d.closed && (sent === "withdraw" ? <div className="ats-pt-ok"><Check size={15} /> Din ansökan är återkallad. Tack för att du hörde av dig.</div>
+            : confirmWd
+              ? <div className="ats-pt-wd"><b>Är du säker?</b><span>Din ansökan avslutas och du är inte längre aktuell för tjänsten.</span>
+                <div><button className="ats-lp-ghost" onClick={() => setConfirmWd(false)}>Avbryt</button><button className="ats-jp-cta" disabled={busy} onClick={() => act("withdraw", {})}>Ja, återkalla</button></div></div>
+              : <button className="ats-lp-ghost" onClick={() => setConfirmWd(true)}><X size={15} /> Återkalla min ansökan</button>)}
+        </div>
+        {sent === "error" && <div className="ats-sv-warn is-err"><CircleAlert size={14} /> Något gick fel. Prova igen om en stund.</div>}
+        <p className="ats-pt-gdpr">Vill du att vi raderar dina uppgifter helt? Mejla {d.contact && d.contact.email ? <a href={"mailto:" + d.contact.email}>{d.contact.email}</a> : "arbetsgivaren"} så gör vi det.</p>
+      </section>}
+    </main>
+
+    <footer className="ats-pt-foot"><div className="ats-pt-wrap"><span>Rekryteras med Rekyl · Dina uppgifter hanteras enligt GDPR</span></div></footer>
+  </div></div>;
+}
 /* ===================== KOMMUNIKATION (VY) ===================== */
 /* Gemensam utskickspanel — används från kandidatprofil, ansökan, kö och massutskick. */
 function SendPanel({ state, D, me, showToast, candIds, onClose }) {
@@ -5380,6 +5704,7 @@ function CommsView({ state, D, me, job, showToast }) {
     .filter((m) => !fCat || m.cat === fCat)
     .filter((m) => !fStatus || m.status === fStatus);
   const batches = [...new Set((state.messages || []).filter((m) => m.batchId).map((m) => m.batchId))].slice(0, 10);
+  const inbox = (state.portalActions || []).filter((x) => !x.handled);
 
   const insertVar = (k) => { if (!t) return; D({ type: "TPL_SET", id: t.id, patch: { body: (t.body || "") + "{{" + k + "}}" } }); };
 
@@ -5387,8 +5712,20 @@ function CommsView({ state, D, me, job, showToast }) {
     <PageHeader title="Kommunikation" meta={<><span>{tpls.filter((x) => x.version > 0).length} publicerade mallar</span><Dot /><span>{(state.messages || []).length} meddelanden</span></>}
       right={canEdit && tab === "tpls" && <button className="ats-btn-primary is-sm" onClick={() => setAdding(true)}><Plus size={15} /> Ny mall</button>} />
 
-    <div className="ats-tabs">{[["tpls", "Mallar"], ["log", "Meddelanden"], ["batches", "Massutskick"]].map(([id, l]) =>
-      <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}</button>)}</div>
+    <div className="ats-tabs">{[["tpls", "Mallar"], ["log", "Meddelanden"], ["batches", "Massutskick"], ["portal", "Från kandidater"]].map(([id, l]) =>
+      <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}{id === "portal" && inbox.length > 0 && <span className="ats-tab-n">{inbox.length}</span>}</button>)}</div>
+
+    {tab === "portal" && (inbox.length === 0
+      ? <div className="ats-col-empty" style={{ padding: 44 }}>Inget nytt från kandidaterna. Här landar kompletteringar, uppdaterade kontaktuppgifter, avregistreringar och återkallade ansökningar från kandidatportalen.</div>
+      : <div className="ats-sa-rows">{inbox.map((pa) => { const c = state.candidates.find((x) => x.portal && x.portal.token === pa.token);
+        return <div key={pa.id} className="ats-sa-row is-card">
+          <div className="ats-sa-main">
+            <div className="ats-sa-top"><b>{c ? c.name : "Okänd kandidat"}</b><span className="ats-jobbadge is-blue">{PA_KINDS[pa.kind] || pa.kind}</span></div>
+            <span>{pa.kind === "completion" ? (pa.payload.text || "") + (pa.payload.file ? " · " + pa.payload.file.name : "") : pa.kind === "contact" ? [pa.payload.email, pa.payload.phone].filter(Boolean).join(" · ") : "—"}</span>
+          </div>
+          <span className="ats-sa-when">{timeAgo(new Date(pa.at).getTime())}</span>
+          {can(me.role, "decide") && <button className="ats-btn-primary is-sm" onClick={() => { D({ type: "PORTAL_ACCEPT", id: pa.id }); showToast({ kind: "ok", msg: "Åtgärden registrerades" }); }}><Check size={13} /> Registrera</button>}
+        </div>; })}</div>)}
 
     {tab === "tpls" && <div className="ats-sv">
       <div className="ats-sv-main"><div className="ats-panel">
@@ -9341,6 +9678,73 @@ section.ats-cs-cta p{font-size:17px;opacity:.9;margin-bottom:28px}
 @media (max-width:640px){
   .ats-send-sum{grid-template-columns:1fr}
   .ats-send-prev-h{flex-direction:column;align-items:flex-start;gap:8px}
+}
+
+/* ---- Kandidatportal ---- */
+.ats-pt{background:var(--paper);min-height:100dvh;overflow-x:clip;display:flex;flex-direction:column}
+.ats-pt-wrap{max-width:820px;margin:0 auto;padding:0 24px;width:100%}
+.ats-pt-top{border-bottom:1px solid var(--line);background:var(--surface)}
+.ats-pt-top-in{display:flex;align-items:center;justify-content:space-between;gap:16px;height:72px}
+.ats-pt-main{flex:1;padding:44px 24px 64px;display:flex;flex-direction:column;gap:20px}
+.ats-pt-hero h1{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(28px,4vw,42px);line-height:1.1;letter-spacing:-.028em;margin:8px 0 10px}
+.ats-pt-hero p{font-size:14.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.ats-pt-status{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:26px}
+.ats-pt-badge b{display:block;font-family:'Bricolage Grotesque';font-weight:600;font-size:24px;color:var(--petrol);margin-bottom:6px}
+.ats-pt-badge span{font-size:15.5px;line-height:1.6;color:var(--sub)}
+.ats-pt-steps{display:flex;gap:6px;margin-top:24px;flex-wrap:wrap}
+.ats-pt-steps li{flex:1;min-width:88px;display:flex;flex-direction:column;align-items:center;gap:7px;padding-top:12px;border-top:3px solid var(--line2)}
+.ats-pt-steps li.is-done{border-top-color:var(--petrol)}
+.ats-pt-steps li.is-now{border-top-color:var(--petrol)}
+.ats-pt-steps span{width:26px;height:26px;border-radius:50%;background:var(--paper2);color:var(--muted);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
+.ats-pt-steps li.is-done span{background:var(--petrol);color:#fff}
+.ats-pt-steps li.is-now span{background:var(--petrol-soft);color:var(--petrol-deep);box-shadow:0 0 0 3px var(--petrol-soft)}
+.ats-pt-steps em{font-style:normal;font-size:11.5px;color:var(--muted);text-align:center}
+.ats-pt-steps li.is-now em{color:var(--ink);font-weight:600}
+.ats-pt-sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:26px}
+.ats-pt-sec.is-todo{border-color:var(--amber);background:var(--amber-soft)}
+.ats-pt-sec h2{display:flex;align-items:center;gap:9px;font-family:'Bricolage Grotesque';font-weight:600;font-size:19px;margin-bottom:18px}
+.ats-pt-sec h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;margin:24px 0 12px}
+.ats-pt-compl{display:flex;flex-direction:column;gap:10px}
+.ats-pt-compl>b{font-size:16px}
+.ats-pt-compl>span{font-size:13px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.ats-pt-file{min-height:76px;font-size:14px}
+.ats-pt-iv{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px}
+.ats-pt-iv div{display:flex;flex-direction:column;gap:3px}
+.ats-pt-iv span{font-size:11.5px;color:var(--muted)}
+.ats-pt-iv b{font-size:15px;word-break:break-word}
+.ats-pt-iv a{color:var(--petrol)}
+.ats-pt-tabs{margin:4px 0}
+.ats-pt-msgs details{border-bottom:1px solid var(--line)}
+.ats-pt-msgs summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0;cursor:pointer;font-weight:600;font-size:15px;list-style:none;min-height:52px}
+.ats-pt-msgs summary::-webkit-details-marker{display:none}
+.ats-pt-msgs em{font-style:normal;font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace;flex-shrink:0}
+.ats-pt-msgs pre{font-family:inherit;font-size:14.5px;line-height:1.7;color:var(--sub);white-space:pre-wrap;padding-bottom:16px;margin:0}
+.ats-pt-contact{display:flex;align-items:center;gap:14px;margin-top:20px;padding-top:20px;border-top:1px solid var(--line)}
+.ats-pt-contact b{display:block;font-size:15px}
+.ats-pt-contact a{display:block;font-size:14px;color:var(--petrol);margin:2px 0}
+.ats-pt-contact span{font-size:12.5px;color:var(--muted)}
+.ats-pt-ok{display:flex;align-items:center;gap:9px;padding:12px 14px;background:var(--petrol-soft);color:var(--petrol-deep);border-radius:10px;font-size:14px;font-weight:600}
+.ats-pt-rights{display:flex;flex-direction:column;gap:10px;align-items:flex-start}
+.ats-pt-wd{width:100%;padding:14px 16px;background:var(--brick-soft);border-radius:11px}
+.ats-pt-wd b{display:block;font-size:14.5px;color:var(--brick)}
+.ats-pt-wd span{display:block;font-size:13px;color:var(--sub);margin:4px 0 12px}
+.ats-pt-wd div{display:flex;gap:8px}
+.ats-pt-gdpr{margin-top:20px;font-size:13px;color:var(--muted);line-height:1.6}
+.ats-pt-gdpr a{color:var(--petrol)}
+.ats-pt-empty{font-size:14.5px;color:var(--muted)}
+.ats-pt-card{max-width:460px;margin:96px auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:40px;text-align:center}
+.ats-pt-card h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:22px;margin-bottom:10px}
+.ats-pt-card p{font-size:15px;line-height:1.65;color:var(--sub);margin-bottom:20px}
+.ats-pt-i{width:56px;height:56px;border-radius:50%;background:var(--paper2);color:var(--muted);display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
+.ats-pt-foot{border-top:1px solid var(--line);padding:22px 0;text-align:center}
+.ats-pt-foot span{font-size:12.5px;color:var(--muted)}
+.ats-dr-portal{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
+.ats-dr-plink{display:flex;gap:6px}
+.ats-dr-plink .ats-inp{flex:1;min-width:0;font-family:'IBM Plex Mono',monospace;font-size:11.5px}
+@media (max-width:640px){
+  .ats-pt-steps li{min-width:0;flex:1 1 30%}
+  .ats-pt-sec,.ats-pt-status{padding:20px}
+  .ats-pt-card{margin:48px auto;padding:28px 22px}
 }
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}

@@ -182,6 +182,26 @@ export async function sendProvider({ fromName, to, subject, text, replyTo, attac
     : sendViaBrevo({ fromName: name, fromEmail: addr, to, subject, text, replyTo, attachment });
 }
 
+/* ---- Serversidig utskickskö: schemalagda mejl går ut även när ingen är inloggad ---- */
+export async function runOutbox() {
+  if (!SB_SERVICE) return { error: "SUPABASE_SERVICE_ROLE_KEY saknas — schemalagda utskick kan inte köras." };
+  const problem = configProblem();
+  if (problem) return { error: problem };
+  const now = new Date().toISOString();
+  const rows = await sbAdmin("outbox?status=eq.pending&send_at=lte." + enc(now) + "&select=*&order=send_at.asc&limit=100");
+  if (!rows) return { error: "Kunde inte läsa utskickskön." };
+  let sent = 0; const errors = [];
+  for (const r of rows) {
+    /* Reservera raden först — två samtidiga körningar får aldrig skicka samma mejl. */
+    const claim = await sbAdminPatch("outbox", "id=eq." + enc(r.id) + "&status=eq.pending", { status: "sending", claimed_at: now });
+    if (!claim) { continue; }
+    const res = await sendProvider({ fromName: r.from_name || "Rekyl", to: r.to_addr, subject: r.subject, text: r.body, replyTo: r.reply_to });
+    if (res.ok) { await sbAdminPatch("outbox", "id=eq." + enc(r.id), { status: "sent", sent_at: new Date().toISOString(), provider_id: res.id || null, error: null }); sent++; }
+    else { await sbAdminPatch("outbox", "id=eq." + enc(r.id), { status: "failed", error: String(res.error).slice(0, 300) }); errors.push(r.to_addr + ": " + res.error); }
+  }
+  return { sent, errors };
+}
+
 /* ---- Intervjupåminnelser (24 h innan) ---- */
 const REMIND_MIN_H = 23, REMIND_MAX_H = 25;
 
