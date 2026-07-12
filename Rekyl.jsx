@@ -519,7 +519,7 @@ function reducer(state, ac) {
       const av0 = activeVersion(jb);
       let cNew = { ...c0, stageId: st0.id, ownerId: job0.ownerId || null, pipeVersion: pipe0.version };
       if (av0) { const r0 = runScoring(av0.ver, cNew, jb); cNew = { ...cNew, scores: [{ runId: "run" + uid(), key: runKey(av0.profile.id, av0.ver.v, cNew), at: Date.now(), by: null, byName: "System", reason: "ny ansökan", profileId: av0.profile.id, profileName: av0.profile.name, version: av0.ver.v, current: true, ...r0 }] }; }
-      const s2 = { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jb : j), candidates: [cNew, ...state.candidates] };
+      const s2 = ensurePeople({ ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jb : j), candidates: [cNew, ...state.candidates] });
       return { ...s2, log: withLog(s2, "Ansökan mottagen", ac.cand.name) };
     }
     case "PIPE_INIT": return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? ensurePipeline(j) : j) };
@@ -855,6 +855,59 @@ function reducer(state, ac) {
     case "VERSION_ACTIVATE": { const job = state.jobs.find((j) => j.id === ac.jobId); if (!job) return state;
       let s2 = pushEvents(state, [{ key: evKey("version.activated", job.id, ac.profileId + ":" + ac.version), kind: "version.activated", candId: null, jobId: job.id, data: { profileId: ac.profileId, version: ac.version } }]);
       return { ...s2, jobs: s2.jobs.map((j) => j.id === job.id ? jlog(j, "scoring", "Profilversion aktiverad · v" + ac.version, who) : j) }; }
+    case "PEOPLE_INIT": return ensurePeople(state);
+    case "PERSON_SET": { const p = (state.people || []).find((x) => x.id === ac.id); if (!p || (p.archived && !ac.patch.archived === false)) return state;
+      const patch = { ...ac.patch };
+      if (patch.email != null) patch.emailNorm = normEmail(patch.email);
+      if (patch.phone != null) patch.phoneNorm = normPhone(patch.phone);
+      const before = Object.keys(patch).filter((k) => !k.endsWith("Norm")).map((k) => k + ": " + JSON.stringify(p[k]) + " → " + JSON.stringify(patch[k])).join(", ");
+      const s2 = { ...state, people: state.people.map((x) => x.id === ac.id ? ptl({ ...x, ...patch }, ac.kind || "edited", ac.note || before, who) : x) };
+      return s2; }
+    case "PERSON_ADD": { const p = ptl(mkPerson({ name: ac.name, email: ac.email, phone: ac.phone, source: ac.source || "manuell" }), "created", "Profil skapad manuellt", who);
+      const s2 = { ...state, people: [p, ...(state.people || [])] };
+      return { ...s2, log: withLog(s2, "Kandidat skapad", ac.name) }; }
+    case "PERSON_ARCHIVE": return { ...state, people: state.people.map((p) => p.id === ac.id ? ptl({ ...p, archived: !p.archived }, p.archived ? "restored" : "archived", p.archived ? "Återställd" : "Arkiverad", who) : p) };
+    case "PERSON_NOTE": { const p = (state.people || []).find((x) => x.id === ac.id); if (!p) return state;
+      if (ac.del) return { ...state, people: state.people.map((x) => x.id === ac.id ? ptl({ ...x, notes: x.notes.filter((n) => n.id !== ac.noteId) }, "note", "Anteckning borttagen", who) : x) };
+      if (ac.pin) return { ...state, people: state.people.map((x) => x.id === ac.id ? { ...x, notes: x.notes.map((n) => n.id === ac.noteId ? { ...n, pinned: !n.pinned } : n) } : x) };
+      const note = { id: "n" + uid(), at: Date.now(), by: who, byName: (_TEAM.find((m) => m.id === who) || {}).name || "System", text: ac.text, pinned: false, sensitive: !!ac.sensitive, appId: ac.appId || null, mentions: ac.mentions || [] };
+      return { ...state, people: state.people.map((x) => x.id === ac.id ? ptl({ ...x, notes: [note, ...(x.notes || [])] }, "note", "Anteckning tillagd", who) : x) }; }
+    case "PERSON_MERGE": return mergePeople(state, ac.primaryId, ac.secondaryId, ac.opts || {}, who);
+    case "PERSON_UNMERGE": return unmergePeople(state, ac.primaryId, ac.idx, who);
+
+    case "CTAG_ADD": { const n = normTag(ac.name); if (!n || (state.ctags || []).some((t) => normTag(t.name) === n)) return state;
+      return { ...state, ctags: [...(state.ctags || []), mkCTag(ac.name, ac.cat, ac.color || TAG_COLORS[(state.ctags || []).length % TAG_COLORS.length])] }; }
+    case "CTAG_SET": return { ...state, ctags: state.ctags.map((t) => t.id === ac.id ? { ...t, ...ac.patch } : t) };
+    case "CTAG_DEL": return { ...state, ctags: state.ctags.filter((t) => t.id !== ac.id), people: state.people.map((p) => ({ ...p, tags: (p.tags || []).filter((x) => x !== ac.id) })) };
+
+    case "POOL_ADD": { const s2 = { ...state, pools: [...(state.pools || []), mkPool(ac.name, who)] }; return { ...s2, log: withLog(s2, "Talangpool skapad", ac.name) }; }
+    case "POOL_SET": return { ...state, pools: state.pools.map((p) => p.id === ac.id ? { ...p, ...ac.patch } : p) };
+    case "POOL_DEL": return { ...state, pools: state.pools.filter((p) => p.id !== ac.id), people: state.people.map((p) => ({ ...p, pools: (p.pools || []).filter((x) => x !== ac.id) })) };
+    case "POOL_DUP": { const src = (state.pools || []).find((p) => p.id === ac.id); if (!src) return state;
+      return { ...state, pools: [...state.pools, { ...JSON.parse(JSON.stringify(src)), id: "pl" + uid(), name: src.name + " (kopia)", createdAt: Date.now() }] }; }
+
+    case "PEOPLE_BULK": {
+      const ids = new Set(ac.ids);
+      const blocked = [];
+      const people = state.people.map((p) => {
+        if (!ids.has(p.id)) return p;
+        if (p.archived && !["restore", "unarchive"].includes(ac.op)) { blocked.push({ id: p.id, name: p.name, why: "Arkiverad — återställ först" }); return p; }
+        switch (ac.op) {
+          case "tag_add": return (p.tags || []).includes(ac.value) ? p : ptl({ ...p, tags: [...(p.tags || []), ac.value] }, "tag", "Tagg tillagd", who);
+          case "tag_del": return ptl({ ...p, tags: (p.tags || []).filter((t) => t !== ac.value) }, "tag", "Tagg borttagen", who);
+          case "pool_add": return (p.pools || []).includes(ac.value) ? p : ptl({ ...p, pools: [...(p.pools || []), ac.value] }, "pool", "Tillagd i pool", who);
+          case "pool_del": return ptl({ ...p, pools: (p.pools || []).filter((x) => x !== ac.value) }, "pool", "Borttagen ur pool", who);
+          case "owner": return ptl({ ...p, ownerId: ac.value || null }, "owner", "Ansvarig ändrad", who);
+          case "archive": return ptl({ ...p, archived: true }, "archived", "Arkiverad (bulk)", who);
+          case "restore": return ptl({ ...p, archived: false }, "restored", "Återställd (bulk)", who);
+          default: return p;
+        }
+      });
+      const s2 = { ...state, people, _bulkBlocked: blocked };
+      return { ...s2, log: withLog(s2, "Bulkåtgärd kandidater", (ac.ids.length - blocked.length) + " av " + ac.ids.length) };
+    }
+    case "CVIEW_ADD": return { ...state, candViews: [...(state.candViews || []), { id: "cv" + uid(), name: ac.name, f: ac.f, shared: !!ac.shared, by: who }] };
+    case "CVIEW_DEL": return { ...state, candViews: (state.candViews || []).filter((v) => v.id !== ac.id) };
     case "MSG_STATUS": {
       const prev = state.messages.find((m) => m.id === ac.id); if (!prev) return state;
       const messages = state.messages.map((m) => m.id === ac.id ? { ...m, status: ac.status, error: ac.error || null, sentAt: ac.status === "sent" ? Date.now() : (m.sentAt || null), providerId: ac.providerId || m.providerId || null } : m);
@@ -927,6 +980,7 @@ const INITIAL = {
   jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: null, candidates: CANDIDATES0, team: [], currentUserId: null,
   history: [], templates: DEFAULT_TEMPLATES, messages: [],
   career: null, tags: [], jobViews: [], moves: [], moveIds: [], events: [], recalcs: [],
+  people: [], ctags: [], pools: [], candViews: [],
   org: { companyName: "Nordpuls AB", hrName: "Mona Berg", hrEmail: "mona.berg@nordpuls.se", fromEmail: "noreply@nordpuls.se", appUrl: "https://rekyl.app", defaultInterviewTime: "onsdag 14:00" },
   log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjänst öppnad", detail: "Account Manager · B2B" }],
 };
@@ -949,6 +1003,7 @@ const NAV = [
   { id: "queue", label: "Kö", icon: Layers },
   { id: "pipeline", label: "Pipeline", icon: Workflow },
   { id: "candidates", label: "Kandidater", icon: ClipboardList },
+  { id: "crm", label: "Kandidatbank", icon: Users },
   { id: "calendar", label: "Kalender", icon: CalendarClock },
   { id: "form", label: "Formulär", icon: Blocks },
   { id: "scoring", label: "Scoring", icon: Gauge },
@@ -1624,6 +1679,7 @@ function AppInner() {
             {view === "career" && <CareerView {...shared} />}
             {view === "pipeline" && <PipelineView {...shared} />}
             {view === "scoring" && <ScoringView {...shared} />}
+            {view === "crm" && <CrmView {...shared} />}
             {view === "superadmin" && isSuper && <SuperadminView {...shared} />}
             </ErrorBoundary>
             {view === "queue" && <QueueView {...shared} />}
@@ -1683,17 +1739,19 @@ function hydrate(init, d) {
   const pipeOf = {};
   jobs.forEach((j) => { pipeOf[j.id] = j.pipeline; });
   const arr = (v) => (Array.isArray(v) ? v : []);
-  return {
+  const out = {
     ...init, ...d,
     jobs,
     candidates: arr(d.candidates).map((c) => (pipeOf[c.jobId] ? migrateCandidate(c, pipeOf[c.jobId]) : c)),
     team: arr(d.team), tags: arr(d.tags), jobViews: arr(d.jobViews),
     moves: arr(d.moves), moveIds: arr(d.moveIds), events: arr(d.events), recalcs: arr(d.recalcs),
+    people: arr(d.people), ctags: arr(d.ctags), pools: arr(d.pools), candViews: arr(d.candViews),
     messages: arr(d.messages), log: arr(d.log), history: arr(d.history),
     templates: arr(d.templates).length ? d.templates : init.templates,
     org: { ...init.org, ...(d.org || {}) },
     activeJobId: jobs.some((j) => j.id === d.activeJobId) ? d.activeJobId : (jobs[0] ? jobs[0].id : null),
   };
+  return ensurePeople(out);
 }
 /* ===================== FELGRÄNS ===================== */
 /* Isolerar fel per modul. En trasig vy får aldrig riva hela appen. */
@@ -2332,6 +2390,145 @@ function recalcSelection(job, cands, scope, opts) {
   }
 }
 const RECALC_STATUS = { running: "Pågår", paused: "Pausad", done: "Slutförd", cancelled: "Avbruten", failed: "Misslyckad" };
+/* ===================== KANDIDAT-CRM: GLOBALA PROFILER ===================== */
+/* En person = en global profil. En ansökan = befintlig `candidate` (en per jobb).
+ * Kopplingen sker via personId, som härleds deterministiskt ur normaliserad e-post. */
+
+/* Normalisering — helt transparent, ingen fuzzy matchning, ingen AI. */
+function normEmail(v) {
+  const e = String(v || "").trim().toLowerCase();
+  if (!e.includes("@")) return "";
+  const [local, domain] = e.split("@");
+  /* +tagg räknas som samma adress (standard hos alla stora leverantörer). */
+  const base = local.split("+")[0];
+  return base + "@" + domain;
+}
+function normPhone(v) {
+  const d = String(v || "").replace(/[^\d]/g, "");
+  if (d.length < 7) return "";
+  /* Landskod och inledande nolla normaliseras bort — jämförelsen sker på de sista 9 siffrorna. */
+  return d.replace(/^(0046|46)/, "").replace(/^0/, "").slice(-9);
+}
+const normName = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+const DUP_RISK = { high: { label: "Hög", tone: "brick" }, medium: { label: "Möjlig", tone: "amber" }, low: { label: "Låg", tone: "muted" } };
+const POOL_VIS = { org: "Hela organisationen", owner: "Bara ägaren", team: "Rekryteringsteamet" };
+const CTAG_CATS = { skill: "Kompetens", status: "Status", source: "Källa", other: "Övrigt" };
+
+const mkPerson = (c) => ({
+  id: "p" + uid(),
+  name: c.name || "", email: c.email || "", phone: c.phone || "",
+  emailNorm: normEmail(c.email), phoneNorm: normPhone(c.phone),
+  tags: [], pools: [], archived: false, internal: false,
+  source: c.source || "direkt", ownerId: c.ownerId || null,
+  createdAt: c.at || Date.now(), updatedAt: Date.now(),
+  notes: [], timeline: [{ id: "t" + uid(), at: c.at || Date.now(), kind: "created", note: "Profil skapad", by: null }],
+  mergedFrom: [],
+});
+function ptl(p, kind, note, who) {
+  const e = { id: "t" + uid(), at: Date.now(), kind, note: note || "", by: (_TEAM.find((m) => m.id === who) || {}).name || "System", byId: who || null };
+  return { ...p, updatedAt: Date.now(), timeline: [e, ...(p.timeline || [])].slice(0, 300) };
+}
+
+/* Migrering: bygg globala profiler ur befintliga ansökningar. Idempotent. */
+function ensurePeople(state) {
+  const people = [...(state.people || [])];
+  const byKey = {};
+  people.forEach((p) => { if (p.emailNorm) byKey[p.emailNorm] = p.id; if (p.phoneNorm) byKey["t:" + p.phoneNorm] = p.id; });
+  let changed = false;
+  const candidates = state.candidates.map((c) => {
+    if (c.personId && people.some((p) => p.id === c.personId)) return c;
+    const ke = normEmail(c.email), kp = normPhone(c.phone);
+    let pid = (ke && byKey[ke]) || (kp && byKey["t:" + kp]) || null;
+    if (!pid) {
+      const p = mkPerson(c);
+      people.push(p);
+      if (p.emailNorm) byKey[p.emailNorm] = p.id;
+      if (p.phoneNorm) byKey["t:" + p.phoneNorm] = p.id;
+      pid = p.id;
+    }
+    changed = true;
+    return { ...c, personId: pid };
+  });
+  if (!changed && people.length === (state.people || []).length) return state;
+  return { ...state, people, candidates };
+}
+const appsOf = (state, personId) => state.candidates.filter((c) => c.personId === personId);
+const personOf = (state, c) => (state.people || []).find((p) => p.id === c.personId) || null;
+
+/* ---- Dubblettidentifiering: deterministisk, med angivna skäl ---- */
+function findDuplicates(people) {
+  const active = people.filter((p) => !p.archived);
+  const pairs = [];
+  const seen = new Set();
+  for (let i = 0; i < active.length; i++) {
+    for (let j = i + 1; j < active.length; j++) {
+      const a = active[i], b = active[j];
+      const key = [a.id, b.id].sort().join("|");
+      if (seen.has(key)) continue;
+      const reasons = [];
+      let risk = null;
+      if (a.emailNorm && a.emailNorm === b.emailNorm) { reasons.push("Samma normaliserade e-post (" + a.emailNorm + ")"); risk = "high"; }
+      if (a.phoneNorm && a.phoneNorm === b.phoneNorm) { reasons.push("Samma normaliserade telefonnummer (" + a.phoneNorm + ")"); risk = "high"; }
+      if (!risk && normName(a.name) && normName(a.name) === normName(b.name)) {
+        const conflict = (a.emailNorm && b.emailNorm && a.emailNorm !== b.emailNorm);
+        reasons.push("Exakt samma namn");
+        if (conflict) reasons.push("Men olika e-postadresser — kan vara två olika personer");
+        risk = conflict ? "low" : "medium";
+      }
+      if (!risk) continue;
+      const diffs = [];
+      [["Namn", "name"], ["E-post", "email"], ["Telefon", "phone"]].forEach(([l, k]) => { if ((a[k] || "") !== (b[k] || "")) diffs.push({ field: l, a: a[k] || "—", b: b[k] || "—" }); });
+      seen.add(key);
+      pairs.push({ key, a, b, risk, reasons, diffs });
+    }
+  }
+  return pairs.sort((x, y) => ({ high: 0, medium: 1, low: 2 }[x.risk]) - ({ high: 0, medium: 1, low: 2 }[y.risk]));
+}
+
+/* ---- Sammanslagning: atomisk, idempotent, förlorar aldrig data ---- */
+function mergePeople(state, primaryId, secondaryId, opts, who) {
+  const people = state.people || [];
+  const A = people.find((p) => p.id === primaryId);
+  const B = people.find((p) => p.id === secondaryId);
+  if (!A || !B || A.id === B.id) return state; /* idempotent: redan sammanslagen */
+  const keep = opts.keep || {};
+  const snapshot = JSON.parse(JSON.stringify(B));
+  const merged = ptl({
+    ...A,
+    name: keep.name === "b" ? B.name : A.name,
+    email: keep.email === "b" ? B.email : A.email,
+    phone: keep.phone === "b" ? B.phone : A.phone,
+    emailNorm: normEmail(keep.email === "b" ? B.email : A.email),
+    phoneNorm: normPhone(keep.phone === "b" ? B.phone : A.phone),
+    ownerId: keep.owner === "b" ? B.ownerId : (A.ownerId || B.ownerId),
+    internal: A.internal || B.internal,
+    tags: opts.tags === false ? A.tags : [...new Set([...(A.tags || []), ...(B.tags || [])])],
+    pools: opts.pools === false ? A.pools : [...new Set([...(A.pools || []), ...(B.pools || [])])],
+    notes: [...(A.notes || []), ...(B.notes || [])].sort((x, y) => y.at - x.at),
+    timeline: [...(A.timeline || []), ...(B.timeline || [])].sort((x, y) => y.at - x.at).slice(0, 300),
+    mergedFrom: [...(A.mergedFrom || []), { id: B.id, name: B.name, email: B.email, at: Date.now(), by: who, snapshot }],
+  }, "merged", "Sammanslagen med " + (B.name || B.email || B.id), who);
+  /* ALLA ansökningar följer med — ingen får förloras. */
+  const candidates = state.candidates.map((c) => c.personId === B.id ? { ...c, personId: A.id } : c);
+  const s2 = { ...state, people: people.filter((p) => p.id !== B.id).map((p) => p.id === A.id ? merged : p), candidates };
+  return { ...s2, log: withLog(s2, "Kandidater sammanslagna", (B.name || B.email) + " → " + (merged.name || merged.email)) };
+}
+function unmergePeople(state, primaryId, mergeIdx, who) {
+  const A = (state.people || []).find((p) => p.id === primaryId);
+  if (!A || !A.mergedFrom || !A.mergedFrom[mergeIdx]) return state;
+  const rec = A.mergedFrom[mergeIdx];
+  const restored = ptl({ ...rec.snapshot }, "restored", "Återställd från sammanslagning", who);
+  const back = new Set((rec.snapshot.timeline || []).map((t) => t.id));
+  const primary = ptl({ ...A, mergedFrom: A.mergedFrom.filter((_, i) => i !== mergeIdx) }, "unmerged", "Sammanslagning återställd: " + (rec.name || rec.email), who);
+  /* Ansökningar som fanns hos den återställda profilen går tillbaka — matchas på e-post. */
+  const ne = normEmail(rec.snapshot.email);
+  const candidates = state.candidates.map((c) => (c.personId === A.id && ne && normEmail(c.email) === ne) ? { ...c, personId: restored.id } : c);
+  return { ...state, people: [...state.people.map((p) => p.id === A.id ? primary : p), restored], candidates };
+}
+
+/* ---- Kandidattaggar och talangpooler (separata från jobbtaggar) ---- */
+const mkCTag = (name, cat, color) => ({ id: "ct" + uid(), name: String(name).trim(), cat: cat || "other", color: color || TAG_COLORS[0], archived: false });
+const mkPool = (name, ownerId) => ({ id: "pl" + uid(), name, desc: "", ownerId: ownerId || null, visibility: "org", tags: [], archived: false, createdAt: Date.now() });
 /* ===================== PIPELINE, SLA OCH FÖRFLYTTNINGSMOTOR ===================== */
 /* Stegtyper. `legacy` håller den gamla statusmodellen synkad så att kö, statistik,
  * kalender och rapporter fortsätter fungera oförändrat. */
@@ -4874,6 +5071,397 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
         </div>;
       })()}
       <div className="ats-erase-note"><Info size={14} /> Publicerade versioner är oföränderliga. Kandidaternas historiska resultat pekar alltid på den version som faktiskt användes.</div>
+    </div></Modal>}
+  </div>;
+}
+/* ===================== KANDIDATBANK (CRM) ===================== */
+function PersonProfile({ p, state, D, me, showToast, onClose, setDetailId }) {
+  const [tab, setTab] = useState("overview");
+  const [note, setNote] = useState("");
+  const [sensitive, setSensitive] = useState(false);
+  const [newApp, setNewApp] = useState("");
+  const [tlF, setTlF] = useState("");
+  const canEdit = can(me.role, "edit");
+  const canNotes = can(me.role, "comment");
+  const canSee = can(me.role, "export") || can(me.role, "decide");
+  const apps = appsOf(state, p.id);
+  const tagOf = (id) => (state.ctags || []).find((t) => t.id === id);
+  const poolOf = (id) => (state.pools || []).find((x) => x.id === id);
+  const nameOf = (id) => (state.team.find((m) => m.id === id) || {}).name || null;
+  const jobOf = (id) => state.jobs.find((j) => j.id === id);
+  const set = (patch, note2) => D({ type: "PERSON_SET", id: p.id, patch, note: note2 });
+  const TL = { created: "Profil skapad", edited: "Uppgifter ändrade", note: "Anteckning", tag: "Tagg", pool: "Talangpool", owner: "Ansvarig", archived: "Arkiverad", restored: "Återställd", merged: "Sammanslagen", unmerged: "Återställd sammanslagning" };
+  const tl = (p.timeline || []).filter((t) => !tlF || t.kind === tlF);
+  const pinned = (p.notes || []).filter((n) => n.pinned);
+  const notes = (p.notes || []).filter((n) => !n.pinned);
+
+  const addApp = () => {
+    const job = jobOf(newApp); if (!job) return;
+    if (apps.some((a) => a.jobId === job.id)) { showToast({ kind: "warn", msg: "Kandidaten har redan sökt den tjänsten" }); return; }
+    D({ type: "ADD_CANDIDATE", jobId: job.id, cand: { id: "c" + uid(), name: p.name, email: p.email, phone: p.phone, answers: {}, source: "kandidatbank", personId: p.id, consentAt: Date.now() } });
+    setNewApp("");
+    showToast({ kind: "ok", msg: "Ansökan skapad till " + job.title });
+  };
+
+  return <div className="ats-pp">
+    <div className="ats-pp-h">
+      <span className="ats-avatar is-lg">{(p.name || "?")[0].toUpperCase()}</span>
+      <div className="ats-pp-id">
+        <h2>{p.name || "Namnlös"}{p.archived && <span className="ats-jobbadge is-muted">Arkiverad</span>}{p.internal && <span className="ats-jobbadge is-blue">Intern</span>}</h2>
+        <span className="ats-mono">{p.email || "—"}{p.phone ? " · " + p.phone : ""}</span>
+        <div className="ats-pp-chips">
+          {(p.tags || []).map((id) => { const t = tagOf(id); return t ? <span key={id} className="ats-jtag" style={{ background: t.color + "1f", color: t.color }}>{t.name}</span> : null; })}
+          {(p.pools || []).map((id) => { const x = poolOf(id); return x ? <span key={id} className="ats-jtag" style={{ background: "var(--petrol-soft)", color: "var(--petrol)" }}><Users size={10} /> {x.name}</span> : null; })}
+        </div>
+      </div>
+      <div className="ats-pp-acts">
+        {canEdit && <button className="ats-ghost is-sm" onClick={() => D({ type: "PERSON_ARCHIVE", id: p.id })}>{p.archived ? <><RotateCcw size={14} /> Återställ</> : <><Trash2 size={14} /> Arkivera</>}</button>}
+        <button className="ats-ghost is-sm" onClick={onClose}><X size={16} /></button>
+      </div>
+    </div>
+
+    <div className="ats-tabs is-sub">{[["overview", "Översikt"], ["apps", "Ansökningar (" + apps.length + ")"], ["notes", "Anteckningar"], ["timeline", "Tidslinje"], ["privacy", "Integritet"]].map(([id, l]) =>
+      <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}</button>)}</div>
+
+    {tab === "overview" && <div className="ats-pp-body">
+      <div className="ats-tpl-two">
+        <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={p.name} disabled={!canEdit || p.archived} onChange={(e) => set({ name: e.target.value })} /></label>
+        <label className="ats-field"><span className="ats-field-l">Ansvarig</span><select className="ats-inp" value={p.ownerId || ""} disabled={!canEdit || p.archived} onChange={(e) => set({ ownerId: e.target.value || null }, "Ansvarig ändrad")}><option value="">Ingen</option>{state.team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+      </div>
+      <div className="ats-tpl-two">
+        <label className="ats-field"><span className="ats-field-l">E-post</span><input className="ats-inp" value={canSee ? p.email : "•••"} disabled={!canEdit || p.archived || !canSee} onChange={(e) => set({ email: e.target.value })} /></label>
+        <label className="ats-field"><span className="ats-field-l">Telefon</span><input className="ats-inp" value={canSee ? p.phone : "•••"} disabled={!canEdit || p.archived || !canSee} onChange={(e) => set({ phone: e.target.value })} /></label>
+      </div>
+      {!canSee && <div className="ats-erase-note"><Lock size={14} /> Din roll får inte se kontaktuppgifter.</div>}
+      <label className="ats-cb-check"><input type="checkbox" checked={!!p.internal} disabled={!canEdit || p.archived} onChange={(e) => set({ internal: e.target.checked })} /> Intern kandidat</label>
+      {(state.ctags || []).length > 0 && <label className="ats-field"><span className="ats-field-l">Taggar</span><div className="ats-chipset">{state.ctags.filter((t) => !t.archived).map((t) => {
+        const on = (p.tags || []).includes(t.id);
+        return <button key={t.id} className={"ats-selchip" + (on ? " is-on" : "")} disabled={!canEdit || p.archived} onClick={() => D({ type: "PEOPLE_BULK", ids: [p.id], op: on ? "tag_del" : "tag_add", value: t.id })}>{t.name}</button>;
+      })}</div></label>}
+      {(state.pools || []).length > 0 && <label className="ats-field"><span className="ats-field-l">Talangpooler</span><div className="ats-chipset">{state.pools.filter((x) => !x.archived).map((x) => {
+        const on = (p.pools || []).includes(x.id);
+        return <button key={x.id} className={"ats-selchip" + (on ? " is-on" : "")} disabled={!canEdit || p.archived} onClick={() => D({ type: "PEOPLE_BULK", ids: [p.id], op: on ? "pool_del" : "pool_add", value: x.id })}>{x.name}</button>;
+      })}</div></label>}
+      <div className="ats-sv-sum">
+        <div><span>Ansökningar</span><b>{apps.length}</b></div>
+        <div><span>Källa</span><b>{p.source || "—"}</b></div>
+        <div><span>Skapad</span><b>{new Date(p.createdAt).toLocaleDateString("sv-SE")}</b></div>
+        <div><span>Senast ändrad</span><b>{timeAgo(p.updatedAt)}</b></div>
+      </div>
+    </div>}
+
+    {tab === "apps" && <div className="ats-pp-body">
+      {apps.length === 0 ? <div className="ats-col-empty" style={{ padding: 30 }}>Kandidaten har inga ansökningar än.</div>
+        : <div className="ats-sa-rows">{apps.map((a) => { const j = jobOf(a.jobId); const st = j && j.pipeline ? stageById(j.pipeline, a.stageId) : null; const sc = currentScore(a);
+          return <div key={a.id} className="ats-sa-row is-card">
+            <div className="ats-sa-main">
+              <div className="ats-sa-top"><button className="ats-jobcard-title" onClick={() => { D({ type: "SET_ACTIVE_JOB", id: a.jobId }); setDetailId && setDetailId(a.id); onClose(); }}>{j ? j.title : "Borttagen tjänst"}</button>
+                {st && <span className="ats-jtag" style={{ background: (st.color || "#888") + "1f", color: st.color }}>{st.name}</span>}
+                {a.qual && <QualChip q={a.qual} size="sm" />}</div>
+              <span>{sc ? sc.percent + "% · " + sc.profileName + " v" + sc.version : "Ingen scoring"} · {a.source || "direkt"} · {new Date(a.at).toLocaleDateString("sv-SE")}</span>
+            </div>
+            <span className="ats-sa-when">{nameOf(a.ownerId) || "Ingen ansvarig"}</span>
+          </div>; })}</div>}
+      {canEdit && !p.archived && <div className="ats-pp-newapp">
+        <select className="ats-inp" value={newApp} onChange={(e) => setNewApp(e.target.value)}>
+          <option value="">Skapa ansökan till tjänst…</option>
+          {state.jobs.filter((j) => !isReadonly(j) && !apps.some((a) => a.jobId === j.id)).map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
+        </select>
+        <button className="ats-btn-primary is-sm" disabled={!newApp} onClick={addApp}><Plus size={14} /> Skapa</button>
+      </div>}
+      <div className="ats-erase-note"><Info size={14} /> Varje ansökan har sina egna originalsvar, sin scoringversion och sin historik. En ändring i en ansökan påverkar aldrig en annan.</div>
+    </div>}
+
+    {tab === "notes" && <div className="ats-pp-body">
+      {canNotes && !p.archived && <div className="ats-pp-note-add">
+        <textarea className="ats-inp" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Intern anteckning — syns aldrig för kandidaten" />
+        <div className="ats-pp-note-r">
+          <label className="ats-cb-check"><input type="checkbox" checked={sensitive} onChange={(e) => setSensitive(e.target.checked)} /> Känslig (endast admin och rekryterare)</label>
+          <button className="ats-btn-primary is-sm" disabled={!note.trim()} onClick={() => { D({ type: "PERSON_NOTE", id: p.id, text: note.trim(), sensitive }); setNote(""); setSensitive(false); }}><Plus size={14} /> Lägg till</button>
+        </div>
+      </div>}
+      {[...pinned, ...notes].filter((n) => !n.sensitive || can(me.role, "settings") || me.role === "recruiter").length === 0
+        ? <div className="ats-col-empty" style={{ padding: 30 }}>Inga anteckningar.</div>
+        : <div className="ats-pp-notes">{[...pinned, ...notes].filter((n) => !n.sensitive || can(me.role, "settings") || me.role === "recruiter").map((n) => <div key={n.id} className={"ats-pp-note" + (n.pinned ? " is-pin" : "") + (n.sensitive ? " is-sens" : "")}>
+          <div className="ats-pp-note-h"><b>{n.byName}</b><span>{timeAgo(n.at)}</span>{n.sensitive && <span className="ats-jobbadge is-brick"><Lock size={10} /> Känslig</span>}
+            {canNotes && <div className="ats-pp-note-a">
+              <button className="ats-ghost is-sm" onClick={() => D({ type: "PERSON_NOTE", id: p.id, noteId: n.id, pin: true })} aria-label="Fäst">{n.pinned ? <PinOff size={13} /> : <Pin size={13} />}</button>
+              {(n.by === me.id || can(me.role, "settings")) && <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => D({ type: "PERSON_NOTE", id: p.id, noteId: n.id, del: true })} aria-label="Ta bort"><Trash2 size={13} /></button>}
+            </div>}
+          </div>
+          <p>{n.text}</p>
+        </div>)}</div>}
+      <div className="ats-erase-note"><EyeOff size={14} /> Interna anteckningar visas aldrig för kandidaten.</div>
+    </div>}
+
+    {tab === "timeline" && <div className="ats-pp-body">
+      <select className="ats-select is-sm" value={tlF} onChange={(e) => setTlF(e.target.value)} aria-label="Filtrera"><option value="">Alla händelser</option>{Object.entries(TL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+      {tl.length === 0 ? <div className="ats-col-empty" style={{ padding: 30 }}>Ingen aktivitet.</div>
+        : <div className="ats-jact-list">{tl.map((t) => <div key={t.id} className="ats-jact-i">
+          <span className="ats-jact-k">{TL[t.kind] || t.kind}</span>
+          <div><b>{t.note || "—"}</b><span>{t.by} · {timeAgo(t.at)}</span></div>
+        </div>)}</div>}
+    </div>}
+
+    {tab === "privacy" && <div className="ats-pp-body">
+      <div className="ats-sv-sum">
+        <div><span>Samtycke</span><b>{apps.some((a) => a.consentAt) ? "Registrerat" : "Saknas"}</b></div>
+        <div><span>Ansökningar</span><b>{apps.length}</b></div>
+        <div><span>Uppladdade filer</span><b>{apps.reduce((n, a) => n + Object.values(a.answers || {}).filter((v) => v && typeof v === "object" && v.url).length, 0)}</b></div>
+        <div><span>Status</span><b>{p.archived ? "Arkiverad" : "Aktiv"}</b></div>
+      </div>
+      {apps.filter((a) => a.consentAt).map((a) => <div key={a.id} className="ats-erase-note"><ShieldCheck size={14} /> Samtycke registrerat {new Date(a.consentAt).toLocaleDateString("sv-SE")} för {(jobOf(a.jobId) || {}).title || "tjänst"}.</div>)}
+      {(p.mergedFrom || []).length > 0 && <>
+        <h4 className="ats-dr-h"><GitCompare size={13} /> SAMMANSLAGNINGAR</h4>
+        {p.mergedFrom.map((m, i) => <div key={i} className="ats-sa-row is-card">
+          <div className="ats-sa-main"><b>{m.name || m.email}</b><span>Sammanslagen {new Date(m.at).toLocaleDateString("sv-SE")}</span></div>
+          {canEdit && <button className="ats-ghost is-sm" onClick={() => { D({ type: "PERSON_UNMERGE", primaryId: p.id, idx: i }); showToast({ kind: "ok", msg: "Sammanslagningen återställdes" }); onClose(); }}><RotateCcw size={13} /> Återställ</button>}
+        </div>)}
+      </>}
+      {can(me.role, "export") && <button className="ats-ghost" onClick={() => downloadJSON({ profile: p, applications: apps }, "kandidat-" + (p.name || p.id) + ".json")}><Download size={15} /> Exportera all data (JSON)</button>}
+    </div>}
+  </div>;
+}
+
+function CrmView({ state, D, me, showToast, setDetailId }) {
+  const [tab, setTab] = useState("all");
+  const [q, setQ] = useState("");
+  const [f, setF] = useState({ tag: "", pool: "", owner: "", job: "", qual: "", source: "", internal: "" });
+  const [mode, setMode] = useState("table");
+  const [sel, setSel] = useState([]);
+  const [open, setOpen] = useState(null);
+  const [bulk, setBulk] = useState(null);
+  const [bulkRes, setBulkRes] = useState(null);
+  const [merge, setMerge] = useState(null);
+  const [mKeep, setMKeep] = useState({});
+  const [tagPanel, setTagPanel] = useState(false);
+  const [poolPanel, setPoolPanel] = useState(false);
+  const [newTag, setNewTag] = useState("");
+  const [newTagCat, setNewTagCat] = useState("skill");
+  const [newPool, setNewPool] = useState("");
+  const [addPerson, setAddPerson] = useState(false);
+  const [np, setNp] = useState({ name: "", email: "", phone: "" });
+  const [page, setPage] = useState(1);
+  const PER = 50;
+
+  useEffect(() => { if (!state.people || state.candidates.some((c) => !c.personId)) D({ type: "PEOPLE_INIT" }); }, []);
+  const canEdit = can(me.role, "edit");
+  const canMerge = can(me.role, "settings") || can(me.role, "edit");
+  const people = state.people || [];
+  const tagOf = (id) => (state.ctags || []).find((t) => t.id === id);
+  const poolOf = (id) => (state.pools || []).find((x) => x.id === id);
+  const nameOf = (id) => (state.team.find((m) => m.id === id) || {}).name || null;
+  const dupes = useMemo(() => findDuplicates(people), [people]);
+
+  const enriched = people.map((p) => { const apps = appsOf(state, p.id); const best = apps.map((a) => currentScore(a)).filter(Boolean).sort((x, y) => y.percent - x.percent)[0];
+    return { ...p, _apps: apps, _n: apps.length, _score: best ? best.percent : null, _last: Math.max(p.updatedAt || 0, ...apps.map((a) => a.at || 0)), _qual: apps.map((a) => a.qual).filter(Boolean)[0] || null }; });
+  const shown = enriched
+    .filter((p) => (tab === "archived" ? p.archived : !p.archived))
+    .filter((p) => !q.trim() || [p.name, p.email, p.phone, p.id, ...(p.tags || []).map((t) => (tagOf(t) || {}).name)].join(" ").toLowerCase().includes(q.toLowerCase()))
+    .filter((p) => !f.tag || (p.tags || []).includes(f.tag))
+    .filter((p) => !f.pool || (p.pools || []).includes(f.pool))
+    .filter((p) => !f.owner || (f.owner === "none" ? !p.ownerId : p.ownerId === f.owner))
+    .filter((p) => !f.job || p._apps.some((a) => a.jobId === f.job))
+    .filter((p) => !f.qual || (p._qual && p._qual.final === f.qual))
+    .filter((p) => !f.source || p.source === f.source)
+    .filter((p) => !f.internal || (f.internal === "yes" ? p.internal : !p.internal))
+    .sort((a, b) => b._last - a._last);
+  const activeF = Object.entries(f).filter(([, v]) => v);
+  const clearF = () => { setF({ tag: "", pool: "", owner: "", job: "", qual: "", source: "", internal: "" }); setQ(""); setPage(1); };
+  const visible = shown.slice(0, page * PER);
+  const allSel = visible.length > 0 && visible.every((p) => sel.includes(p.id));
+
+  const runBulk = (op, value) => {
+    D({ type: "PEOPLE_BULK", ids: sel, op, value });
+    setBulk(null);
+    setTimeout(() => { setBulkRes({ total: sel.length, op }); setSel([]); }, 0);
+  };
+  const doExport = () => {
+    const rows = [["ID", "Namn", "E-post", "Telefon", "Ansökningar", "Bästa matchning", "Taggar", "Pooler", "Ansvarig", "Källa", "Status"]];
+    enriched.filter((p) => sel.includes(p.id)).forEach((p) => rows.push([p.id, p.name, p.email, p.phone, p._n, p._score != null ? p._score + "%" : "", (p.tags || []).map((t) => (tagOf(t) || {}).name).join(", "), (p.pools || []).map((x) => (poolOf(x) || {}).name).join(", "), nameOf(p.ownerId) || "", p.source, p.archived ? "Arkiverad" : "Aktiv"]));
+    downloadCSV(rows, "kandidatbank.csv");
+    showToast({ kind: "ok", msg: sel.length + " kandidater exporterade" });
+  };
+  const doMerge = () => {
+    D({ type: "PERSON_MERGE", primaryId: merge.a.id, secondaryId: merge.b.id, opts: { keep: mKeep } });
+    setMerge(null); setMKeep({});
+    showToast({ kind: "ok", msg: "Profilerna slogs samman — alla ansökningar följde med" });
+  };
+
+  const Sel2 = ({ v, on, opts, ph }) => opts.length > 0 ? <select className="ats-select is-sm" value={v} onChange={(e) => { on(e.target.value); setPage(1); }} aria-label={ph}><option value="">{ph}</option>{opts.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}</select> : null;
+
+  return <div className="ats-view">
+    <PageHeader title="Kandidatbank" meta={<><span>{people.filter((p) => !p.archived).length} aktiva</span><Dot /><span>{state.candidates.length} ansökningar</span>{dupes.length > 0 && <><Dot /><span className="ats-cal-warn">{dupes.length} möjliga dubbletter</span></>}</>}
+      right={<>{canEdit && <button className="ats-ghost is-sm" onClick={() => setTagPanel(true)}><Tag size={15} /> Taggar</button>}
+        {canEdit && <button className="ats-ghost is-sm" onClick={() => setPoolPanel(true)}><Users size={15} /> Pooler</button>}
+        {canEdit && <button className="ats-btn-primary is-sm" onClick={() => setAddPerson(true)}><Plus size={15} /> Ny kandidat</button>}</>} />
+
+    <div className="ats-tabs">
+      {[["all", "Aktiva", people.filter((p) => !p.archived).length], ["archived", "Arkiv", people.filter((p) => p.archived).length], ["dupes", "Dubbletter", dupes.length]].map(([id, l, n]) =>
+        <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => { setTab(id); setSel([]); }}>{l}<span className="ats-tab-n">{n}</span></button>)}
+    </div>
+
+    {tab === "dupes" ? (dupes.length === 0
+      ? <div className="ats-col-empty" style={{ padding: 44 }}>Inga möjliga dubbletter hittade. Identifieringen bygger på normaliserad e-post, normaliserat telefonnummer och exakt namn — ingen AI, ingen gissning.</div>
+      : <div className="ats-sa-rows">{dupes.map((d) => <div key={d.key} className="ats-sa-row is-card">
+        <div className="ats-sa-main">
+          <div className="ats-sa-top"><b>{d.a.name || d.a.email}</b><ArrowRight size={13} /><b>{d.b.name || d.b.email}</b>
+            <span className={"ats-qc is-" + DUP_RISK[d.risk].tone}>{DUP_RISK[d.risk].label} risk</span></div>
+          <span>{d.reasons.join(" · ")}</span>
+          <div className="ats-dup-diffs">{d.diffs.map((x) => <span key={x.field}><b>{x.field}:</b> {x.a} ≠ {x.b}</span>)}</div>
+          <span className="ats-muted">{appsOf(state, d.a.id).length} + {appsOf(state, d.b.id).length} ansökningar</span>
+        </div>
+        <div className="ats-sa-acts">
+          <button className="ats-ghost is-sm" onClick={() => setOpen(d.a.id)}>Öppna</button>
+          {canMerge && <button className="ats-btn-primary is-sm" onClick={() => { setMerge(d); setMKeep({}); }}><GitCompare size={13} /> Slå samman</button>}
+        </div>
+      </div>)}</div>)
+      : <>
+        <div className="ats-jfilters">
+          <div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Sök namn, e-post, telefon, tagg eller ID…" /></div>
+          <Sel2 v={f.tag} on={(v) => setF({ ...f, tag: v })} opts={(state.ctags || []).filter((t) => !t.archived).map((t) => ({ v: t.id, l: t.name }))} ph="Alla taggar" />
+          <Sel2 v={f.pool} on={(v) => setF({ ...f, pool: v })} opts={(state.pools || []).filter((x) => !x.archived).map((x) => ({ v: x.id, l: x.name }))} ph="Alla pooler" />
+          <Sel2 v={f.job} on={(v) => setF({ ...f, job: v })} opts={state.jobs.map((j) => ({ v: j.id, l: j.title }))} ph="Alla tjänster" />
+          <Sel2 v={f.qual} on={(v) => setF({ ...f, qual: v })} opts={Object.entries(QUAL_STATUS).map(([k, v2]) => ({ v: k, l: v2.label }))} ph="Alla kvalificeringar" />
+          <Sel2 v={f.owner} on={(v) => setF({ ...f, owner: v })} opts={[{ v: "none", l: "Utan ansvarig" }, ...state.team.map((m) => ({ v: m.id, l: m.name }))]} ph="Alla ansvariga" />
+          <Sel2 v={f.internal} on={(v) => setF({ ...f, internal: v })} opts={[{ v: "yes", l: "Interna" }, { v: "no", l: "Externa" }]} ph="Intern/extern" />
+          <div className="ats-jmode">
+            <button className={mode === "table" ? "is-on" : ""} onClick={() => setMode("table")} aria-label="Tabellvy"><ListChecks size={14} /></button>
+            <button className={mode === "card" ? "is-on" : ""} onClick={() => setMode("card")} aria-label="Kortvy"><Layers size={14} /></button>
+          </div>
+        </div>
+
+        {(activeF.length > 0 || q.trim()) && <div className="ats-cs-meta">
+          <span>{shown.length} träffar</span>
+          <div className="ats-cs-active">
+            {q.trim() && <button className="ats-cs-tag" onClick={() => setQ("")}>{q} <X size={13} /></button>}
+            {activeF.map(([k, v]) => <button key={k} className="ats-cs-tag" onClick={() => setF({ ...f, [k]: "" })}>{k === "tag" ? (tagOf(v) || {}).name : k === "pool" ? (poolOf(v) || {}).name : k === "owner" ? (v === "none" ? "Utan ansvarig" : nameOf(v)) : k === "job" ? (state.jobs.find((j) => j.id === v) || {}).title : k === "qual" ? QUAL_STATUS[v].label : v} <X size={13} /></button>)}
+            <button className="ats-cs-clear" onClick={clearF}>Rensa alla</button>
+            {canEdit && <button className="ats-ghost is-sm" onClick={() => { const n = prompt("Namn på vyn"); if (n) { D({ type: "CVIEW_ADD", name: n, f: { ...f, q } }); showToast({ kind: "ok", msg: "Vy sparad" }); } }}><Plus size={13} /> Spara vy</button>}
+          </div>
+        </div>}
+
+        {(state.candViews || []).length > 0 && <div className="ats-jviews">{state.candViews.map((v) => <span key={v.id} className="ats-jview">
+          <button onClick={() => { setF({ tag: v.f.tag || "", pool: v.f.pool || "", owner: v.f.owner || "", job: v.f.job || "", qual: v.f.qual || "", source: v.f.source || "", internal: v.f.internal || "" }); setQ(v.f.q || ""); }}>{v.name}</button>
+          {canEdit && <button className="ats-jview-x" onClick={() => D({ type: "CVIEW_DEL", id: v.id })} aria-label="Ta bort vy"><X size={12} /></button>}
+        </span>)}</div>}
+
+        {sel.length > 0 && canEdit && <div className="ats-bulkbar">
+          <b>{sel.length} valda</b>
+          {(state.ctags || []).length > 0 && <button className="ats-ghost is-sm" onClick={() => setBulk("tag_add")}><Tag size={13} /> Tagga</button>}
+          {(state.pools || []).length > 0 && <button className="ats-ghost is-sm" onClick={() => setBulk("pool_add")}><Users size={13} /> Till pool</button>}
+          <button className="ats-ghost is-sm" onClick={() => setBulk("owner")}><UserCheck size={13} /> Ansvarig</button>
+          {tab === "archived" ? <button className="ats-ghost is-sm" onClick={() => runBulk("restore")}><RotateCcw size={13} /> Återställ</button>
+            : <button className="ats-ghost is-sm" onClick={() => runBulk("archive")}><Trash2 size={13} /> Arkivera</button>}
+          {can(me.role, "export") && <button className="ats-ghost is-sm" onClick={doExport}><Download size={13} /> Exportera</button>}
+          <button className="ats-ghost is-sm" onClick={() => setSel([])}>Avmarkera</button>
+        </div>}
+
+        {shown.length === 0
+          ? <div className="ats-col-empty" style={{ padding: 44 }}>{tab === "archived" ? "Inga arkiverade kandidater." : (activeF.length || q.trim()) ? "Ingen kandidat matchar filtren." : "Kandidatbanken är tom. Kandidater läggs till automatiskt när någon söker."}
+            {(activeF.length > 0 || q.trim()) && <div style={{ marginTop: 16 }}><button className="ats-ghost" onClick={clearF}>Rensa filter</button></div>}</div>
+          : mode === "table"
+            ? <div className="ats-jtablewrap"><table className="ats-jtable">
+              <thead><tr>{canEdit && <th><input type="checkbox" checked={allSel} onChange={() => setSel(allSel ? [] : visible.map((p) => p.id))} aria-label="Välj alla" /></th>}
+                <th>Kandidat</th><th>Ansökningar</th><th>Bästa matchning</th><th>Kvalificering</th><th>Taggar</th><th>Ansvarig</th><th>Senast</th></tr></thead>
+              <tbody>{visible.map((p) => <tr key={p.id} className={sel.includes(p.id) ? "is-sel" : ""}>
+                {canEdit && <td><input type="checkbox" checked={sel.includes(p.id)} onChange={() => setSel((x) => x.includes(p.id) ? x.filter((y) => y !== p.id) : [...x, p.id])} aria-label={"Välj " + p.name} /></td>}
+                <td><button className="ats-jobcard-title" onClick={() => setOpen(p.id)}>{p.name || "Namnlös"}</button>{p.internal && <span className="ats-jobbadge is-blue">Intern</span>}<div className="ats-mono ats-muted">{p.email}</div></td>
+                <td>{p._n}</td>
+                <td>{p._score != null ? p._score + "%" : "—"}</td>
+                <td>{p._qual ? <QualChip q={p._qual} size="sm" /> : <span className="ats-muted">—</span>}</td>
+                <td>{(p.tags || []).slice(0, 2).map((id) => { const t = tagOf(id); return t ? <span key={id} className="ats-jtag" style={{ background: t.color + "1f", color: t.color }}>{t.name}</span> : null; })}</td>
+                <td>{nameOf(p.ownerId) || <span className="ats-muted">Ingen</span>}</td>
+                <td className="ats-mono">{timeAgo(p._last)}</td>
+              </tr>)}</tbody></table></div>
+            : <div className="ats-crm-cards">{visible.map((p) => <div key={p.id} className={"ats-crm-card" + (sel.includes(p.id) ? " is-sel" : "")}>
+              {canEdit && <input type="checkbox" checked={sel.includes(p.id)} onChange={() => setSel((x) => x.includes(p.id) ? x.filter((y) => y !== p.id) : [...x, p.id])} aria-label={"Välj " + p.name} />}
+              <span className="ats-avatar">{(p.name || "?")[0].toUpperCase()}</span>
+              <div className="ats-crm-m">
+                <button className="ats-jobcard-title" onClick={() => setOpen(p.id)}>{p.name || "Namnlös"}</button>
+                <span className="ats-mono">{p.email}</span>
+                <div className="ats-pp-chips">{(p.tags || []).map((id) => { const t = tagOf(id); return t ? <span key={id} className="ats-jtag" style={{ background: t.color + "1f", color: t.color }}>{t.name}</span> : null; })}</div>
+              </div>
+              <div className="ats-crm-r"><b>{p._score != null ? p._score + "%" : "—"}</b><span>{p._n} ansökningar</span></div>
+            </div>)}</div>}
+        {visible.length < shown.length && <button className="ats-ghost ats-cs-more" onClick={() => setPage(page + 1)}>Visa fler ({shown.length - visible.length} kvar)</button>}
+      </>}
+
+    {open && (() => { const p = people.find((x) => x.id === open); if (!p) return null;
+      return <Modal title="" onClose={() => setOpen(null)} wide><PersonProfile p={p} state={state} D={D} me={me} showToast={showToast} onClose={() => setOpen(null)} setDetailId={setDetailId} /></Modal>; })()}
+
+    {merge && <Modal title="Slå samman kandidater" onClose={() => setMerge(null)} wide><div className="ats-erase">
+      <p><b>{merge.a.name || merge.a.email}</b> blir huvudprofil. <b>{merge.b.name || merge.b.email}</b> slås in i den. <b>Alla ansökningar, bedömningar, scoring, anteckningar och tidslinjer följer med</b> — ingenting raderas, och sammanslagningen kan återställas.</p>
+      <div className="ats-erase-note"><Info size={14} /> {merge.reasons.join(" · ")}</div>
+      <table className="ats-jtable ats-cmp-t"><thead><tr><th>Uppgift</th><th>{merge.a.name || "A"}</th><th>{merge.b.name || "B"}</th><th>Behåll</th></tr></thead>
+        <tbody>{[["name", "Namn"], ["email", "E-post"], ["phone", "Telefon"]].map(([k, l]) => <tr key={k} className={merge.a[k] !== merge.b[k] ? "is-diff" : ""}>
+          <th>{l}</th><td>{merge.a[k] || "—"}</td><td>{merge.b[k] || "—"}</td>
+          <td><div className="ats-chipset"><button className={"ats-selchip" + ((mKeep[k] || "a") === "a" ? " is-on" : "")} onClick={() => setMKeep({ ...mKeep, [k]: "a" })}>A</button><button className={"ats-selchip" + (mKeep[k] === "b" ? " is-on" : "")} onClick={() => setMKeep({ ...mKeep, [k]: "b" })}>B</button></div></td>
+        </tr>)}
+        <tr><th>Ansvarig</th><td>{nameOf(merge.a.ownerId) || "—"}</td><td>{nameOf(merge.b.ownerId) || "—"}</td>
+          <td><div className="ats-chipset"><button className={"ats-selchip" + ((mKeep.owner || "a") === "a" ? " is-on" : "")} onClick={() => setMKeep({ ...mKeep, owner: "a" })}>A</button><button className={"ats-selchip" + (mKeep.owner === "b" ? " is-on" : "")} onClick={() => setMKeep({ ...mKeep, owner: "b" })}>B</button></div></td></tr>
+        <tr><th>Taggar och pooler</th><td colSpan={3}>Slås ihop från båda profilerna</td></tr></tbody></table>
+      <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setMerge(null)}>Avbryt</button><button className="ats-btn-primary" onClick={doMerge}><GitCompare size={15} /> Slå samman</button></div>
+    </div></Modal>}
+
+    {bulk && <Modal title="Bulkåtgärd" onClose={() => setBulk(null)}><div className="ats-erase">
+      <p>{sel.length} kandidater är valda. Arkiverade profiler hoppas över och redovisas efteråt.</p>
+      <div className="ats-bulkopts">
+        {bulk === "tag_add" && (state.ctags || []).filter((t) => !t.archived).map((t) => <button key={t.id} className="ats-ghost" onClick={() => runBulk("tag_add", t.id)}>{t.name}</button>)}
+        {bulk === "pool_add" && (state.pools || []).filter((x) => !x.archived).map((x) => <button key={x.id} className="ats-ghost" onClick={() => runBulk("pool_add", x.id)}>{x.name}</button>)}
+        {bulk === "owner" && <>{state.team.map((m) => <button key={m.id} className="ats-ghost" onClick={() => runBulk("owner", m.id)}>{m.name}</button>)}<button className="ats-ghost" onClick={() => runBulk("owner", "")}>Ingen</button></>}
+      </div>
+    </div></Modal>}
+    {bulkRes && <Modal title="Resultat" onClose={() => setBulkRes(null)}><div className="ats-erase">
+      <p><b>{bulkRes.total - ((state._bulkBlocked || []).length)}</b> av {bulkRes.total} kandidater uppdaterades.</p>
+      {(state._bulkBlocked || []).length > 0 && <ul className="ats-blocked">{state._bulkBlocked.map((b, i) => <li key={i}><b>{b.name}</b><span>{b.why}</span></li>)}</ul>}
+      <div className="ats-erase-actions"><button className="ats-btn-primary" onClick={() => setBulkRes(null)}>Stäng</button></div>
+    </div></Modal>}
+
+    {addPerson && <Modal title="Ny kandidat" onClose={() => setAddPerson(false)}><div className="ats-erase">
+      <p>Skapa en profil manuellt — till exempel för en rekommendation eller en intern kandidat. Kandidaten behöver ingen ansökan.</p>
+      <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={np.name} onChange={(e) => setNp({ ...np, name: e.target.value })} autoFocus /></label>
+      <div className="ats-tpl-two">
+        <label className="ats-field"><span className="ats-field-l">E-post</span><input className="ats-inp" value={np.email} onChange={(e) => setNp({ ...np, email: e.target.value })} /></label>
+        <label className="ats-field"><span className="ats-field-l">Telefon</span><input className="ats-inp" value={np.phone} onChange={(e) => setNp({ ...np, phone: e.target.value })} /></label>
+      </div>
+      {np.email && people.some((p) => p.emailNorm === normEmail(np.email)) && <div className="ats-sv-warn is-warn"><AlertTriangle size={14} /> En kandidat med den e-postadressen finns redan.</div>}
+      <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setAddPerson(false)}>Avbryt</button>
+        <button className="ats-btn-primary" disabled={!np.name.trim()} onClick={() => { D({ type: "PERSON_ADD", ...np }); setNp({ name: "", email: "", phone: "" }); setAddPerson(false); showToast({ kind: "ok", msg: "Kandidat skapad" }); }}><Plus size={15} /> Skapa</button></div>
+    </div></Modal>}
+
+    {tagPanel && <Modal title="Kandidattaggar" onClose={() => setTagPanel(false)}><div className="ats-erase">
+      <p>Kandidattaggar är separata från jobbtaggar och följer personen, inte tjänsten.</p>
+      <div className="ats-tagadd">
+        <input className="ats-inp" value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Ny tagg…" />
+        <select className="ats-inp" value={newTagCat} onChange={(e) => setNewTagCat(e.target.value)}>{Object.entries(CTAG_CATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+        <button className="ats-btn-primary is-sm" disabled={!newTag.trim() || (state.ctags || []).some((t) => normTag(t.name) === normTag(newTag))} onClick={() => { D({ type: "CTAG_ADD", name: newTag, cat: newTagCat }); setNewTag(""); }}><Plus size={14} /></button>
+      </div>
+      {newTag.trim() && (state.ctags || []).some((t) => normTag(t.name) === normTag(newTag)) && <span className="ats-af-err"><CircleAlert size={13} /> Taggen finns redan.</span>}
+      <div className="ats-taglist">{(state.ctags || []).map((t) => <div key={t.id} className="ats-tagrow">
+        <span className="ats-jtag" style={{ background: t.color + "1f", color: t.color }}>{t.name}</span>
+        <span className="ats-muted">{CTAG_CATS[t.cat]}</span>
+        <div className="ats-tagcolors">{TAG_COLORS.map((c) => <button key={c} className={"ats-tagcolor" + (t.color === c ? " is-on" : "")} style={{ background: c }} onClick={() => D({ type: "CTAG_SET", id: t.id, patch: { color: c } })} aria-label={"Färg " + c} />)}</div>
+        <span className="ats-muted">{people.filter((p) => (p.tags || []).includes(t.id)).length} st</span>
+        <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => D({ type: "CTAG_DEL", id: t.id })} aria-label="Ta bort"><Trash2 size={13} /></button>
+      </div>)}</div>
+      {(state.ctags || []).length === 0 && <div className="ats-col-empty" style={{ padding: 24 }}>Inga kandidattaggar än.</div>}
+    </div></Modal>}
+
+    {poolPanel && <Modal title="Talangpooler" onClose={() => setPoolPanel(false)}><div className="ats-erase">
+      <p>Samla kandidater för framtida möjligheter, kompetensområden, tidigare finalister eller säsongsarbete.</p>
+      <div className="ats-tagadd">
+        <input className="ats-inp" value={newPool} onChange={(e) => setNewPool(e.target.value)} placeholder="Ny pool, t.ex. Framtida säljare" />
+        <button className="ats-btn-primary is-sm" disabled={!newPool.trim()} onClick={() => { D({ type: "POOL_ADD", name: newPool.trim() }); setNewPool(""); }}><Plus size={14} /></button>
+      </div>
+      <div className="ats-taglist">{(state.pools || []).map((x) => <div key={x.id} className="ats-tagrow">
+        <input className="ats-inp" value={x.name} onChange={(e) => D({ type: "POOL_SET", id: x.id, patch: { name: e.target.value } })} />
+        <select className="ats-select is-sm" value={x.visibility} onChange={(e) => D({ type: "POOL_SET", id: x.id, patch: { visibility: e.target.value } })}>{Object.entries(POOL_VIS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+        <span className="ats-muted">{people.filter((p) => (p.pools || []).includes(x.id)).length} st</span>
+        <button className="ats-ghost is-sm" onClick={() => D({ type: "POOL_DUP", id: x.id })} aria-label="Duplicera"><Copy size={13} /></button>
+        <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => D({ type: "POOL_DEL", id: x.id })} aria-label="Ta bort"><Trash2 size={13} /></button>
+      </div>)}</div>
+      {(state.pools || []).length === 0 && <div className="ats-col-empty" style={{ padding: 24 }}>Inga pooler än.</div>}
     </div></Modal>}
   </div>;
 }
@@ -8236,6 +8824,50 @@ section.ats-cs-cta p{font-size:17px;opacity:.9;margin-bottom:28px}
   .ats-cmp-t th:first-child{width:110px;font-size:12px}
   .ats-cmp-t{min-width:520px}
   .ats-rc-bar{max-width:none}
+}
+
+/* ---- Kandidatbank (CRM) ---- */
+.ats-avatar.is-lg{width:56px;height:56px;font-size:22px;flex-shrink:0}
+.ats-crm-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:10px}
+.ats-crm-card{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;transition:.14s}
+.ats-crm-card:hover{border-color:var(--petrol-soft)}
+.ats-crm-card.is-sel{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-crm-card input[type=checkbox]{width:17px;height:17px;accent-color:var(--petrol);flex-shrink:0}
+.ats-crm-m{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.ats-crm-m .ats-mono{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.ats-crm-r{text-align:right;flex-shrink:0}
+.ats-crm-r b{display:block;font-family:'Bricolage Grotesque';font-size:17px;color:var(--petrol)}
+.ats-crm-r span{font-size:11px;color:var(--muted)}
+.ats-dup-diffs{display:flex;flex-wrap:wrap;gap:12px;margin-top:4px}
+.ats-dup-diffs span{font-size:12px;color:var(--sub);font-family:'IBM Plex Mono',monospace}
+.ats-dup-diffs b{color:var(--muted);font-weight:600}
+/* Kandidatprofil */
+.ats-pp{display:flex;flex-direction:column;gap:14px;max-height:76vh;overflow-y:auto;padding-right:4px}
+.ats-pp-h{display:flex;align-items:flex-start;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.ats-pp-id{flex:1;min-width:0}
+.ats-pp-id h2{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-family:'Bricolage Grotesque';font-weight:600;font-size:22px;letter-spacing:-.018em}
+.ats-pp-id>.ats-mono{display:block;font-size:12.5px;color:var(--muted);margin-top:4px}
+.ats-pp-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ats-pp-acts{display:flex;gap:6px;flex-shrink:0}
+.ats-pp-body{display:flex;flex-direction:column;gap:14px}
+.ats-pp-newapp{display:flex;gap:8px;margin-top:12px}
+.ats-pp-newapp .ats-inp{flex:1}
+.ats-pp-note-add{display:flex;flex-direction:column;gap:8px}
+.ats-pp-note-r{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.ats-pp-notes{display:flex;flex-direction:column;gap:8px}
+.ats-pp-note{padding:12px 14px;background:var(--paper2);border-radius:11px;border-left:3px solid transparent}
+.ats-pp-note.is-pin{border-left-color:var(--petrol);background:var(--petrol-soft)}
+.ats-pp-note.is-sens{border-left-color:var(--brick)}
+.ats-pp-note-h{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+.ats-pp-note-h b{font-size:13px}
+.ats-pp-note-h span{font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.ats-pp-note-a{margin-left:auto;display:flex;gap:2px}
+.ats-pp-note p{font-size:14px;line-height:1.6;color:var(--ink);white-space:pre-wrap}
+@media (max-width:640px){
+  .ats-crm-cards{grid-template-columns:1fr}
+  .ats-pp-h{flex-wrap:wrap}
+  .ats-pp-acts{width:100%;justify-content:flex-end}
+  .ats-pp-newapp{flex-direction:column}
 }
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
