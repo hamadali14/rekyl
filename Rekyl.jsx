@@ -508,7 +508,7 @@ function reducer(state, ac) {
     case "CAREER_PAGE_ADD": { const p = { id: "p" + uid(), slug: slugify(ac.name) || "sida-" + uid().slice(0, 3), name: ac.name, seoTitle: "", seoDesc: "", published: false, inNav: true, blocks: [newBlock("hero"), newBlock("text")] }; return { ...state, career: { ...state.career, pages: [...state.career.pages, p] } }; }
     case "CAREER_PAGE_SET": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => p.id === ac.id ? { ...p, ...ac.patch } : p) } };
     case "CAREER_PAGE_DEL": return { ...state, career: { ...state.career, pages: state.career.pages.filter((p) => p.id !== ac.id || p.id === "p_start") } };
-    case "CAREER_BLOCK_ADD": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => p.id === ac.pageId ? { ...p, blocks: [...p.blocks, newBlock(ac.type)] } : p) } };
+    case "CAREER_BLOCK_ADD": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => p.id === ac.pageId ? { ...p, blocks: [...p.blocks, newBlock(ac.block)] } : p) } };
     case "CAREER_BLOCK_SET": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => p.id === ac.pageId ? { ...p, blocks: p.blocks.map((b) => b.id === ac.id ? { ...b, ...ac.patch } : b) } : p) } };
     case "CAREER_BLOCK_DEL": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => p.id === ac.pageId ? { ...p, blocks: p.blocks.filter((b) => b.id !== ac.id) } : p) } };
     case "CAREER_BLOCK_DUP": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => { if (p.id !== ac.pageId) return p; const i = p.blocks.findIndex((b) => b.id === ac.id); if (i < 0) return p; const c = { ...JSON.parse(JSON.stringify(p.blocks[i])), id: "b" + uid() }; const bs = [...p.blocks]; bs.splice(i + 1, 0, c); return { ...p, blocks: bs }; }) } };
@@ -522,7 +522,7 @@ function reducer(state, ac) {
     case "PIPE_SET": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
       return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...j, pipeline: { ...j.pipeline, ...ac.patch, dirty: true, updatedAt: Date.now() } }, "pipeline", ac.note || "Pipeline ändrad", who) : j) }; }
     case "STAGE_ADD": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
-      const p = jj.pipeline; const st = mkStage({ key: "k" + uid(), name: ac.name || "Nytt steg", type: ac.type || "custom", color: STAGE_COLORS[p.stages.length % STAGE_COLORS.length] });
+      const p = jj.pipeline; const st = mkStage({ key: "k" + uid(), name: ac.name || "Nytt steg", type: ac.stageType || "custom", color: STAGE_COLORS[p.stages.length % STAGE_COLORS.length] });
       st.order = Math.max(...p.stages.filter((x) => !STAGE_TYPES[x.type].final).map((x) => x.order), -1) + 1;
       const stages = [...p.stages.map((x) => x.order >= st.order && !STAGE_TYPES[x.type].final ? x : x), st].map((x) => x);
       return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...j, pipeline: { ...p, stages, dirty: true } }, "pipeline", "Steg tillagt: " + st.name, who) : j) }; }
@@ -1629,7 +1629,7 @@ function migrateJob(j) {
   const legacy = !(j._m >= 2);
   const status = legacy ? (OLD_STATUS[j.status] || (JOB_LIFE[j.status] ? j.status : "draft")) : (JOB_LIFE[j.status] ? j.status : "draft");
   return {
-    publicTitle: "", ref: "", unit: "", extent: "", category: "", priority: "normal",
+    unit: "", extent: "", category: "", priority: "normal",
     ownerId: null, managerId: null, teamIds: [], tags: [], internal: false,
     publishedAt: null, closedAt: null, closedReason: "", hiredId: null, activity: [],
     updatedAt: j.createdAt || Date.now(),
@@ -1804,7 +1804,7 @@ function CareerView({ state, D, me, showToast }) {
     </div>
 
     {adding && <Modal title="Lägg till block" onClose={() => setAdding(false)} wide><div className="ats-cb-picker">
-      {BLOCK_ORDER.map((t) => { const I = IC[BLOCK_DEFS[t].icon] || Blocks; return <button key={t} className="ats-cb-pick" onClick={() => { D({ type: "CAREER_BLOCK_ADD", pageId: page.id, type: t }); setAdding(false); }}>
+      {BLOCK_ORDER.map((t) => { const I = IC[BLOCK_DEFS[t].icon] || Blocks; return <button key={t} className="ats-cb-pick" onClick={() => { D({ type: "CAREER_BLOCK_ADD", pageId: page.id, block: t }); setAdding(false); }}>
         <I size={18} /> <b>{BLOCK_DEFS[t].label}</b>
       </button>; })}
     </div></Modal>}
@@ -3193,7 +3193,7 @@ function PipeBuilder({ job, state, D, showToast }) {
       <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Teknisk intervju" autoFocus /></label>
       <label className="ats-field"><span className="ats-field-l">Stegtyp</span><select className="ats-inp" value={newType} onChange={(e) => setNewType(e.target.value)}>{Object.entries(STAGE_TYPES).filter(([, v]) => !v.final).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>
       <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setAdding(false)}>Avbryt</button>
-        <button className="ats-btn-primary" disabled={!newName.trim()} onClick={() => { D({ type: "STAGE_ADD", jobId: job.id, name: newName.trim(), type: newType }); setNewName(""); setAdding(false); }}><Plus size={15} /> Lägg till</button></div>
+        <button className="ats-btn-primary" disabled={!newName.trim()} onClick={() => { D({ type: "STAGE_ADD", jobId: job.id, name: newName.trim(), stageType: newType }); setNewName(""); setAdding(false); }}><Plus size={15} /> Lägg till</button></div>
     </div></Modal>}
 
     {archFor && <Modal title="Steget innehåller kandidater" onClose={() => setArchFor(null)}><div className="ats-erase">
