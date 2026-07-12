@@ -53,6 +53,12 @@ function sbSetOrg(u) { SB_ORG = u || null; }
 async function sbRpc(fn, args) { const r = await sbFetch(SB_URL + "/rest/v1/rpc/" + fn, "POST", sbHead, JSON.stringify(args || {})); const d = await r.json().catch(() => null); if (!r.ok) throw new Error((d && (d.message || d.hint || d.error)) || "Serverfel"); return d; }
 async function sbRefresh(refresh_token) { try { const r = await fetch(SB_URL + "/auth/v1/token?grant_type=refresh_token", { method: "POST", headers: { apikey: SB_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ refresh_token }) }); const d = await r.json().catch(() => ({})); if (r.ok && d.access_token) return d; return null; } catch (e) { return null; } }
 
+/* ---- E-postutskick via serverless-funktion (Netlify) ---- */
+const MAIL_FN = "/.netlify/functions/send-email";
+const MAIL_INFLIGHT = new Set();
+async function mailConfig() { try { const r = await fetch(MAIL_FN, { headers: { Accept: "application/json" } }); if (!r.ok) return { configured: false }; const d = await r.json(); return d && typeof d === "object" ? d : { configured: false }; } catch (e) { return { configured: false }; } }
+async function sendMail(payload) { try { const r = await sbFetch(MAIL_FN, "POST", () => ({ "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }), JSON.stringify(payload)); const d = await r.json().catch(() => ({})); if (!r.ok) return { ok: false, error: (d && d.error) || ("Utskicksfel (" + r.status + ")") }; return { ok: true, id: (d && d.id) || null }; } catch (e) { return { ok: false, error: "Ingen kontakt med utskickstjänsten." }; } }
+
 
 /* ================================================================== *
  *  REKYL v4 — deterministisk ATS, produktpolerad. En fil.
@@ -292,8 +298,9 @@ function timeAgo(ts) { const h = Math.round((Date.now() - ts) / 3600000); if (h 
 function initials(name) { return (name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
 function tierOf(c) { return c.knockout ? "ko" : c.total >= 78 ? "high" : c.total >= 55 ? "mid" : "low"; }
 function can(role, what) { const R = { recruiter: ["decide", "edit", "comment", "export", "message", "vote"], admin: ["decide", "edit", "comment", "export", "message", "vote", "settings"], manager: ["vote", "comment", "export", "message", "decide"], viewer: ["export"] }; return (R[role] || []).includes(what); }
-const TL_LABEL = { application_received: "Ansökan mottagen", score_computed: "Matchning beräknad", knockout: "Diskvalificerad", status_change: "Status ändrad", message_sent: "Mejl köat", note: "Kommentar", completion_requested: "Komplettering begärd", auto_rule: "Auto-regel", vote: "Team review", hired: "Anställd" };
+const TL_LABEL = { application_received: "Ansökan mottagen", score_computed: "Matchning beräknad", knockout: "Diskvalificerad", status_change: "Status ändrad", message_sent: "Mejl köat", message_delivered: "Mejl skickat", note: "Kommentar", completion_requested: "Komplettering begärd", auto_rule: "Auto-regel", vote: "Team review", hired: "Anställd" };
 const validEmail = (e) => !!e && /.+@.+\..+/.test(e);
+const MSG_LABEL = { queued: "Köad", sending: "Skickar…", sent: "Skickad", failed: "Fel" };
 
 /* ---------- Meddelandemallar (variabler enligt spec) ---------- */
 const DEFAULT_TEMPLATES = [
@@ -362,6 +369,13 @@ function reducer(state, ac) {
       const msg = ac.subject ? { id: uid(), candidateId: cand.id, candidateName: cand.name, jobId: job.id, to: cand.email || "(saknar e-post)", subject: ac.subject, body: ac.body, trigger: ac.trigger || "manual", tplName: ac.trigger || "manual", status: validEmail(cand.email) ? "queued" : "failed", error: validEmail(cand.email) ? null : "Saknar giltig e-post", at: Date.now(), by: who } : buildMessage(state, cand, job, ac.trigger, who);
       const s2 = mapCand(state, ac.id, (c) => addTL(c, ac.trigger === "completion" ? "completion_requested" : "message_sent", `${msg.subject}${msg.status === "failed" ? " · FEL" : " · köad"}`, who));
       return { ...s2, messages: [msg, ...state.messages], log: withLog(s2, "Mejl", `${msg.trigger} · ${cand.name}`) };
+    }
+    case "MSG_STATUS": {
+      const prev = state.messages.find((m) => m.id === ac.id); if (!prev) return state;
+      const messages = state.messages.map((m) => m.id === ac.id ? { ...m, status: ac.status, error: ac.error || null, sentAt: ac.status === "sent" ? Date.now() : (m.sentAt || null), providerId: ac.providerId || m.providerId || null } : m);
+      let s2 = { ...state, messages };
+      if (ac.status === "sent" && prev.candidateId) s2 = mapCand(s2, prev.candidateId, (c) => addTL(c, "message_delivered", prev.subject, null));
+      return s2;
     }
     case "SET_ACTIVE_JOB": return { ...state, activeJobId: ac.id };
     case "SET_JOB_STATUS": { const jj = state.jobs.find((j) => j.id === ac.jobId); const s2 = { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? { ...j, status: ac.status } : j) }; return { ...s2, log: withLog(s2, "Tjänst: " + (JOB_STATUS[ac.status] || ac.status), jj ? jj.title : "") }; }
@@ -662,6 +676,8 @@ export default function App() {
   const [authView, setAuthView] = useState("landing");
   const [cloudOk, setCloudOk] = useState(true);
   const [cloudErr, setCloudErr] = useState(null);
+  const [mail, setMail] = useState({ configured: false, provider: null, from: null, checked: false });
+  const bootRef = useRef(Date.now());
   const setOrg = (o) => { setOrgState(o); store.set("rekyl_org", o); if (o) sbSetOrg(o.id); };
   const login = (sv) => { const acct = store.get("rekyl_account", null); if (acct && sv.userId && acct !== sv.userId) { store.set("rekyl_state", null); store.set("rekyl_org", null); setOrgState(null); dispatch({ type: "LOAD_STATE", data: {} }); } store.set("rekyl_account", sv.userId); store.set("rekyl_session", sv); sbSetAuth(sv.token, sv.refresh, sv.exp); setOrgChecked(false); setLoaded(false); setCloudOk(true); setSession(sv); };
   const logout = () => { store.set("rekyl_session", null); store.set("rekyl_state", null); store.set("rekyl_org", null); store.set("rekyl_account", null); sbSetAuth(null, null, 0); sbSetOrg(null); setLoaded(false); setOrgState(null); setOrgChecked(true); setCloudOk(true); setSession(null); dispatch({ type: "LOAD_STATE", data: {} }); dispatch({ type: "SET_TEAM", team: [] }); };
@@ -670,6 +686,9 @@ export default function App() {
   useEffect(() => { if (!sbEnabled || !session) { setOrgChecked(true); return; } let alive = true; (async () => { const rows = await sbGet("members?user_id=eq." + session.userId + "&select=org_id,role"); if (!alive) return; if (rows === null) { setCloudOk(false); if (org) sbSetOrg(org.id); setOrgChecked(true); return; } setCloudOk(true); if (rows.length) { const o = { id: rows[0].org_id, role: rows[0].role }; sbSetOrg(o.id); setOrgState(o); store.set("rekyl_org", o); } else { store.set("rekyl_org", null); setOrgState(null); sbSetOrg(null); } setOrgChecked(true); })(); return () => { alive = false; }; }, [session && session.userId]);
   useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } if (!org) return; let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data"); if (!alive) return; if (rows === null) setCloudOk(false); else { setCloudOk(true); if (rows.length && rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); } dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: org.role }); setLoaded(true); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
   useEffect(() => { if (!sbEnabled || !session || !org || !loaded) return; const t = setTimeout(async () => { const ok = await sbUpsert("org_state", { org_id: org.id, data: state, updated_at: new Date().toISOString() }); setCloudOk(ok); setCloudErr(ok ? null : sbLastError()); }, 1600); return () => clearTimeout(t); }, [state, loaded, org && org.id]);
+  useEffect(() => { if (!session) return; let alive = true; (async () => { const c = await mailConfig(); if (alive) setMail({ configured: !!c.configured, provider: c.provider || null, from: c.from || null, checked: true }); })(); return () => { alive = false; }; }, [session && session.userId]);
+  const sendMailNow = useCallback(async (m) => { if (!m || MAIL_INFLIGHT.has(m.id) || !validEmail(m.to)) return { ok: false }; MAIL_INFLIGHT.add(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: "sending" }); const res = await sendMail({ to: m.to, subject: m.subject, body: m.body, fromName: state.org.companyName, replyTo: state.org.hrEmail }); MAIL_INFLIGHT.delete(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: res.ok ? "sent" : "failed", error: res.error || null, providerId: res.id || null }); return res; }, [state.org.companyName, state.org.hrEmail]);
+  useEffect(() => { if (!mail.configured || !session || !org || !loaded) return; state.messages.filter((m) => m.status === "queued" && m.at >= bootRef.current && validEmail(m.to) && !MAIL_INFLIGHT.has(m.id)).forEach((m) => sendMailNow(m)); }, [state.messages, mail.configured, session, org, loaded, sendMailNow]);
   useEffect(() => { store.set("rekyl_state", state); }, [state]);
   useEffect(() => { if (!session || !org || !loaded || !state.jobs.length) return; if (store.get("rekyl_tour_done", false)) return; const t = setTimeout(() => setTourOpen(true), 700); return () => clearTimeout(t); }, [session && session.userId, org && org.id, loaded, state.jobs.length]);
 
@@ -686,7 +705,7 @@ export default function App() {
 
   useEffect(() => { if (!sbEnabled || !job) return; let alive = true; const pull = async () => { const rows = await sbGet("applications?job_slug=eq." + encodeURIComponent(job.slug) + "&select=*&order=created_at.desc"); if (alive && rows) D({ type: "SYNC_APPLICATIONS", slug: job.slug, rows }); }; pull(); const t = setInterval(pull, 20000); return () => { alive = false; clearInterval(t); }; }, [job && job.slug]);
 
-  const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, setNewJob, allScored, dupIndex, onLogout: logout, session };
+  const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, setNewJob, allScored, dupIndex, onLogout: logout, session, mail, sendMailNow };
   const primary = NAV.slice(0, 5), more = NAV.slice(5);
 
   const pubMatch = typeof window !== "undefined" ? window.location.pathname.match(/^\/j\/([^/]+)/) : null;
@@ -1461,10 +1480,13 @@ function TeamManagePanel({ state, me, D }) {
       : <p className="ats-builder-note"><ShieldCheck size={12} /> Din roll: <b>{ROLE_LABEL[me.role]}</b>. Kontakta en admin för att ändra behörigheter eller bjuda in fler.</p>}
   </div>;
 }
-function TeamView({ state, me, D }) {
+function TeamView({ state, me, D, mail, sendMailNow, showToast }) {
   const perms = [["decide", "Beslut"], ["vote", "Team review"], ["message", "Mejl"], ["edit", "Redigera"], ["comment", "Kommentera"], ["export", "Export"]];
   const msgs = state.messages.slice(0, 24);
   const cName = (id) => state.candidates.find((c) => c.id === id)?.name || "—";
+  const queued = state.messages.filter((m) => (m.status === "queued" || m.status === "failed") && validEmail(m.to));
+  const [bulk, setBulk] = useState(false);
+  const sendAllQueued = async () => { setBulk(true); let okN = 0; for (const m of queued) { const r = await sendMailNow(m); if (r && r.ok) okN++; } setBulk(false); showToast({ kind: okN === queued.length ? "ok" : "warn", msg: okN + " av " + queued.length + " mejl skickade" }); };
   return (
     <div className="ats-view">
       <PageHeader title="Team & logg" meta={<><span>{state.team.length} personer</span><Dot /><span>{state.log.length} händelser</span></>} />
@@ -1481,15 +1503,18 @@ function TeamView({ state, me, D }) {
         </div>
       </div>
       <div className="ats-panel"><div className="ats-panel-h"><h2>Mejllogg</h2><span className="ats-summono">{state.messages.length} meddelanden</span></div>
-        <div className="ats-honestbar"><Info size={13} /> Varje mejl loggas här och i kandidatens timeline med sann status. Status <b>Köad</b> betyder att mejlet är berett för utskick via appens backend (SMTP-modulen) — konfigurera SMTP under Inställningar. Ingen status visar "levererad" forran backend bekraftar leverans.</div>
+        {mail.configured
+          ? <div className="ats-mailbar is-on"><CheckCircle2 size={14} /> Utskick aktivt via <b>{mail.provider}</b> — nya beslut skickar mejlet direkt. Status nedan är den verkliga statusen från leverantören.{queued.length > 0 && can(me.role, "message") && <button className="ats-ghost is-sm" disabled={bulk} onClick={sendAllQueued}><Send size={13} /> Skicka {queued.length} köade</button>}</div>
+          : <div className="ats-honestbar"><Info size={13} /> Utskick är inte aktiverat — mejlen köas här men skickas inte. Aktivera under <b>Inställningar → Mejlutskick</b>. Ingen status visar "skickad" förrän leverantören bekräftat.</div>}
         {msgs.length === 0 ? <div className="ats-col-empty" style={{ padding: 20 }}>Inga mejl loggade än. Swipa i kön så köas rätt mejl automatiskt.</div>
-          : <div className="ats-msglog"><div className="ats-msglog-head"><span>Status</span><span>Mottagare</span><span>Ämne</span><span>Mall / trigger</span><span>Tid</span></div>{msgs.map((m) => <div key={m.id} className="ats-msglog-row"><span className={"ats-msgstatus is-" + m.status}>{m.status === "queued" ? "Köad" : "Fel"}</span><span className="ats-msglog-to">{cName(m.candidateId)}<small>{m.to}</small></span><span className="ats-msglog-subj">{m.subject}{m.error && <small className="ats-msgerr">{m.error}</small>}</span><span className="ats-msglog-tpl">{m.tplName}<small>{m.trigger}</small></span><span className="ats-msglog-time">{timeAgo(m.at)}</span></div>)}</div>}
+          : <div className="ats-msglog"><div className="ats-msglog-head"><span>Status</span><span>Mottagare</span><span>Ämne</span><span>Mall / trigger</span><span>Tid</span><span></span></div>{msgs.map((m) => <div key={m.id} className="ats-msglog-row"><span className={"ats-msgstatus is-" + m.status}>{MSG_LABEL[m.status] || m.status}</span><span className="ats-msglog-to">{cName(m.candidateId)}<small>{m.to}</small></span><span className="ats-msglog-subj">{m.subject}{m.error && <small className="ats-msgerr">{m.error}</small>}</span><span className="ats-msglog-tpl">{m.tplName}<small>{m.trigger}</small></span><span className="ats-msglog-time">{m.status === "sent" && m.sentAt ? timeAgo(m.sentAt) : timeAgo(m.at)}</span><span className="ats-msglog-act">{(m.status === "queued" || m.status === "failed") && validEmail(m.to) && mail.configured && can(me.role, "message") && <button className="ats-ghost is-sm" title="Skicka nu" onClick={() => sendMailNow(m)}><Send size={12} /></button>}</span></div>)}</div>}
       </div>
     </div>
   );
 }
 
 /* ===================== INSTALLNINGAR ===================== */
+const MAIL_ENV = 'MAIL_PROVIDER=brevo\nBREVO_API_KEY=din-api-nyckel\nMAIL_FROM=noreply@dindoman.se';
 const VAR_CHIPS = ["candidateName", "jobTitle", "companyName", "hrName", "hrEmail", "missingField", "interviewTime", "rejectionReason"];
 function RetentionPanel({ state, D, showToast, isAdmin }) {
   const months = state.org.retentionMonths || 0;
@@ -1503,7 +1528,7 @@ function RetentionPanel({ state, D, showToast, isAdmin }) {
     <p className="ats-builder-note"><ShieldCheck size={12} /> Kandidaters uppgifter lagras inom EU och kan raderas på begäran (rätt att bli glömd) via varje kandidats panel. Sätt en lagringstid ovan för att regelbundet rensa gamla ansökningar. Samtycke registreras vid varje ansökan.</p>
   </div>;
 }
-function SettingsView({ state, D, me, job, cands, showToast, onLogout, session }) {
+function SettingsView({ state, D, me, job, cands, showToast, onLogout, session, mail }) {
   const canEdit = can(me.role, "edit");
   const [selId, setSelId] = useState(state.templates[0]?.id);
   const [prevId, setPrevId] = useState(cands[0]?.id);
@@ -1513,7 +1538,8 @@ function SettingsView({ state, D, me, job, cands, showToast, onLogout, session }
   const patchTpl = (p) => D({ type: "UPDATE_TEMPLATE", id: tpl.id, patch: p });
   const previewCand = cands.find((c) => c.id === prevId) || cands[0];
   const vars = previewCand ? tplVars(state, previewCand, job) : {};
-  const envBlock = `# Rekyl SMTP - lägg i .env.local (backend)\nSMTP_HOST=smtp.din-leverantör.se\nSMTP_PORT=587\nSMTP_USER=${org.fromEmail}\nSMTP_PASS=din-smtp-nyckel\nSMTP_FROM="${org.companyName} <${org.fromEmail}>"\nSMTP_REPLY_TO=${org.hrEmail}\nAPP_URL=${org.appUrl}`;
+  const [testBusy, setTestBusy] = useState(false); const [testRes, setTestRes] = useState(null);
+  const sendTest = async () => { setTestBusy(true); setTestRes(null); const to = session && session.email; const res = await sendMail({ to, subject: "Testmejl från Rekyl", body: "Detta är ett testmejl från " + org.companyName + ".\n\nOm du läser det här fungerar utskicket. Svar går till " + org.hrEmail + ".", fromName: org.companyName, replyTo: org.hrEmail }); setTestBusy(false); setTestRes(res.ok ? { ok: true, msg: "Testmejl skickat till " + to } : { ok: false, msg: res.error || "Kunde inte skicka" }); };
   return (
     <div className="ats-view">
       <PageHeader title="Inställningar" meta={<><span>e-post</span><Dot /><span>mallar</span><Dot /><span>företag</span></>} />
@@ -1523,13 +1549,22 @@ function SettingsView({ state, D, me, job, cands, showToast, onLogout, session }
         <div className="ats-panel"><div className="ats-panel-h"><h2>Företag & avsändare</h2></div>
           <label className="ats-field"><span className="ats-field-l">Företagsnamn</span><input value={org.companyName} disabled={!canEdit} onChange={(e) => setOrg({ companyName: e.target.value })} /></label>
           <div className="ats-tpl-two"><label className="ats-field"><span className="ats-field-l">HR-ansvarig (namn)</span><input value={org.hrName} disabled={!canEdit} onChange={(e) => setOrg({ hrName: e.target.value })} /></label><label className="ats-field"><span className="ats-field-l">HR-mejl (Reply-To)</span><input value={org.hrEmail} disabled={!canEdit} onChange={(e) => setOrg({ hrEmail: e.target.value })} /></label></div>
-          <div className="ats-tpl-two"><label className="ats-field"><span className="ats-field-l">Avsändaradress (From)</span><input value={org.fromEmail} disabled={!canEdit} onChange={(e) => setOrg({ fromEmail: e.target.value })} /></label><label className="ats-field"><span className="ats-field-l">App-URL</span><input value={org.appUrl} disabled={!canEdit} onChange={(e) => setOrg({ appUrl: e.target.value })} /></label></div>
-          <p className="ats-builder-note"><Mail size={12} /> Mejlen skickas från <b>{org.fromEmail}</b> med företagsnämnet synligt, och <b>{org.hrEmail}</b> som Reply-To så kandidatens svar går till rätt person.</p>
+          <label className="ats-field"><span className="ats-field-l">App-URL</span><input value={org.appUrl} disabled={!canEdit} onChange={(e) => setOrg({ appUrl: e.target.value })} /></label>
+          <p className="ats-builder-note"><Mail size={12} /> Kandidaterna ser <b>{org.companyName}</b> som avsändarnamn, och svar går till <b>{org.hrEmail}</b> (Reply-To). Avsändaradressen styrs säkert på servern — se Mejlutskick.</p>
         </div>
-        <div className="ats-panel"><div className="ats-panel-h"><h2>SMTP</h2><span className="ats-smtp-status"><Server size={13} /> Konfigureras i backend</span></div>
-          <div className="ats-honestbar"><Info size={13} /> Sjalva utskicket sker i din Next.js-backend (mejl-modulen) — en webbklient kan inte öppna en SMTP-koppling. Lägg env-variablerna nedan så levererar backend mejlen som köas har. Saknas eller felar SMTP visas riktigt fel-state, aldrig fejkad "skickat".</div>
-          <label className="ats-field"><span className="ats-field-l">.env (kopiera till backend)</span><div className="ats-envbox"><pre>{envBlock}</pre></div></label>
-          <button className="ats-ghost" onClick={() => { copyText(envBlock); showToast({ kind: "ok", msg: "Env-block kopierat" }); }}><Copy size={14} /> Kopiera .env-block</button>
+        <div className="ats-panel"><div className="ats-panel-h"><h2>Mejlutskick</h2><span className={"ats-smtp-status" + (mail.configured ? " is-on" : "")}><Server size={13} /> {!mail.checked ? "Kontrollerar…" : mail.configured ? "Aktivt · " + mail.provider : "Ej aktiverat"}</span></div>
+          {mail.configured
+            ? <>
+              <div className="ats-mailcfg"><div className="ats-mailcfg-row"><span>Avsändare</span><b>{org.companyName} &lt;{mail.from}&gt;</b></div><div className="ats-mailcfg-row"><span>Svar går till</span><b>{org.hrEmail}</b></div><div className="ats-mailcfg-row"><span>Leverantör</span><b>{mail.provider}</b></div></div>
+              <p className="ats-builder-note"><ShieldCheck size={12} /> Mejlen skickas från serverns verifierade adress med ert företagsnamn som avsändarnamn — det gör att de faktiskt når fram (SPF/DKIM) och kan inte förfalskas. Tjänsten kan bara mejla kandidater i er egen organisation.</p>
+              <button className="ats-ghost" disabled={testBusy} onClick={sendTest}><Send size={14} /> {testBusy ? "Skickar…" : "Skicka testmejl till mig"}</button>
+              {testRes && <div className={"ats-testres" + (testRes.ok ? " is-ok" : " is-err")}>{testRes.ok ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />} {testRes.msg}</div>}
+            </>
+            : <>
+              <div className="ats-honestbar"><Info size={13} /> Utskick är inte aktiverat — mejl köas men skickas inte. Aktivera genom att lägga in miljövariablerna nedan i Netlify (Site settings &rarr; Environment variables) och deploya om. Ingen status visar "skickad" förrän leverantören bekräftat.</div>
+              <label className="ats-field"><span className="ats-field-l">Miljövariabler i Netlify</span><div className="ats-envbox"><pre>{MAIL_ENV}</pre></div></label>
+              <button className="ats-ghost" onClick={() => { copyText(MAIL_ENV); showToast({ kind: "ok", msg: "Variabler kopierade" }); }}><Copy size={14} /> Kopiera</button>
+            </>}
         </div>
       </div>
 
@@ -1544,7 +1579,7 @@ function SettingsView({ state, D, me, job, cands, showToast, onLogout, session }
             {canEdit && state.templates.length > 1 && <button className="ats-ghost is-sm is-danger" style={{ marginTop: 10 }} onClick={() => { D({ type: "REMOVE_TEMPLATE", id: tpl.id }); setSelId(state.templates.find((t) => t.id !== tpl.id)?.id); }}><Trash2 size={13} /> Ta bort mall</button>}
           </div>}
           <div className="ats-tplprev"><div className="ats-panel-h" style={{ marginBottom: 8 }}><h2 style={{ fontSize: 14 }}>Förhandsvisning</h2>{cands.length > 0 && <select className="ats-select is-sm" value={prevId} onChange={(e) => setPrevId(e.target.value)}>{cands.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}</div>
-            {previewCand && tpl ? <div className="ats-mailprev"><div className="ats-mailprev-h"><b>{renderTpl(tpl.subject, vars) || "(inget ämne)"}</b><span>Till: {previewCand.email} · Från: {org.companyName} &lt;{org.fromEmail}&gt; · Svar: {org.hrEmail}</span></div><div className="ats-mailprev-body">{renderTpl(tpl.body, vars)}</div></div> : <div className="ats-muted">Ingen kandidat att förhandsvisa mot.</div>}
+            {previewCand && tpl ? <div className="ats-mailprev"><div className="ats-mailprev-h"><b>{renderTpl(tpl.subject, vars) || "(inget ämne)"}</b><span>Till: {previewCand.email} · Från: {org.companyName}{mail.from ? " <" + mail.from + ">" : " (avsändare ej aktiverad)"} · Svar: {org.hrEmail}</span></div><div className="ats-mailprev-body">{renderTpl(tpl.body, vars)}</div></div> : <div className="ats-muted">Ingen kandidat att förhandsvisa mot.</div>}
           </div>
         </div>
       </div>
@@ -2019,7 +2054,7 @@ function Style() {
 .ats-mailprev-body{padding:14px;font-size:13px;color:var(--sub);white-space:pre-wrap;line-height:1.6;max-height:280px;overflow-y:auto}
 /* Mejllog */
 .ats-msglog{display:flex;flex-direction:column;gap:2px}
-.ats-msglog-head,.ats-msglog-row{display:grid;grid-template-columns:70px 1.4fr 2fr 1.2fr .8fr;gap:10px;align-items:center;padding:9px 10px}
+.ats-msglog-head,.ats-msglog-row{display:grid;grid-template-columns:74px 1.3fr 1.9fr 1.1fr .7fr 44px;gap:10px;align-items:center;padding:9px 10px}
 .ats-msglog-head{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:600}
 .ats-msglog-row{border-top:1px solid var(--line2);font-size:12.5px}
 .ats-msgstatus{font-size:11px;font-weight:700;padding:3px 9px;border-radius:8px;text-align:center;white-space:nowrap}
@@ -2539,6 +2574,19 @@ function Style() {
 .ats-jobcard-more{padding:7px 9px}
 .ats-menu-item.is-danger{color:var(--brick)}
 .ats-menu-item.is-danger:hover{background:var(--brick-soft);color:var(--brick)}
+.ats-smtp-status.is-on{color:var(--petrol);background:var(--petrol-soft)}
+.ats-mailbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:var(--petrol-soft);color:var(--petrol-deep);padding:11px 13px;border-radius:10px;font-size:12.5px;line-height:1.55;margin-bottom:12px}
+.ats-mailbar svg{flex-shrink:0}
+.ats-mailbar button{margin-left:auto}
+.ats-mailcfg{display:flex;flex-direction:column;gap:2px;margin-bottom:12px}
+.ats-mailcfg-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;background:var(--paper2);border-radius:9px;font-size:12.5px;color:var(--sub)}
+.ats-mailcfg-row b{font-family:'IBM Plex Mono';font-size:12px;color:var(--ink);text-align:right;word-break:break-all}
+.ats-testres{display:flex;align-items:center;gap:8px;margin-top:10px;padding:10px 12px;border-radius:9px;font-size:12.5px;font-weight:600}
+.ats-testres.is-ok{background:var(--petrol-soft);color:var(--petrol-deep)}
+.ats-testres.is-err{background:var(--brick-soft);color:var(--brick)}
+.ats-msgstatus.is-sent{background:var(--petrol);color:#fff}
+.ats-msgstatus.is-sending{background:var(--blue-soft);color:var(--blue)}
+.ats-msglog-act{display:flex;justify-content:flex-end}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
@@ -2554,6 +2602,7 @@ function Style() {
   .ats-drawer{width:100%;max-width:100%}
   .ats-ph-title{font-size:20px}
   .ats-msglog-head{display:none}.ats-msglog-row{grid-template-columns:60px 1fr;gap:6px}.ats-msglog-row>span:nth-child(3),.ats-msglog-row>span:nth-child(4),.ats-msglog-row>span:nth-child(5){display:none}
+  .ats-msglog-row{grid-template-columns:64px 1fr 40px}
   .ats-flagcols{grid-template-columns:1fr}
   .ats-jobcard{flex-direction:column;align-items:stretch}.ats-jobcard-acts{flex-wrap:wrap}
   /* Inställningssidan – luftigare på mobil */
