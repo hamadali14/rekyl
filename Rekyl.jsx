@@ -612,25 +612,25 @@ function reducer(state, ac) {
     case "SP_ADD": { const jj = ensureScoring(state.jobs.find((j) => j.id === ac.jobId) || {}); if (!jj.id || isReadonly(jj)) return state;
       const base = ac.from ? JSON.parse(JSON.stringify(jj.scoring.profiles.find((p) => p.id === ac.from))) : null;
       const p = base ? { ...base, id: "sp" + uid(), name: ac.name, primary: false, version: 0, versions: [], draft: { ...base.draft, updatedAt: Date.now() }, createdAt: Date.now() } : { ...defaultProfile(jj, ac.name), primary: false };
-      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...jj, scoring: { profiles: [...jj.scoring.profiles, p] } }, "scoring", "Profil skapad: " + p.name, who) : j) }; }
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...jj, scoring: { ...jj.scoring, profiles: [...jj.scoring.profiles, p] } }, "scoring", "Profil skapad: " + p.name, who) : j) }; }
     case "SP_SET": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
-      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { profiles: j.scoring.profiles.map((p) => p.id === ac.id ? { ...p, ...ac.patch, updatedAt: Date.now() } : (ac.patch.primary ? { ...p, primary: false } : p)) } }, "scoring", ac.note || "Profil ändrad", who)) }; }
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { ...j.scoring, profiles: j.scoring.profiles.map((p) => p.id === ac.id ? { ...p, ...ac.patch, updatedAt: Date.now() } : (ac.patch.primary ? { ...p, primary: false } : p)) } }, "scoring", ac.note || "Profil ändrad", who)) }; }
     case "SP_DRAFT": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
-      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : { ...j, scoring: { profiles: j.scoring.profiles.map((p) => p.id === ac.id ? { ...p, draft: { ...p.draft, ...ac.patch, updatedAt: Date.now() } } : p) } }) }; }
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : { ...j, scoring: { ...j.scoring, profiles: j.scoring.profiles.map((p) => p.id === ac.id ? { ...p, draft: { ...p.draft, ...ac.patch, updatedAt: Date.now() } } : p) } }) }; }
     case "SP_PUBLISH": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
       const p = jj.scoring.profiles.find((x) => x.id === ac.id); if (!p) return state;
       if (profileWarnings(p.draft, jj).some((w) => w.kind === "err")) return state; /* aldrig publicera en profil som inte går att beräkna */
       const v = p.version + 1;
       const snap = JSON.parse(JSON.stringify({ v, at: Date.now(), by: (_TEAM.find((m) => m.id === who) || {}).name || "System", note: ac.note || "", groups: p.draft.groups, criteria: p.draft.criteria, norm: p.draft.norm || p.norm }));
-      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { profiles: j.scoring.profiles.map((x) => x.id === ac.id ? { ...x, version: v, versions: [snap, ...(x.versions || [])].slice(0, 30) } : x) } }, "scoring", "Scoringversion publicerad · v" + v, who)) }; }
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { ...j.scoring, profiles: j.scoring.profiles.map((x) => x.id === ac.id ? { ...x, version: v, versions: [snap, ...(x.versions || [])].slice(0, 30) } : x) } }, "scoring", "Scoringversion publicerad · v" + v, who)) }; }
     case "SP_RESTORE": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
       const p = jj.scoring.profiles.find((x) => x.id === ac.id); const snap = p && (p.versions || []).find((x) => x.v === ac.v); if (!snap) return state;
-      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { profiles: j.scoring.profiles.map((x) => x.id === ac.id ? { ...x, draft: JSON.parse(JSON.stringify({ groups: snap.groups, criteria: snap.criteria, norm: snap.norm, updatedAt: Date.now() })) } : x) } }, "scoring", "Utkast från v" + ac.v, who)) }; }
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { ...j.scoring, profiles: j.scoring.profiles.map((x) => x.id === ac.id ? { ...x, draft: JSON.parse(JSON.stringify({ groups: snap.groups, criteria: snap.criteria, norm: snap.norm, updatedAt: Date.now() })) } : x) } }, "scoring", "Utkast från v" + ac.v, who)) }; }
     case "SP_DEL": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
       const rest = jj.scoring.profiles.filter((p) => p.id !== ac.id);
       if (!rest.length) return state; /* minst en profil måste finnas */
       if (!rest.some((p) => p.primary)) rest[0] = { ...rest[0], primary: true };
-      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { profiles: rest } }, "scoring", "Profil borttagen", who)) }; }
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { ...j.scoring, profiles: rest } }, "scoring", "Profil borttagen", who)) }; }
     case "SG_ADD": case "SG_SET": case "SG_DEL": case "SG_MOVE":
     case "SC_ADD": case "SC_SET": case "SC_DEL": case "SC_MOVE": case "SC_DUP": {
       const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
@@ -647,7 +647,7 @@ function reducer(state, ac) {
         if (ac.type === "SC_MOVE") criteria = criteria.map((c) => c.id === ac.id ? { ...c, groupId: ac.groupId } : c);
         return { ...d, groups, criteria, updatedAt: Date.now() };
       };
-      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : { ...j, scoring: { profiles: j.scoring.profiles.map((p) => p.id === ac.profileId ? { ...p, draft: upd(p.draft) } : p) } }) }; }
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : { ...j, scoring: { ...j.scoring, profiles: j.scoring.profiles.map((p) => p.id === ac.profileId ? { ...p, draft: upd(p.draft) } : p) } }) }; }
 
     case "SCORE_RUN": {
       const job = state.jobs.find((j) => j.id === ac.jobId); if (!job) return state;
@@ -785,6 +785,76 @@ function reducer(state, ac) {
       if (ac.patch.status === "received") s2 = pushEvents(s2, [{ key: evKey("completion.received", cand.id, ac.id), kind: "completion.received", candId: cand.id, jobId: cand.jobId, data: {} }]);
       return s2;
     }
+    case "RECALC_START": {
+      const job = state.jobs.find((j) => j.id === ac.jobId); if (!job) return state;
+      const p = (job.scoring.profiles || []).find((x) => x.id === ac.profileId); if (!p || !p.version) return state;
+      if ((state.recalcs || []).some((r) => r.id === ac.id)) return state; /* idempotent start */
+      const rec = {
+        id: ac.id || ("rc" + uid()), jobId: job.id, profileId: p.id, profileName: p.name, version: ac.version || p.version,
+        scope: ac.scope, reason: ac.reason || "manuell", by: who, byName: (_TEAM.find((m) => m.id === who) || {}).name || "System",
+        ids: ac.candIds || [], done: [], ok: 0, unchanged: 0, failed: [], status: "running", startedAt: Date.now(), endedAt: null,
+      };
+      const s2 = { ...state, recalcs: [rec, ...(state.recalcs || [])].slice(0, 20) };
+      return { ...s2, jobs: s2.jobs.map((j) => j.id === job.id ? jlog(j, "scoring", "Omberäkning startad · " + rec.ids.length + " kandidater · " + p.name + " v" + rec.version, who) : j) };
+    }
+    case "RECALC_STEP": {
+      const rec = (state.recalcs || []).find((r) => r.id === ac.id);
+      if (!rec || rec.status !== "running") return state;
+      const job = state.jobs.find((j) => j.id === rec.jobId); if (!job) return state;
+      const p = (job.scoring.profiles || []).find((x) => x.id === rec.profileId);
+      const ver = p && (p.versions || []).find((v) => v.v === rec.version);
+      if (!ver) return { ...state, recalcs: state.recalcs.map((r) => r.id === rec.id ? { ...r, status: "failed", endedAt: Date.now(), failed: [...r.failed, { id: "-", name: "Profilversionen", err: "Versionen finns inte längre" }] } : r) };
+
+      const doneSet = new Set(rec.done);
+      const batch = rec.ids.filter((id) => !doneSet.has(id)).slice(0, ac.batch || 25);
+      if (!batch.length) return { ...state, recalcs: state.recalcs.map((r) => r.id === rec.id ? { ...r, status: "done", endedAt: Date.now() } : r) };
+
+      let ok = 0, unchanged = 0; const failed = [];
+      const evs = [];
+      const candidates = state.candidates.map((c) => {
+        if (!batch.includes(c.id) || c.jobId !== job.id) return c;
+        try {
+          const key = runKey(p.id, ver.v, c);
+          const prev = c.scores || [];
+          const oldS = currentScore(c);
+          if (prev.some((s3) => s3.key === key && s3.current)) { unchanged++; return c; } /* idempotent */
+          const r = runScoring(ver, c, job);
+          const dif = diffResults(oldS, r);
+          const rec2 = { runId: "run" + uid(), key, at: Date.now(), by: who, byName: rec.byName, reason: "omberäkning: " + rec.scope, profileId: p.id, profileName: p.name, version: ver.v, current: true, diff: dif, prevRunId: oldS ? oldS.runId : null, ...r };
+          let c2 = { ...c, scores: [rec2, ...prev.map((s3) => ({ ...s3, current: false }))].slice(0, 10) };
+          const q = evalQualification(job, c2, rec2);
+          const statusFrom = (c.qual && c.qual.final) || "pending";
+          c2 = { ...c2, qual: { ...q, at: Date.now() } };
+          if (dif.deltaPercent !== 0 || statusFrom !== q.final) c2 = addTL(c2, "score_computed", "Omberäknad mot v" + ver.v + " · " + (oldS ? oldS.percent + "% → " : "") + r.percent + "%" + (statusFrom !== q.final ? " · " + QUAL_STATUS[q.final].label : ""), who);
+          evs.push({ key: evKey("scoring.recalculated", c.id, p.id + ":" + ver.v), kind: "scoring.recalculated", candId: c.id, jobId: job.id, data: { from: oldS ? oldS.percent : null, to: r.percent, delta: dif.deltaPercent } });
+          if (statusFrom !== q.final) evs.push({ key: evKey("qual." + q.final, c.id, "rc" + ver.v), kind: "qual." + q.final, candId: c.id, jobId: job.id, data: { status: q.final } });
+          ok++;
+          return c2;
+        } catch (e) { failed.push({ id: c.id, name: c.name, err: String((e && e.message) || e) }); return c; }
+      });
+
+      const nextDone = [...rec.done, ...batch];
+      const finished = nextDone.length >= rec.ids.length;
+      let s2 = pushEvents({ ...state, candidates }, evs);
+      s2 = { ...s2, recalcs: s2.recalcs.map((r) => r.id !== rec.id ? r : {
+        ...r, done: nextDone, ok: r.ok + ok, unchanged: r.unchanged + unchanged, failed: [...r.failed, ...failed],
+        status: finished ? "done" : "running", endedAt: finished ? Date.now() : null,
+      }) };
+      if (finished) {
+        const done = s2.recalcs.find((r) => r.id === rec.id);
+        s2 = pushEvents(s2, [{ key: evKey("recalc.completed", job.id, rec.id), kind: "recalc.completed", candId: null, jobId: job.id, data: { ok: done.ok, unchanged: done.unchanged, failed: done.failed.length } }]);
+        s2 = { ...s2, jobs: s2.jobs.map((j) => j.id === job.id ? jlog(j, "scoring", "Omberäkning klar · " + done.ok + " ändrade, " + done.unchanged + " oförändrade, " + done.failed.length + " fel", who) : j) };
+      }
+      return s2;
+    }
+    case "RECALC_SET": return { ...state, recalcs: (state.recalcs || []).map((r) => r.id === ac.id ? { ...r, status: ac.status, endedAt: ["done", "cancelled", "failed"].includes(ac.status) ? Date.now() : r.endedAt } : r) };
+    case "RECALC_RETRY": { const rec = (state.recalcs || []).find((r) => r.id === ac.id); if (!rec) return state;
+      const ids = rec.failed.map((f) => f.id).filter((x) => x !== "-");
+      if (!ids.length) return state;
+      return { ...state, recalcs: state.recalcs.map((r) => r.id !== ac.id ? r : { ...r, ids, done: [], failed: [], status: "running", startedAt: Date.now(), endedAt: null }) }; }
+    case "VERSION_ACTIVATE": { const job = state.jobs.find((j) => j.id === ac.jobId); if (!job) return state;
+      let s2 = pushEvents(state, [{ key: evKey("version.activated", job.id, ac.profileId + ":" + ac.version), kind: "version.activated", candId: null, jobId: job.id, data: { profileId: ac.profileId, version: ac.version } }]);
+      return { ...s2, jobs: s2.jobs.map((j) => j.id === job.id ? jlog(j, "scoring", "Profilversion aktiverad · v" + ac.version, who) : j) }; }
     case "MSG_STATUS": {
       const prev = state.messages.find((m) => m.id === ac.id); if (!prev) return state;
       const messages = state.messages.map((m) => m.id === ac.id ? { ...m, status: ac.status, error: ac.error || null, sentAt: ac.status === "sent" ? Date.now() : (m.sentAt || null), providerId: ac.providerId || m.providerId || null } : m);
@@ -856,7 +926,7 @@ function reducer(state, ac) {
 const INITIAL = {
   jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: null, candidates: CANDIDATES0, team: [], currentUserId: null,
   history: [], templates: DEFAULT_TEMPLATES, messages: [],
-  career: null, tags: [], jobViews: [], moves: [], moveIds: [], events: [],
+  career: null, tags: [], jobViews: [], moves: [], moveIds: [], events: [], recalcs: [],
   org: { companyName: "Nordpuls AB", hrName: "Mona Berg", hrEmail: "mona.berg@nordpuls.se", fromEmail: "noreply@nordpuls.se", appUrl: "https://rekyl.app", defaultInterviewTime: "onsdag 14:00" },
   log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjänst öppnad", detail: "Account Manager · B2B" }],
 };
@@ -1618,7 +1688,7 @@ function hydrate(init, d) {
     jobs,
     candidates: arr(d.candidates).map((c) => (pipeOf[c.jobId] ? migrateCandidate(c, pipeOf[c.jobId]) : c)),
     team: arr(d.team), tags: arr(d.tags), jobViews: arr(d.jobViews),
-    moves: arr(d.moves), moveIds: arr(d.moveIds), events: arr(d.events),
+    moves: arr(d.moves), moveIds: arr(d.moveIds), events: arr(d.events), recalcs: arr(d.recalcs),
     messages: arr(d.messages), log: arr(d.log), history: arr(d.history),
     templates: arr(d.templates).length ? d.templates : init.templates,
     org: { ...init.org, ...(d.org || {}) },
@@ -2142,6 +2212,126 @@ function qualEvents(job, cand, q) {
   if (q.final === "review") out.push({ key: evKey("review.required", cand.id, v), kind: "review.required", candId: cand.id, jobId: job.id, data: {} });
   return out;
 }
+/* ===================== SIMULERING, JÄMFÖRELSE OCH OMBERÄKNING ===================== */
+/* Allt här är rena funktioner. Simulering rör ALDRIG riktig kandidatdata. */
+
+/* Bygger en tillfällig profilversion av ett utkast — används i simulering och konsekvensanalys. */
+const asVersion = (p, draft) => ({ v: p.version + (draft ? 1 : 0), groups: (draft ? p.draft : (p.versions || []).find((x) => x.v === p.version) || p.draft).groups, criteria: (draft ? p.draft : (p.versions || []).find((x) => x.v === p.version) || p.draft).criteria, norm: (draft ? p.draft.norm : ((p.versions || []).find((x) => x.v === p.version) || p.draft).norm) || p.norm });
+
+/* Fullständig simulering: poäng + regler + knockout + kvalificering + pipelinespärrar. */
+function simulate(job, ver, candLike, me) {
+  /* Tvinga alltid ett sim-ID: ett simulerat resultat far ALDRIG bara ett riktigt kandidat-ID
+   * som av misstag kan skrivas tillbaka till produktionsdata. */
+  const cand = { name: "Testkandidat", email: "test@example.com", answers: {}, assessments: [], completions: [], overrides: [], ...candLike, id: "_sim", _simOf: (candLike && candLike.id) || null };
+  const score = runScoring(ver, cand, job);
+  const scoreRec = { ...score, profileName: "Simulering", version: ver.v, at: Date.now() };
+  const qual = evalQualification(job, cand, scoreRec);
+  const simCand = { ...cand, qual, scores: [{ ...scoreRec, current: true }] };
+  const blockers = liveStages(job.pipeline).filter((st) => st.id !== cand.stageId).map((st) => ({
+    stage: st, blockers: moveBlockers({ candidates: [], jobs: [job] }, simCand, job, st, me || { role: "admin" }, { reason: "x", comment: "x" }).filter((b) => !["same", "conflict"].includes(b.code)),
+  })).filter((x) => x.blockers.length);
+  return { score, qual, blockers, cand: simCand };
+}
+
+/* Skillnad mellan två profilversioner — strukturell. */
+function diffVersions(a, b) {
+  const gA = a.groups || [], gB = b.groups || [], cA = a.criteria || [], cB = b.criteria || [];
+  const byId = (arr) => { const m = {}; arr.forEach((x) => { m[x.id] = x; }); return m; };
+  const GA = byId(gA), GB = byId(gB), CA = byId(cA), CB = byId(cB);
+  const out = { norm: a.norm !== b.norm ? { from: a.norm, to: b.norm } : null, groups: { added: [], removed: [], changed: [] }, criteria: { added: [], removed: [], changed: [] } };
+  gB.forEach((g) => { if (!GA[g.id]) out.groups.added.push(g); else if (GA[g.id].weight !== g.weight || GA[g.id].name !== g.name) out.groups.changed.push({ from: GA[g.id], to: g }); });
+  gA.forEach((g) => { if (!GB[g.id]) out.groups.removed.push(g); });
+  cB.forEach((c) => {
+    const o = CA[c.id];
+    if (!o) { out.criteria.added.push(c); return; }
+    const fields = ["weight", "model", "source", "dir", "ideal", "floor", "bandLo", "bandHi", "onMissing", "negative", "active", "name"];
+    const changes = fields.filter((f) => JSON.stringify(o[f]) !== JSON.stringify(c[f]));
+    if (JSON.stringify(o.conditions) !== JSON.stringify(c.conditions)) changes.push("conditions");
+    if (changes.length) out.criteria.changed.push({ from: o, to: c, fields: changes });
+  });
+  cA.forEach((c) => { if (!CB[c.id]) out.criteria.removed.push(c); });
+  return out;
+}
+const diffEmpty = (d) => !d.norm && !d.groups.added.length && !d.groups.removed.length && !d.groups.changed.length && !d.criteria.added.length && !d.criteria.removed.length && !d.criteria.changed.length;
+
+/* Skillnad mellan två scoringresultat — med orsak. */
+function diffResults(oldR, newR) {
+  const d = { deltaPercent: newR.percent - (oldR ? oldR.percent : 0), deltaRaw: newR.raw - (oldR ? oldR.raw : 0), groups: [], criteria: [] };
+  if (!oldR) { d.isNew = true; return d; }
+  newR.groups.forEach((g) => {
+    const o = oldR.groups.find((x) => x.id === g.id);
+    const op = o && o.pct != null ? Math.round(o.pct * 100) : null;
+    const np = g.pct != null ? Math.round(g.pct * 100) : null;
+    if (op !== np) d.groups.push({ id: g.id, name: g.name, from: op, to: np });
+  });
+  newR.criteria.forEach((c) => {
+    const o = oldR.criteria.find((x) => x.id === c.id);
+    if (!o) { d.criteria.push({ id: c.id, name: c.name, from: null, to: Math.round(c.pts * 10) / 10, why: "Nytt kriterium" }); return; }
+    if (Math.abs(o.pts - c.pts) > 0.05 || o.applicable !== c.applicable) d.criteria.push({ id: c.id, name: c.name, from: Math.round(o.pts * 10) / 10, to: Math.round(c.pts * 10) / 10, why: c.why });
+  });
+  oldR.criteria.forEach((o) => { if (!newR.criteria.some((c) => c.id === o.id)) d.criteria.push({ id: o.id, name: o.name, from: Math.round(o.pts * 10) / 10, to: null, why: "Kriteriet togs bort" }); });
+  return d;
+}
+
+/* Konsekvensanalys: vad händer med RIKTIGA kandidater om vi aktiverar den här versionen? */
+function impactAnalysis(job, cands, ver, profileId) {
+  const rows = cands.map((c) => {
+    const oldS = currentScore(c);
+    const newS = runScoring(ver, c, job);
+    const oldQ = c.qual || evalQualification(job, c, oldS);
+    const newQ = evalQualification(job, c, { ...newS, profileId, version: ver.v });
+    const oldKO = new Set((oldQ.knockouts || []).filter((k) => k.outcome !== "flag").map((k) => k.ruleId));
+    const newKO = new Set((newQ.knockouts || []).filter((k) => k.outcome !== "flag").map((k) => k.ruleId));
+    return {
+      id: c.id, name: c.name, stageId: c.stageId,
+      from: oldS ? oldS.percent : null, to: newS.percent,
+      delta: newS.percent - (oldS ? oldS.percent : 0),
+      statusFrom: oldQ.final, statusTo: newQ.final,
+      koAdded: [...newKO].filter((x) => !oldKO.has(x)).length,
+      koRemoved: [...oldKO].filter((x) => !newKO.has(x)).length,
+      newCompletions: (newQ.completions || []).length > (oldQ.completions || []).length,
+      warnings: newS.warnings.length,
+      oldVersion: oldS ? oldS.version : null,
+      broken: newS.criteria.filter((x) => x.broken).length,
+    };
+  });
+  return {
+    rows, total: rows.length,
+    changed: rows.filter((r) => r.delta !== 0).length,
+    statusFlips: rows.filter((r) => r.statusFrom !== r.statusTo).length,
+    koAdded: rows.reduce((n, r) => n + r.koAdded, 0),
+    koRemoved: rows.reduce((n, r) => n + r.koRemoved, 0),
+    newCompletions: rows.filter((r) => r.newCompletions).length,
+    needsReview: rows.filter((r) => r.statusTo === "review").length,
+    broken: rows.filter((r) => r.broken > 0).length,
+    stale: rows.filter((r) => r.oldVersion != null && r.oldVersion !== ver.v).length,
+    unscored: rows.filter((r) => r.from == null).length,
+  };
+}
+
+/* Urvalsregler för omberäkning — deterministiska. */
+const RECALC_SCOPES = {
+  all: "Alla kandidater i tjänsten",
+  active: "Aktiva kandidater (ej avslag, reserv eller anställd)",
+  stale: "Kandidater med gammal profilversion",
+  unscored: "Kandidater utan scoring",
+  stage: "Kandidater i valda steg",
+  selected: "Valda kandidater",
+};
+function recalcSelection(job, cands, scope, opts) {
+  const finalTypes = new Set(["rejected", "reserve", "hired", "withdrawn"]);
+  const stageType = (c) => { const st = stageById(job.pipeline, c.stageId); return st ? st.type : "incoming"; };
+  const av = activeVersion(job);
+  switch (scope) {
+    case "active": return cands.filter((c) => !finalTypes.has(stageType(c)));
+    case "stale": return cands.filter((c) => { const s2 = currentScore(c); return s2 && av && s2.version !== av.ver.v; });
+    case "unscored": return cands.filter((c) => !currentScore(c));
+    case "stage": return cands.filter((c) => (opts.stages || []).includes(c.stageId));
+    case "selected": return cands.filter((c) => (opts.ids || []).includes(c.id));
+    default: return cands;
+  }
+}
+const RECALC_STATUS = { running: "Pågår", paused: "Pausad", done: "Slutförd", cancelled: "Avbruten", failed: "Misslyckad" };
 /* ===================== PIPELINE, SLA OCH FÖRFLYTTNINGSMOTOR ===================== */
 /* Stegtyper. `legacy` håller den gamla statusmodellen synkad så att kö, statistik,
  * kalender och rapporter fortsätter fungera oförändrat. */
@@ -3591,6 +3781,7 @@ function PipelineView({ state, D, me, job, cands, showToast, setDetailId }) {
   const [q, setQ] = useState("");
   const [fSla, setFSla] = useState("");
   const [fOwner, setFOwner] = useState("");
+  const [fQual, setFQual] = useState("");
   const [collapsed, setCollapsed] = useState([]);
   const [pauseFor, setPauseFor] = useState(null);
   const [exceptFor, setExceptFor] = useState(null);
@@ -3608,7 +3799,8 @@ function PipelineView({ state, D, me, job, cands, showToast, setDetailId }) {
   const filtered = enriched
     .filter((c) => !q.trim() || (c.name + " " + c.email + " " + (c.source || "")).toLowerCase().includes(q.toLowerCase()))
     .filter((c) => !fSla || c._sla.status === fSla)
-    .filter((c) => !fOwner || (fOwner === "none" ? !c.ownerId : c.ownerId === fOwner));
+    .filter((c) => !fOwner || (fOwner === "none" ? !c.ownerId : c.ownerId === fOwner))
+    .filter((c) => { if (!fQual) return true; if (fQual === "stale") { const s3 = currentScore(c); const a2 = activeVersion(job); return s3 && a2 && s3.version !== a2.ver.v; } if (fQual === "unscored") return !currentScore(c); if (fQual === "override") return !!(c.qual && c.qual.override); return c.qual && c.qual.final === fQual; });
   const inStage = (st) => filtered.filter((c) => c.stageId === st.id);
   const nameOf = (id) => (state.team.find((m) => m.id === id) || {}).name || null;
 
@@ -3661,6 +3853,7 @@ function PipelineView({ state, D, me, job, cands, showToast, setDetailId }) {
       <div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sök kandidat…" /></div>
       <select className="ats-select is-sm" value={fSla} onChange={(e) => setFSla(e.target.value)} aria-label="SLA-status"><option value="">Alla SLA-lägen</option>{Object.entries(SLA_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
       <select className="ats-select is-sm" value={fOwner} onChange={(e) => setFOwner(e.target.value)} aria-label="Ansvarig"><option value="">Alla ansvariga</option><option value="none">Utan ansvarig</option>{state.team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+      <select className="ats-select is-sm" value={fQual} onChange={(e) => setFQual(e.target.value)} aria-label="Kvalificering"><option value="">Alla kvalificeringar</option>{Object.entries(QUAL_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}<option value="override">Har override</option><option value="stale">Gammal scoringversion</option><option value="unscored">Saknar scoring</option></select>
       {view === "kanban" && <button className="ats-ghost is-sm" onClick={() => setDense(!dense)}>{dense ? "Bekväm" : "Kompakt"}</button>}
     </div>}
 
@@ -4063,6 +4256,17 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
   const [ovReason, setOvReason] = useState("");
   const [complFor, setComplFor] = useState(null);
   const [complText, setComplText] = useState("");
+  const [simSrc, setSimSrc] = useState("");
+  const [simAns, setSimAns] = useState({});
+  const [simDraft, setSimDraft] = useState(true);
+  const [cmpA, setCmpA] = useState("");
+  const [cmpB, setCmpB] = useState("");
+  const [cmpCands, setCmpCands] = useState([]);
+  const [cmpMode, setCmpMode] = useState("versions");
+  const [rcScope, setRcScope] = useState("active");
+  const [rcStages, setRcStages] = useState([]);
+  const [rcIds, setRcIds] = useState([]);
+  const [rcPreview, setRcPreview] = useState(null);
 
   useEffect(() => { if (job && !job.scoring) D({ type: "SCORING_INIT", jobId: job.id }); }, [job && job.id]);
   if (!job) return <div className="ats-view"><PageHeader title="Scoring" /><div className="ats-col-empty" style={{ padding: 40 }}>Välj en tjänst först.</div></div>;
@@ -4089,6 +4293,14 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
   const setR = (patch) => D({ type: "RULE_SET", jobId: job.id, id: rule.id, patch });
   const setCard2 = (patch) => D({ type: "AC_SET", jobId: job.id, id: cardSel.id, patch });
   const evalQ = () => { D({ type: "QUAL_EVAL", jobId: job.id }); showToast({ kind: "ok", msg: "Kvalificeringen utvärderades om" }); };
+  const recalcs = (state.recalcs || []).filter((r) => r.jobId === job.id);
+  const running = recalcs.find((r) => r.status === "running");
+  /* Driver massomberäkningen i batchar — riktig progress, riktig paus, riktigt avbrott. */
+  useEffect(() => {
+    if (!running) return;
+    const t2 = setTimeout(() => D({ type: "RECALC_STEP", id: running.id, batch: 25 }), 40);
+    return () => clearTimeout(t2);
+  }, [running && running.id, running && running.done.length, running && running.status]);
   const RuleRow = ({ r }) => <div className={"ats-rl-row" + (selR === r.id ? " is-on" : "") + (r.version === 0 ? " is-draft" : "")}>
     <span className="ats-rl-p">{r.priority}</span>
     <button className="ats-rl-n" onClick={() => setSelR(selR === r.id ? null : r.id)}>
@@ -4128,11 +4340,12 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
     </div>
 
     <div className="ats-tabs">
-      {[["build", "Byggare"], ["rules", "Regler och krav"], ["cards", "Scorecards"], ["review", "Granskning"], ["preview", "Förhandsvisning"], ["settings", "Inställningar"]].map(([id, l]) =>
+      {[["build", "Byggare"], ["rules", "Regler och krav"], ["cards", "Scorecards"], ["review", "Granskning"], ["sim", "Simulering"], ["compare", "Jämför"], ["recalc", "Omberäkning"], ["settings", "Inställningar"]].map(([id, l]) =>
         <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}
           {id === "build" && warns.length > 0 && <span className="ats-tab-n">{warns.length}</span>}
           {id === "rules" && rWarns.length > 0 && <span className="ats-tab-n">{rWarns.length}</span>}
           {id === "review" && reviewQ.length > 0 && <span className="ats-tab-n">{reviewQ.length}</span>}
+          {id === "recalc" && running && <span className="ats-tab-n">•</span>}
         </button>)}
     </div>
 
@@ -4409,6 +4622,218 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
         </div>)}</div>}
     </div>}
 
+
+    {tab === "sim" && (() => {
+      const simVer = asVersion(p, simDraft);
+      const srcCand = simSrc ? cands.find((c) => c.id === simSrc) : null;
+      const answers = simSrc ? { ...(srcCand ? srcCand.answers : {}), ...simAns } : simAns;
+      const sim = simulate(job, simVer, { ...(srcCand ? { assessments: srcCand.assessments, completions: srcCand.completions, overrides: srcCand.overrides, source: srcCand.source } : {}), answers }, me);
+      return <div className="ats-sv">
+        <div className="ats-sv-main">
+          <div className="ats-panel">
+            <div className="ats-panel-h"><h2>Testdata</h2><span className="ats-af-help">Simuleringen rör aldrig riktig kandidatdata.</span></div>
+            <div className="ats-tpl-two">
+              <label className="ats-field"><span className="ats-field-l">Utgå från</span>
+                <select className="ats-inp" value={simSrc} onChange={(e) => { setSimSrc(e.target.value); setSimAns({}); }}>
+                  <option value="">Anonym testkandidat (tomma svar)</option>
+                  {cands.map((c) => <option key={c.id} value={c.id}>{c.name} (skrivskyddad kopia)</option>)}
+                </select></label>
+              <label className="ats-field"><span className="ats-field-l">Version</span>
+                <select className="ats-inp" value={simDraft ? "draft" : "active"} onChange={(e) => setSimDraft(e.target.value === "draft")}>
+                  <option value="draft">Utkast (v{p.version + 1})</option>
+                  {p.version > 0 && <option value="active">Publicerad v{p.version}</option>}
+                </select></label>
+            </div>
+            <h3 className="ats-pb-h">Svar</h3>
+            {(job.criteria || []).map((f) => <label key={f.id} className="ats-field"><span className="ats-field-l">{f.label} <em className="ats-muted">({f.type})</em></span>
+              {f.type === "boolean"
+                ? <select className="ats-inp" value={String(answers[f.id] ?? "")} onChange={(e) => setSimAns({ ...simAns, [f.id]: e.target.value === "" ? undefined : e.target.value === "true" })}><option value="">Obesvarad</option><option value="true">Ja</option><option value="false">Nej</option></select>
+                : f.type === "ordinal" || f.type === "match"
+                  ? <select className="ats-inp" value={answers[f.id] ?? ""} onChange={(e) => setSimAns({ ...simAns, [f.id]: e.target.value || undefined })}><option value="">Obesvarad</option>{((f.scale || f.options || []).map((o) => (o.value ?? o))).map((o) => <option key={o} value={o}>{o}</option>)}</select>
+                  : f.type === "multiselect"
+                    ? <div className="ats-chipset">{(f.options || []).map((o) => { const v = o.value ?? o; const on = (answers[f.id] || []).includes(v);
+                      return <button key={v} className={"ats-selchip" + (on ? " is-on" : "")} onClick={() => { const cur = answers[f.id] || []; setSimAns({ ...simAns, [f.id]: on ? cur.filter((x) => x !== v) : [...cur, v] }); }}>{v}</button>; })}</div>
+                    : <input className="ats-inp" type={["number", "budget"].includes(f.type) ? "number" : "text"} value={answers[f.id] ?? ""} onChange={(e) => setSimAns({ ...simAns, [f.id]: e.target.value === "" ? undefined : (["number", "budget"].includes(f.type) ? Number(e.target.value) : e.target.value) })} />}
+            </label>)}
+            <button className="ats-ghost" onClick={() => setSimAns({})}><RotateCcw size={14} /> Nollställ svaren</button>
+          </div>
+        </div>
+        <aside className="ats-sv-side">
+          <div className="ats-panel">
+            <div className="ats-panel-h"><h2>Resultat</h2><QualChip q={sim.qual} /></div>
+            <ScoreExplain sc={{ ...sim.score, profileName: p.name + (simDraft ? " (utkast)" : ""), version: simVer.v, at: Date.now() }} compact />
+            <h3 className="ats-pb-h">Regelutfall</h3>
+            {sim.qual.knockouts.length === 0 && sim.qual.hits.length === 0 && <div className="ats-kb-empty">Ingen regel träffade.</div>}
+            {sim.qual.knockouts.map((k) => <div key={k.ruleId} className="ats-dr-ko"><ShieldAlert size={13} /><div><b>{k.name}</b><span>{k.why}</span></div></div>)}
+            {sim.qual.hits.map((h) => <div key={h.ruleId} className="ats-rl-text"><Check size={13} /> <div><b>{h.name}</b><br />{h.why}</div></div>)}
+            {sim.qual.completions.length > 0 && <div className="ats-dr-compl"><Upload size={13} /><div><b>Komplettering skulle krävas</b><span>{sim.qual.completions.map((c) => c.text || c.name).join(", ")}</span></div></div>}
+            <h3 className="ats-pb-h">Pipelinespärrar</h3>
+            {sim.blockers.length === 0 ? <div className="ats-kb-empty">Inga steg skulle blockeras.</div>
+              : sim.blockers.map((b) => <div key={b.stage.id} className="ats-sv-warn is-warn"><Lock size={14} /> <b>{b.stage.name}</b>: {b.blockers.map((x) => x.msg).join(" · ")}</div>)}
+          </div>
+        </aside>
+      </div>;
+    })()}
+
+    {tab === "compare" && <div className="ats-cmp">
+      <div className="ats-tabs is-sub">
+        {[["versions", "Profiler och versioner"], ["cands", "Kandidater"]].map(([id, l]) => <button key={id} className={"ats-tab" + (cmpMode === id ? " is-on" : "")} onClick={() => setCmpMode(id)}>{l}</button>)}
+      </div>
+      {cmpMode === "versions" && (() => {
+        const opts = [];
+        profiles.filter((x) => !x.archived).forEach((pr) => {
+          opts.push({ id: pr.id + "|draft", label: pr.name + " · utkast", ver: asVersion(pr, true), profileId: pr.id });
+          (pr.versions || []).forEach((v) => opts.push({ id: pr.id + "|" + v.v, label: pr.name + " · v" + v.v, ver: { ...v }, profileId: pr.id }));
+        });
+        const A = opts.find((o) => o.id === cmpA), B = opts.find((o) => o.id === cmpB);
+        const d = A && B ? diffVersions(A.ver, B.ver) : null;
+        const ia = B ? impactAnalysis(job, cands, B.ver, B.profileId) : null;
+        return <>
+          <div className="ats-jfilters">
+            <select className="ats-select is-sm" value={cmpA} onChange={(e) => setCmpA(e.target.value)} aria-label="Från"><option value="">Jämför från…</option>{opts.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
+            <ArrowRight size={16} style={{ color: "var(--muted)" }} />
+            <select className="ats-select is-sm" value={cmpB} onChange={(e) => setCmpB(e.target.value)} aria-label="Till"><option value="">…till</option>{opts.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select>
+          </div>
+          {!A || !B ? <div className="ats-col-empty" style={{ padding: 40 }}>Välj två versioner att jämföra.</div> : <>
+            <div className="ats-panel">
+              <div className="ats-panel-h"><h2>Skillnader i konfigurationen</h2></div>
+              {diffEmpty(d) ? <div className="ats-kb-empty">Ingen skillnad.</div> : <div className="ats-sv-diff">
+                {d.norm && <div className="is-chg">~ Normalisering: {NORM_METHODS[d.norm.from]} → {NORM_METHODS[d.norm.to]}</div>}
+                {d.groups.added.map((g) => <div key={g.id} className="is-add">+ Grupp: {g.name} (vikt {g.weight})</div>)}
+                {d.groups.removed.map((g) => <div key={g.id} className="is-del">− Grupp: {g.name}</div>)}
+                {d.groups.changed.map((g) => <div key={g.to.id} className="is-chg">~ Grupp {g.to.name}: vikt {g.from.weight} → {g.to.weight}</div>)}
+                {d.criteria.added.map((c) => <div key={c.id} className="is-add">+ Kriterium: {c.name} ({SCORE_MODELS[c.model].label}, {c.weight} p)</div>)}
+                {d.criteria.removed.map((c) => <div key={c.id} className="is-del">− Kriterium: {c.name}</div>)}
+                {d.criteria.changed.map((c) => <div key={c.to.id} className="is-chg">~ {c.to.name}: {c.fields.map((f) => f === "weight" ? "vikt " + c.from.weight + " → " + c.to.weight : f === "model" ? "modell " + SCORE_MODELS[c.from.model].label + " → " + SCORE_MODELS[c.to.model].label : f === "conditions" ? "villkoren ändrade" : f).join(", ")}</div>)}
+              </div>}
+            </div>
+            <div className="ats-panel">
+              <div className="ats-panel-h"><h2>Konsekvens för {ia.total} riktiga kandidater</h2><span className="ats-af-help">Ingen data ändras — detta är bara en beräkning.</span></div>
+              <div className="ats-sv-sum">
+                <div><span>Ändrad poäng</span><b>{ia.changed}</b></div>
+                <div><span>Byter status</span><b>{ia.statusFlips}</b></div>
+                <div><span>Nya krav-träffar</span><b>{ia.koAdded}</b></div>
+                <div><span>Lösta krav-träffar</span><b>{ia.koRemoved}</b></div>
+                <div><span>Nya kompletteringar</span><b>{ia.newCompletions}</b></div>
+                <div><span>Kräver granskning</span><b>{ia.needsReview}</b></div>
+                <div><span>Trasig datakälla</span><b>{ia.broken}</b></div>
+                <div><span>Gammal version</span><b>{ia.stale}</b></div>
+              </div>
+              {ia.rows.length > 0 && <div className="ats-jtablewrap" style={{ marginTop: 12 }}><table className="ats-jtable">
+                <thead><tr><th>Kandidat</th><th>Före</th><th>Efter</th><th>Δ</th><th>Status före</th><th>Status efter</th></tr></thead>
+                <tbody>{[...ia.rows].sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 50).map((r) => <tr key={r.id}>
+                  <td>{r.name}</td><td>{r.from == null ? "—" : r.from + "%"}</td><td>{r.to}%</td>
+                  <td className={r.delta > 0 ? "ats-d-up" : r.delta < 0 ? "ats-d-down" : ""}>{r.delta > 0 ? "+" : ""}{r.delta}</td>
+                  <td><span className={"ats-qc is-" + QUAL_STATUS[r.statusFrom].tone}>{QUAL_STATUS[r.statusFrom].label}</span></td>
+                  <td>{r.statusFrom !== r.statusTo ? <span className={"ats-qc is-" + QUAL_STATUS[r.statusTo].tone}>{QUAL_STATUS[r.statusTo].label}</span> : <span className="ats-muted">oförändrad</span>}</td>
+                </tr>)}</tbody></table></div>}
+            </div>
+          </>}
+        </>;
+      })()}
+      {cmpMode === "cands" && (() => {
+        const sel = cands.filter((c) => cmpCands.includes(c.id));
+        const rows = [["Matchning", (c) => (c.total != null ? c.total + "%" : "—")],
+          ["Profil / version", (c) => { const s3 = currentScore(c); return s3 ? s3.profileName + " v" + s3.version : "—"; }],
+          ["Kvalificering", (c) => (c.qual ? QUAL_STATUS[c.qual.final].label : "—")],
+          ["Obligatoriska krav", (c) => (c.qual && c.qual.activeKO ? "Ej uppfyllt: " + c.qual.knockouts.filter((k) => k.outcome !== "flag").map((k) => k.name).join(", ") : "Uppfyllda")],
+          ["Komplettering", (c) => ((c.completions || []).filter((x) => x.status !== "reviewed").length ? "Ja" : "Nej")],
+          ["Override", (c) => (c.qual && c.qual.override ? c.qual.override.reason : "—")],
+          ["Bedömningar", (c) => { const done = (c.assessments || []).filter((a) => a.status === "done").length; return done ? done + " slutförda" : "Saknas"; }],
+          ["CV", (c) => (Object.values(c.answers || {}).some((v) => v && typeof v === "object" && v.url) ? "Ja" : "Nej")],
+          ["Källa", (c) => c.source || "direkt"],
+          ["Steg", (c) => { const st = stageById(job.pipeline, c.stageId); return st ? st.name : "—"; }]];
+        return <>
+          <div className="ats-jfilters">
+            <select className="ats-select is-sm" value="" onChange={(e) => { if (e.target.value && !cmpCands.includes(e.target.value)) setCmpCands([...cmpCands, e.target.value]); }} aria-label="Lägg till kandidat">
+              <option value="">Lägg till kandidat…</option>{cands.filter((c) => !cmpCands.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            {cmpCands.length > 0 && <button className="ats-ghost is-sm" onClick={() => setCmpCands([])}>Rensa</button>}
+          </div>
+          {sel.length === 0 ? <div className="ats-col-empty" style={{ padding: 40 }}>Lägg till minst två kandidater för att jämföra.</div>
+            : <div className="ats-jtablewrap"><table className="ats-jtable ats-cmp-t">
+              <thead><tr><th /> {sel.map((c) => <th key={c.id}><div className="ats-cmp-h"><span>{c.name}</span><button className="ats-ghost is-sm" onClick={() => setCmpCands(cmpCands.filter((x) => x !== c.id))} aria-label="Ta bort"><X size={13} /></button></div></th>)}</tr></thead>
+              <tbody>{rows.map(([label, fn]) => { const vals = sel.map(fn); const diff = new Set(vals).size > 1;
+                return <tr key={label} className={diff ? "is-diff" : ""}><th>{label}{diff && <em title="Skiljer sig">≠</em>}</th>{vals.map((v, i) => <td key={i}>{v}</td>)}</tr>; })}</tbody>
+            </table></div>}
+          <p className="ats-af-help">Jämförelsen är beslutsstöd. Rekyl fattar aldrig ett anställningsbeslut åt dig.</p>
+        </>;
+      })()}
+    </div>}
+
+    {tab === "recalc" && (() => {
+      const sel = recalcSelection(job, cands, rcScope, { stages: rcStages, ids: rcIds });
+      const canRun = canScore && av && sel.length > 0 && !running;
+      return <div className="ats-rc">
+        <div className="ats-panel">
+          <div className="ats-panel-h"><h2>Ny omberäkning</h2>{av ? <span className="ats-af-help">Mot {av.profile.name} v{av.ver.v}</span> : <span className="ats-af-err">Ingen publicerad primärprofil</span>}</div>
+          <label className="ats-field"><span className="ats-field-l">Urval</span>
+            <select className="ats-inp" value={rcScope} onChange={(e) => setRcScope(e.target.value)}>{Object.entries(RECALC_SCOPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+          {rcScope === "stage" && <label className="ats-field"><span className="ats-field-l">Steg</span><div className="ats-chipset">{liveStages(job.pipeline).map((st) => {
+            const on = rcStages.includes(st.id);
+            return <button key={st.id} className={"ats-selchip" + (on ? " is-on" : "")} onClick={() => setRcStages(on ? rcStages.filter((x) => x !== st.id) : [...rcStages, st.id])}>{st.name}</button>;
+          })}</div></label>}
+          {rcScope === "selected" && <label className="ats-field"><span className="ats-field-l">Kandidater</span><div className="ats-chipset">{cands.slice(0, 40).map((c) => {
+            const on = rcIds.includes(c.id);
+            return <button key={c.id} className={"ats-selchip" + (on ? " is-on" : "")} onClick={() => setRcIds(on ? rcIds.filter((x) => x !== c.id) : [...rcIds, c.id])}>{c.name}</button>;
+          })}</div></label>}
+          <div className="ats-erase-note"><Info size={14} /> <b>{sel.length} kandidater</b> matchar urvalet. Gamla resultat sparas alltid — inget skrivs över.</div>
+          <div className="ats-cb-brandacts">
+            <button className="ats-ghost" disabled={!av || sel.length === 0} onClick={() => setRcPreview(impactAnalysis(job, sel, av.ver, av.profile.id))}><GitCompare size={15} /> Förhandsgranska konsekvens</button>
+            <button className="ats-btn-primary" disabled={!canRun} onClick={() => { D({ type: "RECALC_START", id: "rc" + uid(), jobId: job.id, profileId: av.profile.id, version: av.ver.v, scope: RECALC_SCOPES[rcScope], candIds: sel.map((c) => c.id) }); setRcPreview(null); showToast({ kind: "ok", msg: "Omberäkning startad" }); }}><RotateCw size={15} /> Starta omberäkning</button>
+          </div>
+          {rcPreview && <div className="ats-sv-sum" style={{ marginTop: 12 }}>
+            <div><span>Ändrad poäng</span><b>{rcPreview.changed}</b></div>
+            <div><span>Byter status</span><b>{rcPreview.statusFlips}</b></div>
+            <div><span>Nya krav-träffar</span><b>{rcPreview.koAdded}</b></div>
+            <div><span>Kräver granskning</span><b>{rcPreview.needsReview}</b></div>
+          </div>}
+        </div>
+
+        <div className="ats-panel">
+          <div className="ats-panel-h"><h2>Körningar</h2></div>
+          {recalcs.length === 0 ? <div className="ats-kb-empty">Ingen omberäkning har körts än.</div>
+            : <div className="ats-sa-rows">{recalcs.map((r) => {
+              const pct = r.ids.length ? Math.round((r.done.length / r.ids.length) * 100) : 100;
+              return <div key={r.id} className="ats-sa-row is-card">
+                <div className="ats-sa-main">
+                  <div className="ats-sa-top"><b>{r.profileName} v{r.version}</b><span className={"ats-jobbadge is-" + (r.status === "done" ? "petrol" : r.status === "running" ? "blue" : r.status === "failed" ? "brick" : "amber")}>{RECALC_STATUS[r.status]}</span></div>
+                  <span>{r.scope} · {r.ids.length} kandidater · {r.ok} ändrade · {r.unchanged} oförändrade{r.failed.length ? " · " + r.failed.length + " fel" : ""}</span>
+                  {r.status === "running" && <span className="ats-rc-bar"><i style={{ width: pct + "%" }} /></span>}
+                  {r.failed.length > 0 && <ul className="ats-blocked">{r.failed.slice(0, 5).map((f, i) => <li key={i}><b>{f.name}</b><span>{f.err}</span></li>)}</ul>}
+                </div>
+                <span className="ats-sa-when">{r.byName} · {timeAgo(r.startedAt)}</span>
+                {canScore && <div className="ats-sa-acts">
+                  {r.status === "running" && <button className="ats-ghost is-sm" onClick={() => D({ type: "RECALC_SET", id: r.id, status: "paused" })}><PauseCircle size={13} /> Pausa</button>}
+                  {r.status === "paused" && <><button className="ats-ghost is-sm" onClick={() => D({ type: "RECALC_SET", id: r.id, status: "running" })}><RotateCw size={13} /> Fortsätt</button>
+                    <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => D({ type: "RECALC_SET", id: r.id, status: "cancelled" })}>Avbryt</button></>}
+                  {r.failed.length > 0 && r.status !== "running" && <button className="ats-ghost is-sm" onClick={() => D({ type: "RECALC_RETRY", id: r.id })}><RotateCcw size={13} /> Försök igen</button>}
+                  {r.status === "done" && <button className="ats-ghost is-sm" onClick={() => {
+                    const rows = [["Kandidat", "Före", "Efter", "Förändring", "Status", "Version"]];
+                    cands.filter((c) => r.ids.includes(c.id)).forEach((c) => { const s3 = currentScore(c); const df = s3 && s3.diff; rows.push([c.name, df && df.deltaPercent != null ? s3.percent - df.deltaPercent : "", s3 ? s3.percent : "", df ? df.deltaPercent : "", c.qual ? QUAL_STATUS[c.qual.final].label : "", s3 ? s3.version : ""]); });
+                    downloadCSV(rows, "omberakning.csv"); showToast({ kind: "ok", msg: "Resultatet exporterades" });
+                  }}><Download size={13} /> Exportera</button>}
+                </div>}
+              </div>;
+            })}</div>}
+        </div>
+
+        <div className="ats-panel">
+          <div className="ats-panel-h"><h2>Största förändringar</h2></div>
+          {(() => {
+            const withDiff = cands.map((c) => ({ c, s: currentScore(c) })).filter((x) => x.s && x.s.diff && x.s.diff.deltaPercent !== 0);
+            if (!withDiff.length) return <div className="ats-kb-empty">Ingen kandidat har ändrats sedan senaste omberäkningen.</div>;
+            return <div className="ats-sa-rows">{withDiff.sort((a, b) => Math.abs(b.s.diff.deltaPercent) - Math.abs(a.s.diff.deltaPercent)).slice(0, 10).map(({ c, s: s3 }) => <div key={c.id} className="ats-sa-row is-card">
+              <div className="ats-sa-main">
+                <div className="ats-sa-top"><button className="ats-jobcard-title" onClick={() => setDetailId && setDetailId(c.id)}>{c.name}</button><QualChip q={c.qual} size="sm" /></div>
+                <span>{s3.percent - s3.diff.deltaPercent}% → {s3.percent}% mot v{s3.version}{s3.diff.criteria.length ? " · " + s3.diff.criteria.length + " kriterier ändrade" : ""}</span>
+              </div>
+              <span className={"ats-rc-d " + (s3.diff.deltaPercent > 0 ? "is-up" : "is-down")}>{s3.diff.deltaPercent > 0 ? "+" : ""}{s3.diff.deltaPercent}</span>
+            </div>)}</div>;
+          })()}
+        </div>
+      </div>;
+    })()}
     {assessFor && <Modal title="Bedömning" onClose={() => setAssessFor(null)} wide>
       <AssessPanel cand={state.candidates.find((c) => c.id === assessFor.c.id)} job={job} card={assessFor.card} me={me} D={D} showToast={showToast} onClose={() => setAssessFor(null)} />
     </Modal>}
@@ -7789,6 +8214,28 @@ section.ats-cs-cta p{font-size:17px;opacity:.9;margin-bottom:28px}
   .ats-as-opt{min-width:0;flex:1 1 45%}
   .ats-as-h{flex-direction:column;align-items:flex-start;gap:8px}
   .ats-as-score{text-align:left}
+}
+
+/* ---- Simulering, jämförelse, omberäkning ---- */
+.ats-tabs.is-sub{margin-bottom:14px}
+.ats-cmp{display:flex;flex-direction:column;gap:14px}
+.ats-cmp-t th:first-child{width:170px;color:var(--muted);font-weight:600;text-transform:none;letter-spacing:0;font-size:13px;text-align:left}
+.ats-cmp-t tr.is-diff td{background:var(--amber-soft)}
+.ats-cmp-t tr.is-diff th em{font-style:normal;color:var(--gold);margin-left:6px;font-weight:700}
+.ats-cmp-h{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.ats-cmp-h span{font-family:'Bricolage Grotesque';font-size:14px;color:var(--ink);text-transform:none;letter-spacing:0}
+.ats-d-up{color:var(--petrol);font-weight:700}
+.ats-d-down{color:var(--brick);font-weight:700}
+.ats-rc{display:flex;flex-direction:column;gap:14px}
+.ats-rc-bar{display:block;height:6px;background:var(--line2);border-radius:3px;overflow:hidden;margin-top:8px;max-width:300px}
+.ats-rc-bar i{display:block;height:100%;background:var(--petrol);border-radius:3px;transition:width .3s var(--ease)}
+.ats-rc-d{font-family:'Bricolage Grotesque';font-size:18px;font-weight:600;flex-shrink:0;min-width:44px;text-align:right}
+.ats-rc-d.is-up{color:var(--petrol)}
+.ats-rc-d.is-down{color:var(--brick)}
+@media (max-width:640px){
+  .ats-cmp-t th:first-child{width:110px;font-size:12px}
+  .ats-cmp-t{min-width:520px}
+  .ats-rc-bar{max-width:none}
 }
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
