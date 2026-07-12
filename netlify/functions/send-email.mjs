@@ -1,19 +1,17 @@
 /* Rekyl — säker e-postutskickstjänst (Netlify Function).
  *
- * Miljövariabler (Netlify → Site settings → Environment variables):
+ * Miljövariabler (Netlify → Project configuration → Environment variables):
  *   MAIL_PROVIDER   "brevo" eller "resend"
- *   BREVO_API_KEY   (om brevo)  |  RESEND_API_KEY (om resend)
+ *   BREVO_API_KEY   (om brevo)  |  RESEND_API_KEY  (om resend)
  *   MAIL_FROM       verifierad avsändaradress, t.ex. "noreply@dindoman.se"
- *   SUPABASE_URL        (valfri — faller tillbaka på projektets publika URL)
- *   SUPABASE_ANON_KEY   (valfri — samma nyckel som i klienten, publik)
+ *   SUPABASE_URL / SUPABASE_ANON_KEY  (valfria — samma publika värden som i appen)
  *
- * Säkerhet: anroparens Supabase-token verifieras, och mottagaren måste vara
- * en kandidat i anroparens EGEN organisation (eller anroparens egen adress).
- * Tjänsten kan därmed inte missbrukas som öppet spamrelä.
+ * Säkerhet: anroparens Supabase-session verifieras, och mottagaren måste finnas
+ * i anroparens EGEN organisation. Tjänsten kan inte missbrukas som spamrelä.
  */
 
 const SB_URL = process.env.SUPABASE_URL || "https://eaditrzamfhylmlrmkca.supabase.co";
-const SB_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhZGl0cnphbWZoeWxtbHJta2NhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODA4NjgsImV4cCI6MjA5OTE1Njg2OH0.jFzfeVow0P-46Vj7G-yTVjA1IHp8UN-Ts8Us7";
+const SB_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhZGl0cnphbWZoeWxtbHJta2NhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODA4NjgsImV4cCI6MjA5OTE1Njg2OH0.jFzfeVow0P-46Vj7G-yTVjA1IHp8UN-Ts8Us719rYmE";
 
 const PROVIDER = String(process.env.MAIL_PROVIDER || "").toLowerCase();
 const MAIL_FROM = String(process.env.MAIL_FROM || "").trim();
@@ -24,37 +22,57 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_BODY = 20000;
 const MAX_SUBJECT = 300;
 
-function providerKey() {
-  if (PROVIDER === "resend") return RESEND_API_KEY;
-  if (PROVIDER === "brevo") return BREVO_API_KEY;
-  return "";
-}
-function isConfigured() {
-  return !!(PROVIDER && providerKey() && MAIL_FROM && EMAIL_RE.test(fromAddress()));
-}
-function fromAddress() {
-  const m = MAIL_FROM.match(/<([^>]+)>/);
-  return (m ? m[1] : MAIL_FROM).trim();
-}
-/* Skydd mot header-injection: ta bort radbrytningar och citattecken. */
-function clean(v, max) {
-  return String(v == null ? "" : v).replace(/[\r\n]+/g, " ").replace(/["<>]/g, "").trim().slice(0, max);
-}
-function json(status, obj) {
-  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+const enc = encodeURIComponent;
+const providerKey = () => (PROVIDER === "resend" ? RESEND_API_KEY : PROVIDER === "brevo" ? BREVO_API_KEY : "");
+const fromAddress = () => { const m = MAIL_FROM.match(/<([^>]+)>/); return (m ? m[1] : MAIL_FROM).trim(); };
+
+/* Vad saknas i konfigurationen? Returnerar en läsbar orsak, aldrig ett tyst fel. */
+function configProblem() {
+  if (!PROVIDER) return "MAIL_PROVIDER saknas (sätt 'brevo' eller 'resend').";
+  if (PROVIDER !== "brevo" && PROVIDER !== "resend") return "MAIL_PROVIDER måste vara 'brevo' eller 'resend'.";
+  if (!providerKey()) return (PROVIDER === "brevo" ? "BREVO_API_KEY" : "RESEND_API_KEY") + " saknas.";
+  if (!MAIL_FROM) return "MAIL_FROM saknas.";
+  if (!EMAIL_RE.test(fromAddress())) return "MAIL_FROM är ingen giltig adress.";
+  return null;
 }
 
+/* Skydd mot header-injection. */
+const clean = (v, max) => String(v == null ? "" : v).replace(/[\r\n]+/g, " ").replace(/["<>]/g, "").trim().slice(0, max);
+const json = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+
 async function sbRest(path, token) {
-  const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: { apikey: SB_KEY, Authorization: "Bearer " + token } });
-  if (!r.ok) return null;
-  return r.json().catch(() => null);
+  try {
+    const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: { apikey: SB_KEY, Authorization: "Bearer " + token } });
+    if (!r.ok) return null;
+    return await r.json().catch(() => null);
+  } catch (e) { return null; }
+}
+
+/* Verifierar att SUPABASE_ANON_KEY faktiskt fungerar — annars kan status aldrig påstå "aktivt". */
+async function supabaseOk() {
+  try {
+    const r = await fetch(SB_URL + "/auth/v1/settings", { headers: { apikey: SB_KEY } });
+    return r.ok;
+  } catch (e) { return false; }
 }
 
 async function verifyUser(token) {
-  const r = await fetch(SB_URL + "/auth/v1/user", { headers: { apikey: SB_KEY, Authorization: "Bearer " + token } });
-  if (!r.ok) return null;
-  const d = await r.json().catch(() => null);
-  return d && d.id ? d : null;
+  try {
+    const r = await fetch(SB_URL + "/auth/v1/user", { headers: { apikey: SB_KEY, Authorization: "Bearer " + token } });
+    if (!r.ok) return null;
+    const d = await r.json().catch(() => null);
+    return d && d.id ? d : null;
+  } catch (e) { return null; }
+}
+
+/* Mottagaren måste finnas i anroparens organisation — antingen som ansökan i molnet
+ * eller som kandidat i organisationens sparade state (täcker båda vägarna in). */
+async function recipientAllowed(orgId, to, token) {
+  const apps = await sbRest("applications?org_id=eq." + enc(orgId) + "&email=ilike." + enc(to) + "&select=id&limit=1", token);
+  if (Array.isArray(apps) && apps.length) return true;
+  const st = await sbRest("org_state?org_id=eq." + enc(orgId) + "&select=data", token);
+  const cands = st && st[0] && st[0].data && Array.isArray(st[0].data.candidates) ? st[0].data.candidates : [];
+  return cands.some((c) => String((c && c.email) || "").trim().toLowerCase() === to);
 }
 
 async function sendViaResend({ from, to, subject, text, replyTo }) {
@@ -87,17 +105,22 @@ async function sendViaBrevo({ fromName, fromEmail, to, subject, text, replyTo })
 
 export default async (req) => {
   if (req.method === "GET") {
-    return json(200, { configured: isConfigured(), provider: isConfigured() ? PROVIDER : null, from: isConfigured() ? fromAddress() : null });
+    const problem = configProblem();
+    if (problem) return json(200, { configured: false, reason: problem });
+    if (!(await supabaseOk())) return json(200, { configured: false, reason: "Supabase-nyckeln fungerar inte — sätt SUPABASE_ANON_KEY i Netlify." });
+    return json(200, { configured: true, provider: PROVIDER, from: fromAddress() });
   }
   if (req.method !== "POST") return json(405, { error: "Metod stöds inte" });
-  if (!isConfigured()) return json(503, { error: "Utskick är inte konfigurerat på servern (MAIL_PROVIDER, API-nyckel och MAIL_FROM saknas)." });
+
+  const problem = configProblem();
+  if (problem) return json(503, { error: "Utskick ej konfigurerat: " + problem });
 
   const auth = req.headers.get("authorization") || "";
   const token = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() : "";
   if (!token) return json(401, { error: "Saknar sessionstoken." });
 
   const user = await verifyUser(token);
-  if (!user) return json(401, { error: "Ogiltig eller utgången session." });
+  if (!user) return json(401, { error: "Kunde inte verifiera sessionen mot Supabase (kontrollera SUPABASE_ANON_KEY, eller logga ut och in)." });
 
   let payload;
   try { payload = await req.json(); } catch (e) { return json(400, { error: "Felaktig begäran." }); }
@@ -113,21 +136,18 @@ export default async (req) => {
   if (!text.trim()) return json(400, { error: "Meddelandetext saknas." });
   if (replyTo && !EMAIL_RE.test(replyTo)) return json(400, { error: "Ogiltig svarsadress." });
 
-  /* Multi-tenancy: anroparen måste tillhöra en organisation. */
-  const members = await sbRest("members?user_id=eq." + encodeURIComponent(user.id) + "&select=org_id", token);
+  const members = await sbRest("members?user_id=eq." + enc(user.id) + "&select=org_id", token);
   const orgId = members && members[0] && members[0].org_id;
   if (!orgId) return json(403, { error: "Kontot tillhör ingen organisation." });
 
-  /* Mottagaren måste vara kandidat i anroparens organisation, eller anroparen själv (testmejl). */
   const isSelf = to === String(user.email || "").toLowerCase();
-  if (!isSelf) {
-    const apps = await sbRest("applications?org_id=eq." + encodeURIComponent(orgId) + "&email=eq." + encodeURIComponent(to) + "&select=id&limit=1", token);
-    if (!apps || !apps.length) return json(403, { error: "Mottagaren är inte en kandidat i din organisation." });
+  if (!isSelf && !(await recipientAllowed(orgId, to, token))) {
+    return json(403, { error: "Mottagaren finns inte som kandidat i din organisation." });
   }
 
   const fromEmail = fromAddress();
   const res = PROVIDER === "resend"
-    ? await sendViaResend({ from: `${fromName} <${fromEmail}>`, to, subject, text, replyTo })
+    ? await sendViaResend({ from: fromName + " <" + fromEmail + ">", to, subject, text, replyTo })
     : await sendViaBrevo({ fromName, fromEmail, to, subject, text, replyTo });
 
   if (!res.ok) return json(502, { error: res.error });
