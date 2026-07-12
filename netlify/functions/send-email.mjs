@@ -15,12 +15,25 @@ const SB_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6Ikp
 
 const PROVIDER = String(process.env.MAIL_PROVIDER || "").toLowerCase();
 const MAIL_FROM = String(process.env.MAIL_FROM || "").trim();
-const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const BREVO_API_KEY = process.env.BREVO_API_KEY || "";
+const RESEND_API_KEY = String(process.env.RESEND_API_KEY || "").trim();
+const BREVO_API_KEY = String(process.env.BREVO_API_KEY || "").trim();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_BODY = 20000;
 const MAX_SUBJECT = 300;
+const MAX_ATTACH = 100 * 1024; /* 100 kB */
+
+/* Endast kalenderinbjudningar tillats som bilaga — aldrig godtyckliga filer. */
+function validAttachment(a) {
+  if (!a) return null;
+  if (typeof a !== "object") return { error: "Ogiltig bilaga." };
+  const name = clean(a.name, 60);
+  const content = String(a.content || "");
+  if (!/^[\w-]+\.ics$/i.test(name)) return { error: "Endast kalenderfiler (.ics) far bifogas." };
+  if (!content || !/^[A-Za-z0-9+/=]+$/.test(content)) return { error: "Bilagan ar inte korrekt kodad." };
+  if (content.length > MAX_ATTACH) return { error: "Bilagan ar for stor." };
+  return { name, content };
+}
 
 const enc = encodeURIComponent;
 const providerKey = () => (PROVIDER === "resend" ? RESEND_API_KEY : PROVIDER === "brevo" ? BREVO_API_KEY : "");
@@ -56,6 +69,34 @@ async function supabaseOk() {
   } catch (e) { return false; }
 }
 
+/* Gör leverantörens felkoder begripliga och åtgärdbara. */
+function providerHint(msg) {
+  const m = String(msg || "").toLowerCase();
+  if (m.includes("key not found") || m.includes("unauthorized") || m.includes("api key is invalid") || m.includes("invalid api key"))
+    return "Leverantören nekar API-nyckeln. I Brevo: hämta en API-nyckel v3 under SMTP & API → API keys (börjar med 'xkeysib-') — en SMTP-nyckel fungerar inte här.";
+  if (m.includes("sender") && (m.includes("not valid") || m.includes("not found") || m.includes("verif")))
+    return "Avsändaradressen (MAIL_FROM) är inte verifierad hos leverantören. Lägg till och verifiera den under Senders i Brevo.";
+  if (m.includes("domain") && m.includes("verif"))
+    return "Avsändardomänen är inte verifierad hos leverantören.";
+  return String(msg || "Leverantörsfel");
+}
+
+/* Kontrollerar att leverantören faktiskt accepterar nyckeln — status får aldrig påstå "aktivt" annars. */
+async function providerProblem() {
+  try {
+    if (PROVIDER === "brevo") {
+      const r = await fetch("https://api.brevo.com/v3/account", { headers: { "api-key": BREVO_API_KEY, Accept: "application/json" } });
+      if (r.status === 401 || r.status === 403) return providerHint("key not found");
+      if (!r.ok) return "Brevo svarar inte (" + r.status + ").";
+      return null;
+    }
+    const r = await fetch("https://api.resend.com/domains", { headers: { Authorization: "Bearer " + RESEND_API_KEY } });
+    if (r.status === 401 || r.status === 403) return providerHint("api key is invalid");
+    if (!r.ok) return "Resend svarar inte (" + r.status + ").";
+    return null;
+  } catch (e) { return "Kunde inte nå e-postleverantören."; }
+}
+
 async function verifyUser(token) {
   try {
     const r = await fetch(SB_URL + "/auth/v1/user", { headers: { apikey: SB_KEY, Authorization: "Bearer " + token } });
@@ -75,18 +116,18 @@ async function recipientAllowed(orgId, to, token) {
   return cands.some((c) => String((c && c.email) || "").trim().toLowerCase() === to);
 }
 
-async function sendViaResend({ from, to, subject, text, replyTo }) {
+async function sendViaResend({ from, to, subject, text, replyTo, attachment }) {
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: "Bearer " + RESEND_API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to: [to], subject, text, ...(replyTo ? { reply_to: replyTo } : {}) }),
+    body: JSON.stringify({ from, to: [to], subject, text, ...(replyTo ? { reply_to: replyTo } : {}), ...(attachment ? { attachments: [{ filename: attachment.name, content: attachment.content }] } : {}) }),
   });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) return { ok: false, error: (d && (d.message || d.name)) || "Leverantörsfel (" + r.status + ")" };
+  if (!r.ok) return { ok: false, error: providerHint((d && (d.message || d.name)) || "Leverantörsfel (" + r.status + ")") };
   return { ok: true, id: d.id || null };
 }
 
-async function sendViaBrevo({ fromName, fromEmail, to, subject, text, replyTo }) {
+async function sendViaBrevo({ fromName, fromEmail, to, subject, text, replyTo, attachment }) {
   const r = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: { "api-key": BREVO_API_KEY, "Content-Type": "application/json", Accept: "application/json" },
@@ -96,10 +137,11 @@ async function sendViaBrevo({ fromName, fromEmail, to, subject, text, replyTo })
       subject,
       textContent: text,
       ...(replyTo ? { replyTo: { email: replyTo } } : {}),
+      ...(attachment ? { attachment: [{ name: attachment.name, content: attachment.content }] } : {}),
     }),
   });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) return { ok: false, error: (d && (d.message || d.code)) || "Leverantörsfel (" + r.status + ")" };
+  if (!r.ok) return { ok: false, error: providerHint((d && (d.message || d.code)) || "Leverantörsfel (" + r.status + ")") };
   return { ok: true, id: d.messageId || null };
 }
 
@@ -108,6 +150,8 @@ export default async (req) => {
     const problem = configProblem();
     if (problem) return json(200, { configured: false, reason: problem });
     if (!(await supabaseOk())) return json(200, { configured: false, reason: "Supabase-nyckeln fungerar inte — sätt SUPABASE_ANON_KEY i Netlify." });
+    const pp = await providerProblem();
+    if (pp) return json(200, { configured: false, reason: pp });
     return json(200, { configured: true, provider: PROVIDER, from: fromAddress() });
   }
   if (req.method !== "POST") return json(405, { error: "Metod stöds inte" });
@@ -136,6 +180,9 @@ export default async (req) => {
   if (!text.trim()) return json(400, { error: "Meddelandetext saknas." });
   if (replyTo && !EMAIL_RE.test(replyTo)) return json(400, { error: "Ogiltig svarsadress." });
 
+  const att = validAttachment(payload.attachment);
+  if (att && att.error) return json(400, { error: att.error });
+
   const members = await sbRest("members?user_id=eq." + enc(user.id) + "&select=org_id", token);
   const orgId = members && members[0] && members[0].org_id;
   if (!orgId) return json(403, { error: "Kontot tillhör ingen organisation." });
@@ -147,8 +194,8 @@ export default async (req) => {
 
   const fromEmail = fromAddress();
   const res = PROVIDER === "resend"
-    ? await sendViaResend({ from: fromName + " <" + fromEmail + ">", to, subject, text, replyTo })
-    : await sendViaBrevo({ fromName, fromEmail, to, subject, text, replyTo });
+    ? await sendViaResend({ from: fromName + " <" + fromEmail + ">", to, subject, text, replyTo, attachment: att })
+    : await sendViaBrevo({ fromName, fromEmail, to, subject, text, replyTo, attachment: att });
 
   if (!res.ok) return json(502, { error: res.error });
   return json(200, { ok: true, id: res.id, provider: PROVIDER });

@@ -8,7 +8,8 @@ import {
   Phone, Upload, CalendarClock, ListChecks, Send, Bell, CircleAlert, Blocks, Settings2, History,
   ShieldAlert, Pin, PinOff, Server, AtSign, Info, CheckCircle2, Settings, ThumbsUp, ThumbsDown,
   HelpCircle, BadgeCheck, PauseCircle, CalendarCheck, Menu as MenuIcon, PanelLeftClose,
-  RotateCw, Rocket, GripVertical, Lock, MousePointerClick, Share2, MessageCircle, Globe, LogOut, UserPlus
+  RotateCw, Rocket, GripVertical, Lock, MousePointerClick, Share2, MessageCircle, Globe, LogOut, UserPlus,
+  Video, CalendarX
 } from "lucide-react";
 
 // ---- Supabase (via REST, inget paket kravs) ----
@@ -298,7 +299,7 @@ function timeAgo(ts) { const h = Math.round((Date.now() - ts) / 3600000); if (h 
 function initials(name) { return (name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
 function tierOf(c) { return c.knockout ? "ko" : c.total >= 78 ? "high" : c.total >= 55 ? "mid" : "low"; }
 function can(role, what) { const R = { recruiter: ["decide", "edit", "comment", "export", "message", "vote"], admin: ["decide", "edit", "comment", "export", "message", "vote", "settings"], manager: ["vote", "comment", "export", "message", "decide"], viewer: ["export"] }; return (R[role] || []).includes(what); }
-const TL_LABEL = { application_received: "Ansökan mottagen", score_computed: "Matchning beräknad", knockout: "Diskvalificerad", status_change: "Status ändrad", message_sent: "Mejl köat", message_delivered: "Mejl skickat", note: "Kommentar", completion_requested: "Komplettering begärd", auto_rule: "Auto-regel", vote: "Team review", hired: "Anställd" };
+const TL_LABEL = { application_received: "Ansökan mottagen", score_computed: "Matchning beräknad", knockout: "Diskvalificerad", status_change: "Status ändrad", message_sent: "Mejl köat", message_delivered: "Mejl skickat", interview_booked: "Intervju bokad", interview_cancelled: "Intervju avbokad", note: "Kommentar", completion_requested: "Komplettering begärd", auto_rule: "Auto-regel", vote: "Team review", hired: "Anställd" };
 const validEmail = (e) => !!e && /.+@.+\..+/.test(e);
 const MSG_LABEL = { queued: "Köad", sending: "Skickar…", sent: "Skickad", failed: "Fel" };
 
@@ -311,10 +312,63 @@ const DEFAULT_TEMPLATES = [
   { id: "t_reject", name: "Avslag", trigger: "reject", active: true, subject: "Besked om din ansökan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}} hos {{companyName}}. Den har gången går vi vidare med andra kandidater ({{rejectionReason}}). Vi önskar dig lycka till framöver.\n\nVänliga hälsningar,\n{{hrName}}" },
   { id: "t_completion", name: "Begär komplettering", trigger: "completion", active: true, subject: "Komplettering behövs - {{jobTitle}}", body: "Hej {{candidateName}},\n\nDin ansökan ser bra ut, men vi saknar: {{missingField}}. Kan du komplettera genom att svara på detta mejl?\n\nTack,\n{{hrName}}" },
   { id: "t_offer", name: "Erbjudande", trigger: "offer", active: true, subject: "Erbjudande - {{jobTitle}} hos {{companyName}}", body: "Hej {{candidateName}},\n\nVi är glada att erbjuda dig rollen som {{jobTitle}} hos {{companyName}}. Vi mejlar detaljerna separat. Hör garna av dig till {{hrName}} på {{hrEmail}} vid frågor.\n\nVarmt välkommen!\n{{hrName}}" },
+  { id: "t_interview_cancelled", name: "Avbokad intervju", trigger: "interview_cancelled", active: true, subject: "Ändrad tid - {{jobTitle}}", body: "Hej {{candidateName}},\n\nTyvärr måste vi avboka den inplanerade intervjun för {{jobTitle}} hos {{companyName}}. Kalenderinbjudan tas bort automatiskt.\n\nVi återkommer med ett nytt tidsförslag så snart vi kan.\n\nVänliga hälsningar,\n{{hrName}}\n{{companyName}}" },
   { id: "t_reminder", name: "Paminnelse", trigger: "reminder", active: true, subject: "Paminnelse - {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn liten paminnelse angående din ansökan till {{jobTitle}}. Hör av dig till {{hrName}} ({{hrEmail}}) om du har frågor.\n\nVänliga hälsningar,\n{{hrName}}" },
 ];
 function renderTpl(str, vars) { return (str || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k) => (vars[k] == null || vars[k] === "" ? `{{${k}}}` : vars[k])); }
 function tplVars(state, cand, job) { return { candidateName: cand.name, jobTitle: job.title, companyName: state.org.companyName, hrName: state.org.hrName, hrEmail: state.org.hrEmail, missingField: (missingInfo(job, cand)[0] || "efterfrågad uppgift"), interviewTime: cand.interviewTime || state.org.defaultInterviewTime, rejectionReason: cand.reason ? cand.reason.toLowerCase() : "andra kandidater gick vidare" }; }
+const INTERVIEW_MODES = { video: { label: "Videomöte", icon: Video, locLabel: "Möteslänk", ph: "https://meet.google.com/..." }, onsite: { label: "På plats", icon: MapPin, locLabel: "Adress", ph: "Storgatan 1, Växjö" }, phone: { label: "Telefon", icon: Phone, locLabel: "Telefonnummer (valfritt)", ph: "Vi ringer numret i ansökan" } };
+const DAY_NAMES = ["söndag", "måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag"];
+const pad2 = (n) => String(n).padStart(2, "0");
+function fmtInterview(at) { if (!at) return ""; const d = new Date(at); if (isNaN(d)) return ""; return `${DAY_NAMES[d.getDay()]} ${pad2(d.getDate())}/${pad2(d.getMonth() + 1)} kl ${pad2(d.getHours())}.${pad2(d.getMinutes())}`; }
+function ivEnd(iv) { return new Date(new Date(iv.at).getTime() + (iv.duration || 45) * 60000).getTime(); }
+function ivActive(c) { return !!(c && c.interview && c.interview.at && !c.interview.cancelled); }
+function ivOverlap(a, b) { const s1 = new Date(a.at).getTime(), e1 = ivEnd(a), s2 = new Date(b.at).getTime(), e2 = ivEnd(b); return s1 < e2 && s2 < e1; }
+function icsEsc(v) { return String(v == null ? "" : v).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n"); }
+function icsTime(d) { return d.getUTCFullYear() + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()) + "T" + pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + pad2(d.getUTCSeconds()) + "Z"; }
+function buildICS(o) {
+  const start = new Date(o.at);
+  const end = new Date(start.getTime() + (o.duration || 45) * 60000);
+  const cancel = o.method === "CANCEL";
+  return [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Rekyl//ATS//SV", "CALSCALE:GREGORIAN",
+    "METHOD:" + (cancel ? "CANCEL" : "REQUEST"),
+    "BEGIN:VEVENT",
+    "UID:" + o.uid,
+    "SEQUENCE:" + (o.seq || 0),
+    "DTSTAMP:" + icsTime(new Date()),
+    "DTSTART:" + icsTime(start),
+    "DTEND:" + icsTime(end),
+    "SUMMARY:" + icsEsc(o.summary),
+    "DESCRIPTION:" + icsEsc(o.description || ""),
+    "LOCATION:" + icsEsc(o.location || ""),
+    "ORGANIZER;CN=" + icsEsc(o.organizerName) + ":mailto:" + o.organizerEmail,
+    "ATTENDEE;CN=" + icsEsc(o.attendeeName) + ";RSVP=TRUE:mailto:" + o.attendeeEmail,
+    "STATUS:" + (cancel ? "CANCELLED" : "CONFIRMED"),
+    "END:VEVENT", "END:VCALENDAR", "",
+  ].join("\r\n");
+}
+function b64utf8(str) { const bytes = new TextEncoder().encode(str); let bin = ""; bytes.forEach((b) => { bin += String.fromCharCode(b); }); return btoa(bin); }
+/* Bygger kalenderinbjudan for ett meddelande, eller null om det inte ar ett intervjumejl. */
+function icsForMessage(msg, cand, job, org) {
+  if (!cand || !job || !cand.interview || !cand.interview.at) return null;
+  if (msg.trigger !== "interview" && msg.trigger !== "interview_cancelled") return null;
+  const iv = cand.interview;
+  const mode = INTERVIEW_MODES[iv.mode] || INTERVIEW_MODES.video;
+  const ics = buildICS({
+    uid: "rekyl-" + cand.id + "@rekyl.app",
+    seq: iv.seq || 0,
+    at: iv.at,
+    duration: iv.duration,
+    method: msg.trigger === "interview_cancelled" ? "CANCEL" : "REQUEST",
+    summary: "Intervju: " + job.title + " · " + org.companyName,
+    description: mode.label + (iv.location ? " · " + iv.location : "") + "\n\nKontakt: " + org.hrName + " (" + org.hrEmail + ")",
+    location: iv.location || mode.label,
+    organizerName: org.hrName, organizerEmail: org.hrEmail,
+    attendeeName: cand.name, attendeeEmail: cand.email,
+  });
+  return { name: "intervju.ics", content: b64utf8(ics) };
+}
 const TRIGGER_FOR = { shortlist: "shortlist", interview: "interview", reserve: "reserve", reject: "reject", hired: "offer" };
 
 /* ---------- Reducer-hjalpare ---------- */
@@ -370,6 +424,29 @@ function reducer(state, ac) {
       const s2 = mapCand(state, ac.id, (c) => addTL(c, ac.trigger === "completion" ? "completion_requested" : "message_sent", `${msg.subject}${msg.status === "failed" ? " · FEL" : " · köad"}`, who));
       return { ...s2, messages: [msg, ...state.messages], log: withLog(s2, "Mejl", `${msg.trigger} · ${cand.name}`) };
     }
+    case "SET_INTERVIEW": {
+      const cand = state.candidates.find((c) => c.id === ac.id); if (!cand) return state;
+      const job = state.jobs.find((j) => j.id === cand.jobId); if (!job) return state;
+      const prev = cand.interview;
+      const seq = prev && prev.at ? (prev.seq || 0) + 1 : 0;
+      const iv = { ...ac.interview, seq, cancelled: false };
+      const note = fmtInterview(iv.at) + " · " + ((INTERVIEW_MODES[iv.mode] || {}).label || iv.mode);
+      let c2 = addTL({ ...cand, status: "interview", interview: iv, interviewTime: fmtInterview(iv.at) }, "interview_booked", (seq > 0 ? "Ombokad till " : "") + note, who);
+      const msg = buildMessage(state, c2, job, "interview", who);
+      c2 = addTL(c2, "message_sent", msg.subject + (msg.status === "failed" ? " · FEL: saknar e-post" : " · köad för utskick"), who);
+      const s2 = mapCand(state, ac.id, () => c2);
+      return { ...s2, messages: [msg, ...state.messages], log: withLog(s2, seq > 0 ? "Intervju ombokad" : "Intervju bokad", cand.name + " · " + note) };
+    }
+    case "CANCEL_INTERVIEW": {
+      const cand = state.candidates.find((c) => c.id === ac.id); if (!cand || !ivActive(cand)) return state;
+      const job = state.jobs.find((j) => j.id === cand.jobId); if (!job) return state;
+      const iv = { ...cand.interview, seq: (cand.interview.seq || 0) + 1, cancelled: true };
+      let c2 = addTL({ ...cand, interview: iv, interviewTime: "" }, "interview_cancelled", fmtInterview(iv.at), who);
+      const msg = buildMessage(state, c2, job, "interview_cancelled", who);
+      c2 = addTL(c2, "message_sent", msg.subject + (msg.status === "failed" ? " · FEL: saknar e-post" : " · köad för utskick"), who);
+      const s2 = mapCand(state, ac.id, () => c2);
+      return { ...s2, messages: [msg, ...state.messages], log: withLog(s2, "Intervju avbokad", cand.name) };
+    }
     case "MSG_STATUS": {
       const prev = state.messages.find((m) => m.id === ac.id); if (!prev) return state;
       const messages = state.messages.map((m) => m.id === ac.id ? { ...m, status: ac.status, error: ac.error || null, sentAt: ac.status === "sent" ? Date.now() : (m.sentAt || null), providerId: ac.providerId || m.providerId || null } : m);
@@ -418,7 +495,7 @@ function reducer(state, ac) {
     case "UPDATE_TEMPLATE": return { ...state, templates: state.templates.map((t) => t.id === ac.id ? { ...t, ...ac.patch } : t) };
     case "REMOVE_TEMPLATE": return { ...state, templates: state.templates.filter((t) => t.id !== ac.id) };
     case "SET_ORG": return { ...state, org: { ...state.org, ...ac.patch } };
-    case "LOAD_STATE": { const d = ac.data || {}; return { ...state, jobs: d.jobs || [], candidates: d.candidates || [], org: d.org || state.org, templates: d.templates || state.templates, messages: d.messages || [], log: d.log || state.log, team: d.team || state.team, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
+    case "LOAD_STATE": { const d = ac.data || {}; const tpl = d.templates ? [...d.templates, ...DEFAULT_TEMPLATES.filter((t) => !d.templates.some((x) => x.trigger === t.trigger))] : state.templates; return { ...state, jobs: d.jobs || [], candidates: d.candidates || [], org: d.org || state.org, templates: tpl, messages: d.messages || [], log: d.log || state.log, team: d.team || state.team, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
     case "SYNC_APPLICATIONS": { const job = state.jobs.find((j) => j.slug === ac.slug); if (!job) return state; const existing = new Set(state.candidates.map((c) => c.id)); const add = (ac.rows || []).filter((r) => !existing.has("sb_" + r.id)).map((r) => ({ id: "sb_" + r.id, jobId: job.id, name: r.name || "Namnlös", email: r.email || null, phone: r.phone || null, answers: r.answers || {}, source: r.source || "Länk", status: "new", managerStatus: null, starred: false, rating: 0, comments: [], reviews: {}, reason: null, interviewTime: null, consentAt: r.consent_at ? new Date(r.consent_at).getTime() : null, formVersion: job.version, appliedAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(), timeline: [{ id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + (r.source || "länk"), at: Date.now(), actor: "System" }] })); if (!add.length) return state; return { ...state, candidates: [...add, ...state.candidates], jobs: state.jobs.map((j) => j.id === job.id ? { ...j, stats: { started: j.stats.started + add.length, submitted: j.stats.submitted + add.length } } : j) }; }
     default: return state;
   }
@@ -447,6 +524,7 @@ const NAV = [
   { id: "jobs", label: "Tjänster", icon: Briefcase },
   { id: "queue", label: "Kö", icon: Layers },
   { id: "candidates", label: "Kandidater", icon: ClipboardList },
+  { id: "calendar", label: "Kalender", icon: CalendarClock },
   { id: "form", label: "Formulär", icon: Blocks },
   { id: "stats", label: "Statistik", icon: BarChart3 },
   { id: "sources", label: "Källkvalitet", icon: TrendingUp },
@@ -588,6 +666,7 @@ const TOUR_STEPS = [
   { target: "nav-jobs", view: "jobs", side: "right", title: "Tjänster", body: "Hantera alla tjänster på ett ställe — status, publicering, kandidater per tjänst, duplicera och arkivera." },
   { target: "nav-form", view: "form", side: "right", title: "Formulärbyggaren", body: "Dra och släpp fält för att bygga ansökningsformuläret. Formuläret är också din scoringmotor — vikter, knockout och villkor styr du här." },
   { target: "nav-queue", view: "queue", side: "right", title: "Kön", body: "Gå igenom kandidater som ett kortlek och swipa för beslut. Rätt mejl köas automatiskt och allt loggas." },
+  { target: "nav-calendar", view: "calendar", side: "right", title: "Kalender", body: "Alla bokade intervjuer på ett ställe — med krockvarning, ombokning och avbokning. Kandidaten får en riktig kalenderinbjudan." },
   { target: "nav-sources", view: "sources", side: "right", title: "Källkvalitet", body: "Se vilken kanal som ger dina bästa kandidater — snittmatchning, inte bara antal ansökningar." },
   { target: "nav-team", view: "team", side: "right", title: "Team och roller", body: "Bjud in kollegor med roller (admin, rekryterare, chef, insyn). All aktivitet blir spårbar i revisionsloggen." },
   { target: "new-job", side: "left", title: "Skapa en tjänst", body: "Här skapar du en ny tjänst från en färdig branschmall — scoring och kandidatkort förladdas automatiskt." },
@@ -687,7 +766,7 @@ export default function App() {
   useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } if (!org) return; let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data"); if (!alive) return; if (rows === null) setCloudOk(false); else { setCloudOk(true); if (rows.length && rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); } dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: org.role }); setLoaded(true); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
   useEffect(() => { if (!sbEnabled || !session || !org || !loaded) return; const t = setTimeout(async () => { const ok = await sbUpsert("org_state", { org_id: org.id, data: state, updated_at: new Date().toISOString() }); setCloudOk(ok); setCloudErr(ok ? null : sbLastError()); }, 1600); return () => clearTimeout(t); }, [state, loaded, org && org.id]);
   useEffect(() => { if (!session) return; let alive = true; (async () => { const c = await mailConfig(); if (alive) setMail({ configured: !!c.configured, provider: c.provider || null, from: c.from || null, reason: c.reason || null, checked: true }); })(); return () => { alive = false; }; }, [session && session.userId]);
-  const sendMailNow = useCallback(async (m) => { if (!m || MAIL_INFLIGHT.has(m.id) || !validEmail(m.to)) return { ok: false }; MAIL_INFLIGHT.add(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: "sending" }); const res = await sendMail({ to: m.to, subject: m.subject, body: m.body, fromName: state.org.companyName, replyTo: state.org.hrEmail }); MAIL_INFLIGHT.delete(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: res.ok ? "sent" : "failed", error: res.error || null, providerId: res.id || null }); if (!res.ok) showToast({ kind: "warn", msg: "Mejlet till " + m.to + " kunde inte skickas: " + (res.error || "okänt fel") }); return res; }, [state.org.companyName, state.org.hrEmail]);
+  const sendMailNow = useCallback(async (m) => { if (!m || MAIL_INFLIGHT.has(m.id) || !validEmail(m.to)) return { ok: false }; MAIL_INFLIGHT.add(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: "sending" }); const _c = state.candidates.find((c) => c.id === m.candidateId); const _j = _c && state.jobs.find((j) => j.id === _c.jobId); const attachment = _c && _j ? icsForMessage(m, _c, _j, state.org) : null; const res = await sendMail({ to: m.to, subject: m.subject, body: m.body, fromName: state.org.companyName, replyTo: state.org.hrEmail, ...(attachment ? { attachment } : {}) }); MAIL_INFLIGHT.delete(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: res.ok ? "sent" : "failed", error: res.error || null, providerId: res.id || null }); if (!res.ok) showToast({ kind: "warn", msg: "Mejlet till " + m.to + " kunde inte skickas: " + (res.error || "okänt fel") }); return res; }, [state.org, state.candidates, state.jobs]);
   useEffect(() => { if (!mail.configured || !session || !org || !loaded) return; state.messages.filter((m) => m.status === "queued" && m.at >= bootRef.current && validEmail(m.to) && !MAIL_INFLIGHT.has(m.id)).forEach((m) => sendMailNow(m)); }, [state.messages, mail.configured, session, org, loaded, sendMailNow]);
   useEffect(() => { store.set("rekyl_state", state); }, [state]);
   useEffect(() => { if (!session || !org || !loaded || !state.jobs.length) return; if (store.get("rekyl_tour_done", false)) return; const t = setTimeout(() => setTourOpen(true), 700); return () => clearTimeout(t); }, [session && session.userId, org && org.id, loaded, state.jobs.length]);
@@ -730,6 +809,7 @@ export default function App() {
           <div className="ats-canvas">
             {view === "dashboard" && <DashboardView {...shared} />}
             {view === "jobs" && <JobsView {...shared} />}
+            {view === "calendar" && <CalendarView {...shared} />}
             {view === "queue" && <QueueView {...shared} />}
             {view === "candidates" && <CandidatesView {...shared} />}
             {view === "form" && <FormView {...shared} />}
@@ -761,6 +841,70 @@ function NewJobModal({ onClose, onCreate }) { const [title, setTitle] = useState
 function ReasonModal({ onClose, onPick }) { return <Modal title="Anledning till avslag" onClose={onClose}><div className="ats-reasons">{REASONS.map((r) => <button key={r} className="ats-reason" onClick={() => onPick(r)}>{r}</button>)}</div><p className="ats-reason-note">Anledningen sparas i kandidatens timeline och i statistiken, och anvands i avslagsmejlet ({"{{rejectionReason}}"}).</p></Modal>; }
 function PrintModal({ doc, onClose }) { return <div className="ats-printwrap"><div className="ats-print-toolbar"><span>{doc.title}</span><div><button className="ats-ghost" onClick={() => window.print()}><Download size={15} /> Skriv ut / PDF</button><button className="ats-ghost" onClick={onClose}><X size={15} /> Stang</button></div></div><div className="ats-printdoc">{doc.node}</div></div>; }
 
+/* ===================== KALENDER ===================== */
+function CalendarView({ state, D, me, showToast, setDetailId }) {
+  const [jobFilter, setJobFilter] = useState("all");
+  const [rebook, setRebook] = useState(null);
+  const [cancelC, setCancelC] = useState(null);
+  const canDecide = can(me.role, "decide");
+  const now = Date.now();
+  const jobOf = (c) => state.jobs.find((j) => j.id === c.jobId);
+  const all = state.candidates
+    .filter(ivActive)
+    .filter((c) => jobFilter === "all" || c.jobId === jobFilter)
+    .map((c) => ({ c, at: new Date(c.interview.at).getTime() }))
+    .sort((a, b) => a.at - b.at);
+  const upcoming = all.filter((x) => ivEnd(x.c.interview) >= now);
+  const past = all.filter((x) => ivEnd(x.c.interview) < now).reverse();
+  const dayKey = (t) => { const d = new Date(t); return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); };
+  const todayK = dayKey(now), tomorrowK = dayKey(now + 864e5);
+  const dayLabel = (k, t) => { const d = new Date(t); return k === todayK ? "Idag" : k === tomorrowK ? "I morgon" : DAY_NAMES[d.getDay()].charAt(0).toUpperCase() + DAY_NAMES[d.getDay()].slice(1) + " " + pad2(d.getDate()) + "/" + pad2(d.getMonth() + 1); };
+  const groups = [];
+  upcoming.forEach((x) => { const k = dayKey(x.at); const g = groups.find((y) => y.k === k); if (g) g.items.push(x); else groups.push({ k, at: x.at, items: [x] }); });
+  const conflictIds = new Set();
+  upcoming.forEach((a, i) => upcoming.slice(i + 1).forEach((b) => { if (ivOverlap(a.c.interview, b.c.interview)) { conflictIds.add(a.c.id); conflictIds.add(b.c.id); } }));
+  const nameOf = (id) => (state.team.find((m) => m.id === id) || {}).name || null;
+  const doCancel = (c) => { setCancelC(null); D({ type: "CANCEL_INTERVIEW", id: c.id }); showToast({ kind: "ok", msg: "Intervjun avbokad · avbokning skickas till " + c.name }); };
+  const doRebook = (iv) => { const c = rebook; setRebook(null); D({ type: "SET_INTERVIEW", id: c.id, interview: iv }); showToast({ kind: "ok", msg: "Ombokad till " + fmtInterview(iv.at) + " · ny inbjudan skickas" }); };
+  const Row = ({ x, isPast }) => {
+    const c = x.c, iv = c.interview, m = INTERVIEW_MODES[iv.mode] || INTERVIEW_MODES.video, I = m.icon;
+    const who = nameOf(iv.interviewerId);
+    return <div className={"ats-cal-row" + (isPast ? " is-past" : "")}>
+      <div className="ats-cal-time"><b>{pad2(new Date(iv.at).getHours())}.{pad2(new Date(iv.at).getMinutes())}</b><small>{iv.duration || 45} min</small></div>
+      <div className="ats-cal-main">
+        <div className="ats-cal-top"><button className="ats-cal-name" onClick={() => setDetailId(c.id)}>{c.name}</button>{conflictIds.has(c.id) && !isPast && <span className="ats-cal-conflict"><AlertTriangle size={11} /> Krock</span>}</div>
+        <div className="ats-cal-meta">{(jobOf(c) || {}).title || "—"} · {c.email}</div>
+        <div className="ats-cal-mode"><I size={13} /> {m.label}{iv.location ? " · " + iv.location : ""}{who ? " · " + who : ""}</div>
+      </div>
+      {canDecide && !isPast && <div className="ats-cal-acts">
+        <button className="ats-ghost is-sm" onClick={() => setRebook(c)}><RotateCw size={13} /> Boka om</button>
+        <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => setCancelC(c)}><CalendarX size={13} /> Avboka</button>
+      </div>}
+    </div>;
+  };
+  return (
+    <div className="ats-view">
+      <PageHeader title="Kalender" meta={<><span>{upcoming.length} kommande</span>{conflictIds.size > 0 && <><Dot /><span className="ats-cal-warn">{conflictIds.size} krockar</span></>}</>} right={<select className="ats-select is-sm" value={jobFilter} onChange={(e) => setJobFilter(e.target.value)}><option value="all">Alla tjänster</option>{state.jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}</select>} />
+      {upcoming.length === 0 && past.length === 0
+        ? <div className="ats-col-empty" style={{ padding: 44 }}>Inga bokade intervjuer. Boka en genom att swipa upp i kön eller från kandidatens panel.</div>
+        : <>
+          {groups.map((g) => <div key={g.k} className="ats-cal-day">
+            <div className="ats-cal-dayh"><CalendarClock size={14} /> {dayLabel(g.k, g.at)}<span>{g.items.length} intervju{g.items.length === 1 ? "" : "er"}</span></div>
+            <div className="ats-cal-rows">{g.items.map((x) => <Row key={x.c.id} x={x} />)}</div>
+          </div>)}
+          {past.length > 0 && <div className="ats-cal-day">
+            <div className="ats-cal-dayh is-muted"><History size={14} /> Genomförda<span>{past.length}</span></div>
+            <div className="ats-cal-rows">{past.slice(0, 20).map((x) => <Row key={x.c.id} x={x} isPast />)}</div>
+          </div>}
+        </>}
+      {rebook && <InterviewModal cand={rebook} job={jobOf(rebook)} state={state} onClose={() => setRebook(null)} onConfirm={doRebook} />}
+      {cancelC && <Modal title="Avboka intervjun?" onClose={() => setCancelC(null)}><div className="ats-erase">
+        <p>Intervjun med <b>{cancelC.name}</b> ({fmtInterview(cancelC.interview.at)}) avbokas. Kandidaten får ett mejl och kalenderinbjudan tas bort automatiskt ur hens kalender.</p>
+        <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setCancelC(null)}>Behåll</button><button className="ats-btn-danger" onClick={() => doCancel(cancelC)}><CalendarX size={15} /> Avboka och meddela</button></div>
+      </div></Modal>}
+    </div>
+  );
+}
 /* ===================== TJANSTER ===================== */
 function JobsView({ state, D, me, showToast, setView, allScored, setNewJob }) {
   const [filter, setFilter] = useState("all");
@@ -952,31 +1096,47 @@ function QueueView({ cands, D, me, job, state, showToast, setReasonFor, setDetai
       <div className="ats-actions"><button className="ats-act is-reject" disabled={!allowed} onClick={() => commit("left")} title="Avslå (vänster)"><X size={20} /></button><button className="ats-act is-reserve" disabled={!allowed} onClick={() => commit("down")} title="Reserv (ner)"><PauseCircle size={18} /></button><button className="ats-act is-interview" disabled={!allowed} onClick={() => commit("up")} title="Intervju (upp)"><CalendarCheck size={18} /></button><button className="ats-act is-yes" disabled={!allowed} onClick={() => commit("right")} title="Shortlist (höger)"><Check size={22} /></button></div>
       <p className="ats-hint"><ArrowRight size={12} /> shortlist · <span className="ats-hint-up">upp</span> intervju · <span className="ats-hint-dn">ner</span> reserv · <ArrowLeftIcon /> avslag — rätt mejl skickas automatiskt</p>
       {rejectId && <ReasonModal onClose={() => setRejectId(null)} onPick={(reason) => { const c = cands.find((x) => x.id === rejectId); setRejectId(null); if (c) runExit("left", { reason }, c); }} />}
-      {interviewId && <InterviewModal cand={cands.find((x) => x.id === interviewId)} onClose={() => setInterviewId(null)} onConfirm={(time) => { const c = cands.find((x) => x.id === interviewId); setInterviewId(null); if (c) runExit("up", { interviewTime: time }, c); }} />}
+      {interviewId && <InterviewModal cand={cands.find((x) => x.id === interviewId)} job={job} state={state} onClose={() => setInterviewId(null)} onConfirm={(iv) => { const c = cands.find((x) => x.id === interviewId); setInterviewId(null); if (c) runExit("up", { interviewTime: fmtInterview(iv.at), interview: { ...iv, seq: 0, cancelled: false } }, c); }} />}
     </div>
   );
 }
 function ArrowLeftIcon() { return <ChevronLeft size={12} style={{ display: "inline", verticalAlign: "-2px" }} />; }
-function InterviewModal({ cand, onClose, onConfirm }) {
-  const pad = (n) => String(n).padStart(2, "0");
-  const isoLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const init = () => { const d = new Date(); d.setDate(d.getDate() + 2); d.setHours(10, 0, 0, 0); return isoLocal(d); };
+function InterviewModal({ cand, job, state, onClose, onConfirm }) {
+  const prev = cand && cand.interview && !cand.interview.cancelled ? cand.interview : null;
+  const isoLocal = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  const init = () => { if (prev && prev.at) return isoLocal(new Date(prev.at)); const d = new Date(); d.setDate(d.getDate() + 2); d.setHours(10, 0, 0, 0); return isoLocal(d); };
   const [dt, setDt] = useState(init);
-  const DAYS = ["söndag", "måndag", "tisdag", "onsdag", "torsdag", "fredag", "lördag"];
-  const fmt = (v) => { if (!v) return ""; const d = new Date(v); return `${DAYS[d.getDay()]} ${pad(d.getDate())}/${pad(d.getMonth() + 1)} kl ${pad(d.getHours())}.${pad(d.getMinutes())}`; };
+  const [duration, setDuration] = useState(prev ? prev.duration || 45 : 45);
+  const [mode, setMode] = useState(prev ? prev.mode || "video" : "video");
+  const [location, setLocation] = useState(prev ? prev.location || "" : "");
+  const [interviewerId, setInterviewerId] = useState(prev ? prev.interviewerId || "" : "");
   const preset = (days, hour) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(hour, 0, 0, 0); setDt(isoLocal(d)); };
-  return <Modal title="Boka intervjutid" onClose={onClose}>
+  const at = dt ? new Date(dt).toISOString() : null;
+  const past = at && new Date(at).getTime() < Date.now();
+  const cfg = INTERVIEW_MODES[mode];
+  const needsLoc = mode !== "phone";
+  const conflicts = !at ? [] : state.candidates.filter((c) => c.id !== cand.id && ivActive(c) && ivOverlap({ at, duration }, c.interview));
+  const valid = !!at && !past && duration >= 15 && duration <= 240 && (!needsLoc || location.trim().length > 2);
+  const submit = () => { if (!valid) return; onConfirm({ at, duration: Number(duration), mode, location: location.trim(), interviewerId: interviewerId || null }); };
+  return <Modal title={prev ? "Boka om intervju" : "Boka intervjutid"} onClose={onClose}>
     <div className="ats-intv">
-      <p className="ats-intv-sub">Välj tid för <b>{cand?.name}</b>. Tiden läggs automatiskt i intervjumejlet ({"{{interviewTime}}"}) och i kandidatens timeline.</p>
-      <div className="ats-intv-presets"><button className="ats-chip" onClick={() => preset(1, 10)}>I morgon 10.00</button><button className="ats-chip" onClick={() => preset(2, 14)}>Om 2 dagar 14.00</button><button className="ats-chip" onClick={() => preset(3, 9)}>Om 3 dagar 09.00</button></div>
-      <label className="ats-field"><span className="ats-field-l">Datum och tid</span><input type="datetime-local" value={dt} onChange={(e) => setDt(e.target.value)} /></label>
-      <div className="ats-intv-preview"><CalendarCheck size={15} /> {fmt(dt) || "Ingen tid vald"}</div>
-      <div className="ats-intv-actions"><button className="ats-ghost" onClick={onClose}>Avbryt</button><button className="ats-btn-primary" disabled={!dt} onClick={() => onConfirm(fmt(dt))}><CalendarCheck size={15} /> Boka och skicka</button></div>
+      <p className="ats-intv-sub">Tiden skickas till <b>{cand?.name}</b> med en kalenderinbjudan (.ics) som läggs direkt i kandidatens kalender.</p>
+      {!prev && <div className="ats-intv-presets">{[[1, 10, "I morgon 10.00"], [2, 14, "Om 2 dagar 14.00"], [3, 9, "Om 3 dagar 09.00"]].map(([d, h, l]) => <button key={l} className="ats-chip" onClick={() => preset(d, h)}>{l}</button>)}</div>}
+      <div className="ats-tpl-two">
+        <label className="ats-field"><span className="ats-field-l">Datum och tid</span><input type="datetime-local" value={dt} onChange={(e) => setDt(e.target.value)} /></label>
+        <label className="ats-field"><span className="ats-field-l">Längd (minuter)</span><input type="number" min="15" max="240" step="15" value={duration} onChange={(e) => setDuration(e.target.value)} /></label>
+      </div>
+      <div className="ats-field"><span className="ats-field-l">Form</span><div className="ats-intv-modes">{Object.entries(INTERVIEW_MODES).map(([k, m]) => { const I = m.icon; return <button key={k} className={"ats-intv-mode" + (mode === k ? " is-on" : "")} onClick={() => setMode(k)}><I size={15} /> {m.label}</button>; })}</div></div>
+      <label className="ats-field"><span className="ats-field-l">{cfg.locLabel}</span><input value={location} onChange={(e) => setLocation(e.target.value)} placeholder={cfg.ph} /></label>
+      <label className="ats-field"><span className="ats-field-l">Intervjuare</span><select value={interviewerId} onChange={(e) => setInterviewerId(e.target.value)}><option value="">Ej tilldelad</option>{state.team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+      {past && <div className="ats-intv-warn is-err"><CircleAlert size={14} /> Tiden har redan passerat — välj en framtida tid.</div>}
+      {needsLoc && location.trim().length <= 2 && !past && <div className="ats-intv-warn"><Info size={14} /> Ange {cfg.locLabel.toLowerCase()} så kandidaten vet vart hen ska.</div>}
+      {conflicts.length > 0 && <div className="ats-intv-warn is-warn"><AlertTriangle size={14} /> Krockar med {conflicts.map((c) => c.name).join(", ")} ({fmtInterview(conflicts[0].interview.at)}).</div>}
+      <div className="ats-intv-preview"><CalendarCheck size={15} /> {at && !past ? fmtInterview(at) + " · " + duration + " min · " + cfg.label : "Ingen giltig tid vald"}</div>
+      <div className="ats-intv-actions"><button className="ats-ghost" onClick={onClose}>Avbryt</button><button className="ats-btn-primary" disabled={!valid} onClick={submit}><CalendarCheck size={15} /> {prev ? "Boka om och skicka" : "Boka och skicka"}</button></div>
     </div>
   </Modal>;
 }
-
-/* ===================== KANDIDATER ===================== */
 function toCSV(list) { const head = ["Namn", "E-post", "Telefon", "Matchning", "Status", "Källa", "Betyg", "Diskvalificerad", "Saknar", "Avslagsanledning"]; const rows = list.map((c) => [c.name, c.email || "", c.phone || "", c.total + "%", statusLabel(c.status), c.source, c.rating || "", c.knockout ? "Ja" : "Nej", (c.missing || []).join("|"), c.reason || ""]); return [head, ...rows].map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\n"); }
 function RecruitmentReport({ job, cands, state }) {
   const org = state.org;
@@ -1036,6 +1196,7 @@ function CandidateDrawer({ cand, state, D, me, job, onClose, showToast, setPrint
   const [erasing, setErasing] = useState(false); const [eraseBusy, setEraseBusy] = useState(false);
   const doErase = async () => { setEraseBusy(true); await eraseCandidate(c, D); setEraseBusy(false); setErasing(false); showToast({ kind: "ok", msg: "Kandidatens data raderad permanent" }); onClose(); };
   const dupOf = (dupIndex[(c.email || "").toLowerCase()] || []).filter((x) => x.id !== c.id);
+  const [booking, setBooking] = useState(false);
   const decide = (status, reason) => { D({ type: "DECIDE", id: c.id, status, reason }); showToast({ kind: c.email ? "ok" : "warn", msg: c.email ? `${statusLabel(status)} · mejl köat` : `${statusLabel(status)} · mejl EJ köat (saknar e-post)` }); };
   const sendMsg = (trigger) => { D({ type: "SEND_MESSAGE", id: c.id, trigger }); showToast({ kind: c.email ? "ok" : "warn", msg: c.email ? "Mejl köat i mejlloggen" : "EJ köat — saknar e-post" }); };
   return (
@@ -1064,10 +1225,11 @@ function CandidateDrawer({ cand, state, D, me, job, onClose, showToast, setPrint
         <button className="ats-ghost is-sm" title="Exportera kandidatens data (GDPR-portabilitet)" onClick={() => downloadJSON("kandidat-" + (c.name || "data").replace(/\s+/g, "_") + ".json", { namn: c.name, epost: c.email, telefon: c.phone, kalla: c.source, status: statusLabel(c.status), matchning: c.total + "%", svar: c.answers, motivering: c.reason, samtycke: c.consentAt ? new Date(c.consentAt).toISOString() : null, ansokt: new Date(c.appliedAt).toISOString(), timeline: c.timeline })}><Download size={14} /> Exportera</button>
         {me.role === "admin" && <button className="ats-ghost is-sm is-danger" title="Radera all data (rätt att bli glömd)" onClick={() => setErasing(true)}><Trash2 size={14} /> Radera</button>}
         {erasing && <Modal title="Radera kandidatens data permanent?" onClose={() => !eraseBusy && setErasing(false)}><div className="ats-erase"><p><b>{c.name}</b> och all tillhörande data (svar, bilagor, motiveringar och timeline) raderas permanent från både appen och molnet. Detta går inte att ångra.</p><p className="ats-erase-note"><ShieldCheck size={13} /> Uppfyller den registrerades rätt att bli glömd enligt GDPR artikel 17.</p><div className="ats-erase-actions"><button className="ats-ghost" disabled={eraseBusy} onClick={() => setErasing(false)}>Avbryt</button><button className="ats-btn-danger" disabled={eraseBusy} onClick={doErase}>{eraseBusy ? "Raderar…" : "Radera permanent"}</button></div></div></Modal>}
+        {booking && <InterviewModal cand={c} job={job} state={state} onClose={() => setBooking(false)} onConfirm={(iv) => { setBooking(false); D({ type: "SET_INTERVIEW", id: c.id, interview: iv }); showToast({ kind: "ok", msg: "Intervju " + (ivActive(c) ? "ombokad" : "bokad") + " · " + fmtInterview(iv.at) + " · inbjudan skickas" }); }} />}
         {canDecide && <div className="ats-drawer-decide">
           <Menu align="right" trigger={<button className="ats-dq-rej" title="Avslå"><X size={15} /></button>}><div className="ats-menu-label">Avslagsanledning</div>{REASONS.map((r) => <button key={r} className="ats-menu-item" onClick={() => decide("reject", r)}>{r}</button>)}</Menu>
           <button className="ats-dq-res" title="Reservlista" onClick={() => decide("reserve")}><PauseCircle size={15} /></button>
-          <button className="ats-dq-int" title="Intervju" onClick={() => decide("interview")}><CalendarCheck size={15} /></button>
+          <button className="ats-dq-int" title={ivActive(c) ? "Boka om intervju" : "Boka intervju"} onClick={() => setBooking(true)}><CalendarCheck size={15} /></button>
           <button className="ats-dq-yes" title="Shortlist" onClick={() => decide("shortlist")}><Check size={15} /></button>
           <button className="ats-dq-hire" title="Anställ" onClick={() => decide("hired")}><BadgeCheck size={15} /> Anställ</button>
         </div>}
@@ -2587,6 +2749,38 @@ function Style() {
 .ats-msgstatus.is-sent{background:var(--petrol);color:#fff}
 .ats-msgstatus.is-sending{background:var(--blue-soft);color:var(--blue)}
 .ats-msglog-act{display:flex;justify-content:flex-end}
+.ats-intv-modes{display:flex;gap:7px;flex-wrap:wrap}
+.ats-intv-mode{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border:1px solid var(--line);border-radius:10px;font-size:12.5px;font-weight:600;color:var(--sub);background:var(--surface)}
+.ats-intv-mode:hover{border-color:var(--petrol-soft)}
+.ats-intv-mode.is-on{background:var(--petrol);color:#fff;border-color:var(--petrol)}
+.ats-intv-warn{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:9px;font-size:12.5px;background:var(--paper2);color:var(--sub);margin-top:2px}
+.ats-intv-warn.is-warn{background:var(--amber-soft);color:var(--gold)}
+.ats-intv-warn.is-err{background:var(--brick-soft);color:var(--brick)}
+.ats-cal-warn{color:var(--brick);font-weight:600}
+.ats-cal-day{margin-bottom:20px}
+.ats-cal-dayh{display:flex;align-items:center;gap:8px;font-family:'Bricolage Grotesque';font-weight:600;font-size:14px;color:var(--ink);padding:0 2px 9px}
+.ats-cal-dayh.is-muted{color:var(--muted)}
+.ats-cal-dayh span{margin-left:auto;font-family:'IBM Plex Mono';font-size:11px;font-weight:400;color:var(--muted)}
+.ats-cal-rows{display:flex;flex-direction:column;gap:8px}
+.ats-cal-row{display:flex;align-items:center;gap:15px;background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:13px 16px;transition:border-color .13s}
+.ats-cal-row:hover{border-color:var(--petrol-soft)}
+.ats-cal-row.is-past{opacity:.55}
+.ats-cal-time{display:flex;flex-direction:column;align-items:center;min-width:56px;flex-shrink:0;padding-right:14px;border-right:1px solid var(--line)}
+.ats-cal-time b{font-family:'Bricolage Grotesque';font-size:16px;color:var(--petrol)}
+.ats-cal-time small{font-family:'IBM Plex Mono';font-size:10px;color:var(--muted)}
+.ats-cal-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+.ats-cal-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ats-cal-name{font-family:'Bricolage Grotesque';font-weight:600;font-size:14.5px;color:var(--ink);text-align:left}
+.ats-cal-name:hover{color:var(--petrol)}
+.ats-cal-conflict{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:11px;background:var(--brick-soft);color:var(--brick)}
+.ats-cal-meta{font-size:12px;color:var(--muted);font-family:'IBM Plex Mono';overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ats-cal-mode{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--sub)}
+.ats-cal-acts{display:flex;gap:6px;flex-shrink:0}
+.ats-cal-cancel:hover{color:var(--brick)}
+.ats-dr-iv{display:flex;align-items:center;gap:11px;background:var(--petrol-soft);color:var(--petrol-deep);padding:11px 13px;border-radius:11px;margin:4px 0 6px}
+.ats-dr-iv div{display:flex;flex-direction:column;min-width:0}
+.ats-dr-iv b{font-family:'Bricolage Grotesque';font-size:13.5px}
+.ats-dr-iv span{font-size:11.5px;opacity:.85;overflow:hidden;text-overflow:ellipsis}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
@@ -2605,6 +2799,7 @@ function Style() {
   .ats-msglog-row{grid-template-columns:64px 1fr 40px}
   .ats-flagcols{grid-template-columns:1fr}
   .ats-jobcard{flex-direction:column;align-items:stretch}.ats-jobcard-acts{flex-wrap:wrap}
+  .ats-cal-row{flex-wrap:wrap}.ats-cal-acts{width:100%;justify-content:flex-end}
   /* Inställningssidan – luftigare på mobil */
   .ats-grid-2{gap:14px}
   .ats-tpl-two{grid-template-columns:1fr;gap:11px}
