@@ -19,6 +19,7 @@ const sbEnabled = !!(SB_URL && SB_KEY);
 let SB_TOKEN = SB_KEY, SB_REFRESH = null, SB_EXP = 0;
 let SB_LAST = { status: 0, msg: "" };
 let SB_REV = 0;
+let SB_REV_OK = true; /* stängs av automatiskt om kolumnen `rev` inte finns */
 function sbSetRev(r) { SB_REV = r || 0; }
 function sbLastError() { return SB_LAST; }
 function sbSetToken(t) { SB_TOKEN = t || SB_KEY; }
@@ -1226,6 +1227,10 @@ function cloudHint(e) {
   return "Molnfel (" + e.status + ")" + (e.msg ? ": " + e.msg.slice(0, 90) : "") + ".";
 }
 export default function App() {
+  return <ErrorBoundary name="root"><AppInner /></ErrorBoundary>;
+}
+
+function AppInner() {
   const [state, dispatch] = useReducer(reducer, INITIAL, (init) => { try { const sv = store.get("rekyl_state", null); return hydrate(init, sv); } catch (e) { return init; } });
   const D = dispatch;
   const [view, setView] = useState("dashboard");
@@ -1258,19 +1263,31 @@ export default function App() {
   const cloudRetry = async () => { if (!session) return; const rows = await sbGet("members?user_id=eq." + session.userId + "&select=org_id,role"); if (rows === null) { setCloudOk(false); setCloudErr(sbLastError()); return; } let o; if (rows.length) { o = { id: rows[0].org_id, role: rows[0].role }; sbSetOrg(o.id); setOrgState(o); store.set("rekyl_org", o); } else { store.set("rekyl_org", null); setOrgState(null); setOrgChecked(true); setCloudOk(false); setCloudErr({ status: 0, msg: "Ingen f\u00f6retagskoppling (members saknas)" }); return; } const okW = await sbUpsert("org_state", { org_id: o.id, data: state, updated_at: new Date().toISOString() }); setCloudOk(okW); setCloudErr(okW ? null : sbLastError()); if (okW) { const st = await sbGet("org_state?org_id=eq." + o.id + "&select=data"); if (st && st.length && st[0].data) dispatch({ type: "LOAD_STATE", data: st[0].data }); dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: o.role }); } };
   useEffect(() => { if (!sbEnabled || !session || !session.refresh) return; let alive = true; const doRefresh = async () => { const d = await sbRefresh(session.refresh); if (d && alive) { const ns = { ...session, token: d.access_token, refresh: d.refresh_token, exp: Date.now() + (d.expires_in || 3600) * 1000 }; store.set("rekyl_session", ns); sbSetAuth(ns.token, ns.refresh, ns.exp); setSession(ns); } }; if (session.exp && session.exp < Date.now() + 5 * 60000) doRefresh(); const t = setInterval(doRefresh, 45 * 60000); return () => { alive = false; clearInterval(t); }; }, [session && session.userId]);
   useEffect(() => { if (!sbEnabled || !session) { setOrgChecked(true); return; } let alive = true; (async () => { const rows = await sbGet("members?user_id=eq." + session.userId + "&select=org_id,role"); if (!alive) return; if (rows === null) { setCloudOk(false); if (org) sbSetOrg(org.id); setOrgChecked(true); return; } setCloudOk(true); if (rows.length) { const o = { id: rows[0].org_id, role: rows[0].role }; sbSetOrg(o.id); setOrgState(o); store.set("rekyl_org", o); } else { store.set("rekyl_org", null); setOrgState(null); sbSetOrg(null); } setOrgChecked(true); })(); return () => { alive = false; }; }, [session && session.userId]);
-  useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } if (!org) return; let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data,rev"); if (!alive) return; if (rows === null) setCloudOk(false); else { setCloudOk(true); if (rows.length) { sbSetRev(rows[0].rev || 0); if (rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); } } dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: org.role }); setLoaded(true); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
+  useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } if (!org) return; let alive = true; (async () => { let rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data,rev");
+      if (rows === null) { SB_REV_OK = false; rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data"); } if (!alive) return; if (rows === null) setCloudOk(false); else { setCloudOk(true); if (rows.length) { sbSetRev(rows[0].rev || 0); if (rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); } } dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: org.role }); setLoaded(true); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
   useEffect(() => { if (!sbEnabled || !session || !org || !loaded) return; const t = setTimeout(async () => {
       /* Optimistisk låsning: skrivningen går bara igenom om rev fortfarande stämmer.
        * Har någon annan sparat under tiden får vi 0 rader tillbaka -> konflikt. */
-      const next = SB_REV + 1;
-      const r = await sbFetch(SB_URL + "/rest/v1/org_state?org_id=eq." + org.id + "&rev=eq." + SB_REV, "PATCH", () => ({ ...sbHead(), Prefer: "return=representation" }), JSON.stringify({ data: state, rev: next, updated_at: new Date().toISOString() }));
-      if (r.ok) { const rows = await r.json().catch(() => []); if (rows && rows.length) { sbSetRev(next); setCloudOk(true); setCloudErr(null); return; }
-        /* Ingen rad matchade: antingen konflikt eller första sparningen. */
-        const ok2 = await sbUpsert("org_state", { org_id: org.id, data: state, rev: next, updated_at: new Date().toISOString() });
-        if (ok2) { sbSetRev(next); setCloudOk(true); setCloudErr(null); } else { setCloudOk(false); setCloudErr({ status: 409, msg: "conflict" }); }
-        return; }
-      const ok3 = await sbUpsert("org_state", { org_id: org.id, data: state, updated_at: new Date().toISOString() });
-      setCloudOk(ok3); setCloudErr(ok3 ? null : sbLastError());
+      const base = { org_id: org.id, data: state, updated_at: new Date().toISOString() };
+      if (SB_REV_OK) {
+        const next = SB_REV + 1;
+        try {
+          const r = await sbFetch(SB_URL + "/rest/v1/org_state?org_id=eq." + org.id + "&rev=eq." + SB_REV, "PATCH", () => ({ ...sbHead(), Prefer: "return=representation" }), JSON.stringify({ ...base, rev: next }));
+          if (r.ok) {
+            const rows = await r.json().catch(() => []);
+            if (rows && rows.length) { sbSetRev(next); setCloudOk(true); setCloudErr(null); return; }
+            /* Noll rader: antingen allra första sparningen, eller så hann någon annan före. */
+            const ok2 = await sbUpsert("org_state", { ...base, rev: next });
+            if (ok2) { sbSetRev(next); setCloudOk(true); setCloudErr(null); }
+            else { setCloudOk(false); setCloudErr({ status: 409, msg: "conflict" }); }
+            return;
+          }
+          /* Kolumnen `rev` saknas (SQL:en är inte körd) — stäng av låsningen och spara som vanligt. */
+          if (r.status === 400 || r.status === 404) SB_REV_OK = false;
+        } catch (e) { SB_REV_OK = false; }
+      }
+      const ok = await sbUpsert("org_state", base);
+      setCloudOk(ok); setCloudErr(ok ? null : sbLastError());
     }, 1600); return () => clearTimeout(t); }, [state, loaded, org && org.id]);
   useEffect(() => { if (!session || !org) { setIsSuper(false); return; } let alive = true; (async () => { const r = await adminCall("whoami"); if (alive) setIsSuper(!!(r.ok && r.superadmin)); const rows = await sbGet("orgs?id=eq." + org.id + "&select=plan,suspended,max_jobs"); if (alive && rows && rows[0]) setPlan({ plan: rows[0].plan || "start", suspended: !!rows[0].suspended, maxJobs: rows[0].max_jobs == null ? 999 : rows[0].max_jobs }); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
   useEffect(() => { if (!session) return; let alive = true; (async () => { const c = await mailConfig(); if (alive) setMail({ configured: !!c.configured, provider: c.provider || null, from: c.from || null, reason: c.reason || null, notify: !!c.notify, reminders: !!c.reminders, checked: true }); })(); return () => { alive = false; }; }, [session && session.userId]);
