@@ -514,8 +514,12 @@ function reducer(state, ac) {
     case "CAREER_BLOCK_DUP": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => { if (p.id !== ac.pageId) return p; const i = p.blocks.findIndex((b) => b.id === ac.id); if (i < 0) return p; const c = { ...JSON.parse(JSON.stringify(p.blocks[i])), id: "b" + uid() }; const bs = [...p.blocks]; bs.splice(i + 1, 0, c); return { ...p, blocks: bs }; }) } };
     case "CAREER_BLOCK_MOVE": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => { if (p.id !== ac.pageId) return p; const i = p.blocks.findIndex((b) => b.id === ac.id); const j = i + ac.dir; if (i < 0 || j < 0 || j >= p.blocks.length) return p; const bs = [...p.blocks]; const [m] = bs.splice(i, 1); bs.splice(j, 0, m); return { ...p, blocks: bs }; }) } };
     case "ADD_CANDIDATE": { const job0 = state.jobs.find((j) => j.id === ac.jobId); if (!job0) return state; const pipe0 = (ensurePipeline(job0)).pipeline; const st0 = startStage(pipe0);
-      const c0 = migrateCandidate({ ...ac.cand, status: "new", timeline: [], at: Date.now() }, pipe0);
-      const s2 = { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? ensurePipeline(j) : j), candidates: [{ ...c0, stageId: st0.id, ownerId: job0.ownerId || null, pipeVersion: pipe0.version }, ...state.candidates] };
+      const c0 = migrateCandidate({ ...ac.cand, jobId: ac.jobId, status: "new", timeline: [], at: Date.now() }, pipe0);
+      const jb = ensureScoring(ensurePipeline(job0));
+      const av0 = activeVersion(jb);
+      let cNew = { ...c0, stageId: st0.id, ownerId: job0.ownerId || null, pipeVersion: pipe0.version };
+      if (av0) { const r0 = runScoring(av0.ver, cNew, jb); cNew = { ...cNew, scores: [{ runId: "run" + uid(), key: runKey(av0.profile.id, av0.ver.v, cNew), at: Date.now(), by: null, byName: "System", reason: "ny ansökan", profileId: av0.profile.id, profileName: av0.profile.name, version: av0.ver.v, current: true, ...r0 }] }; }
+      const s2 = { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jb : j), candidates: [cNew, ...state.candidates] };
       return { ...s2, log: withLog(s2, "Ansökan mottagen", ac.cand.name) };
     }
     case "PIPE_INIT": return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? ensurePipeline(j) : j) };
@@ -604,6 +608,67 @@ function reducer(state, ac) {
     case "SLA_EXCEPT": { const c = state.candidates.find((x) => x.id === ac.id); if (!c) return state;
       return { ...state, candidates: state.candidates.map((x) => x.id !== ac.id ? x : { ...x, rev: (x.rev || 0) + 1, visits: (x.visits || []).map((v) => v.exitedAt ? v : { ...v, exception: ac.clear ? null : { dueAt: ac.dueAt || null, exempt: !!ac.exempt, reason: ac.reason || "", by: who, at: Date.now() } }) }) }; }
     case "SET_CAND_OWNER": return { ...state, candidates: state.candidates.map((c) => c.id === ac.id ? addTL({ ...c, ownerId: ac.ownerId || null, rev: (c.rev || 0) + 1 }, "note", "Ansvarig: " + ((_TEAM.find((m) => m.id === ac.ownerId) || {}).name || "ingen"), who) : c) };
+    case "SCORING_INIT": return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? ensureScoring(j) : j) };
+    case "SP_ADD": { const jj = ensureScoring(state.jobs.find((j) => j.id === ac.jobId) || {}); if (!jj.id || isReadonly(jj)) return state;
+      const base = ac.from ? JSON.parse(JSON.stringify(jj.scoring.profiles.find((p) => p.id === ac.from))) : null;
+      const p = base ? { ...base, id: "sp" + uid(), name: ac.name, primary: false, version: 0, versions: [], draft: { ...base.draft, updatedAt: Date.now() }, createdAt: Date.now() } : { ...defaultProfile(jj, ac.name), primary: false };
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...jj, scoring: { profiles: [...jj.scoring.profiles, p] } }, "scoring", "Profil skapad: " + p.name, who) : j) }; }
+    case "SP_SET": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { profiles: j.scoring.profiles.map((p) => p.id === ac.id ? { ...p, ...ac.patch, updatedAt: Date.now() } : (ac.patch.primary ? { ...p, primary: false } : p)) } }, "scoring", ac.note || "Profil ändrad", who)) }; }
+    case "SP_DRAFT": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : { ...j, scoring: { profiles: j.scoring.profiles.map((p) => p.id === ac.id ? { ...p, draft: { ...p.draft, ...ac.patch, updatedAt: Date.now() } } : p) } }) }; }
+    case "SP_PUBLISH": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const p = jj.scoring.profiles.find((x) => x.id === ac.id); if (!p) return state;
+      if (profileWarnings(p.draft, jj).some((w) => w.kind === "err")) return state; /* aldrig publicera en profil som inte går att beräkna */
+      const v = p.version + 1;
+      const snap = JSON.parse(JSON.stringify({ v, at: Date.now(), by: (_TEAM.find((m) => m.id === who) || {}).name || "System", note: ac.note || "", groups: p.draft.groups, criteria: p.draft.criteria, norm: p.draft.norm || p.norm }));
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { profiles: j.scoring.profiles.map((x) => x.id === ac.id ? { ...x, version: v, versions: [snap, ...(x.versions || [])].slice(0, 30) } : x) } }, "scoring", "Scoringversion publicerad · v" + v, who)) }; }
+    case "SP_RESTORE": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const p = jj.scoring.profiles.find((x) => x.id === ac.id); const snap = p && (p.versions || []).find((x) => x.v === ac.v); if (!snap) return state;
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { profiles: j.scoring.profiles.map((x) => x.id === ac.id ? { ...x, draft: JSON.parse(JSON.stringify({ groups: snap.groups, criteria: snap.criteria, norm: snap.norm, updatedAt: Date.now() })) } : x) } }, "scoring", "Utkast från v" + ac.v, who)) }; }
+    case "SP_DEL": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const rest = jj.scoring.profiles.filter((p) => p.id !== ac.id);
+      if (!rest.length) return state; /* minst en profil måste finnas */
+      if (!rest.some((p) => p.primary)) rest[0] = { ...rest[0], primary: true };
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { profiles: rest } }, "scoring", "Profil borttagen", who)) }; }
+    case "SG_ADD": case "SG_SET": case "SG_DEL": case "SG_MOVE":
+    case "SC_ADD": case "SC_SET": case "SC_DEL": case "SC_MOVE": case "SC_DUP": {
+      const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const upd = (d) => {
+        let groups = [...(d.groups || [])], criteria = [...(d.criteria || [])];
+        if (ac.type === "SG_ADD") groups = [...groups, { id: "sg" + uid(), name: ac.name || "Ny grupp", desc: "", order: groups.length, weight: 1, agg: "sum", active: true }];
+        if (ac.type === "SG_SET") groups = groups.map((g) => g.id === ac.id ? { ...g, ...ac.patch } : g);
+        if (ac.type === "SG_DEL") { groups = groups.filter((g) => g.id !== ac.id); criteria = criteria.map((c) => c.groupId === ac.id ? { ...c, groupId: (groups[0] || {}).id || null } : c); }
+        if (ac.type === "SG_MOVE") { const i = groups.findIndex((g) => g.id === ac.id), k = i + ac.dir; if (i >= 0 && k >= 0 && k < groups.length) { const [m] = groups.splice(i, 1); groups.splice(k, 0, m); groups = groups.map((g, n) => ({ ...g, order: n })); } }
+        if (ac.type === "SC_ADD") { const f = (jj.criteria || []).find((x) => x.id === ac.source); if (f) criteria = [...criteria, mkCriterion(f, ac.groupId, criteria.length)]; }
+        if (ac.type === "SC_SET") criteria = criteria.map((c) => c.id === ac.id ? { ...c, ...ac.patch } : c);
+        if (ac.type === "SC_DEL") criteria = criteria.filter((c) => c.id !== ac.id);
+        if (ac.type === "SC_DUP") { const c = criteria.find((x) => x.id === ac.id); if (c) criteria = [...criteria, { ...JSON.parse(JSON.stringify(c)), id: "sc" + uid(), name: c.name + " (kopia)", order: criteria.length }]; }
+        if (ac.type === "SC_MOVE") criteria = criteria.map((c) => c.id === ac.id ? { ...c, groupId: ac.groupId } : c);
+        return { ...d, groups, criteria, updatedAt: Date.now() };
+      };
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : { ...j, scoring: { profiles: j.scoring.profiles.map((p) => p.id === ac.profileId ? { ...p, draft: upd(p.draft) } : p) } }) }; }
+
+    case "SCORE_RUN": {
+      const job = state.jobs.find((j) => j.id === ac.jobId); if (!job) return state;
+      const av = activeVersion(job); if (!av) return state;
+      const ids = new Set(ac.candIds || state.candidates.filter((c) => c.jobId === job.id).map((c) => c.id));
+      const at = Date.now();
+      const byName = (_TEAM.find((m) => m.id === who) || {}).name || "System";
+      let changed = 0;
+      const candidates = state.candidates.map((c) => {
+        if (!ids.has(c.id) || c.jobId !== job.id) return c;
+        const key = runKey(av.profile.id, av.ver.v, c);
+        const prev = (c.scores || []);
+        if (prev.some((s) => s.key === key && s.current)) return c; /* idempotent — samma data + version = samma körning */
+        const r = runScoring(av.ver, c, job);
+        changed++;
+        const rec = { runId: "run" + uid(), key, at, by: who, byName, reason: ac.reason || "manuell", profileId: av.profile.id, profileName: av.profile.name, version: av.ver.v, current: true, ...r };
+        return { ...c, scores: [rec, ...prev.map((s) => ({ ...s, current: false }))].slice(0, 10) };
+      });
+      const s2 = { ...state, candidates, jobs: state.jobs.map((j) => j.id === job.id ? jlog(j, "scoring", "Scoring beräknad · " + changed + " kandidater · v" + av.ver.v, who) : j) };
+      return { ...s2, log: withLog(s2, "Scoring beräknad", changed + " kandidater · " + av.profile.name + " v" + av.ver.v) };
+    }
     case "MSG_STATUS": {
       const prev = state.messages.find((m) => m.id === ac.id); if (!prev) return state;
       const messages = state.messages.map((m) => m.id === ac.id ? { ...m, status: ac.status, error: ac.error || null, sentAt: ac.status === "sent" ? Date.now() : (m.sentAt || null), providerId: ac.providerId || m.providerId || null } : m);
@@ -622,6 +687,7 @@ function reducer(state, ac) {
               annons: o.annons === false ? { ...c0.annons, description: "", requirements: [], meriter: [], faq: [] } : c0.annons,
               criteria: o.form === false ? [] : c0.criteria,
               profiles: o.scoring === false ? [{ id: "std", name: "Standard", weights: {} }] : c0.profiles,
+        scoring: o.scoring === false ? null : (c0.scoring ? { profiles: c0.scoring.profiles.map((p) => ({ ...p, id: "sp" + uid(), version: 0, versions: [] })) } : null),
               rules: o.knockout === false ? [] : c0.rules,
               autoRules: o.automations === false ? [] : c0.autoRules,
               tags: o.tags === false ? [] : c0.tags,
@@ -699,6 +765,7 @@ const NAV = [
   { id: "candidates", label: "Kandidater", icon: ClipboardList },
   { id: "calendar", label: "Kalender", icon: CalendarClock },
   { id: "form", label: "Formulär", icon: Blocks },
+  { id: "scoring", label: "Scoring", icon: Gauge },
   { id: "career", label: "Karriärsida", icon: Globe },
   { id: "stats", label: "Statistik", icon: BarChart3 },
   { id: "sources", label: "Källkvalitet", icon: TrendingUp },
@@ -1312,7 +1379,7 @@ function AppInner() {
   const job = state.jobs.find((j) => j.id === state.activeJobId) || state.jobs[0];
   const me = (state.team || []).find((r) => r.id === state.currentUserId) || { id: state.currentUserId || "me", name: (session && session.email) || "Jag", email: session && session.email, role: (org && org.role) || "admin", initials: (((session && session.email) || "J")[0] || "J").toUpperCase() };
   const cands = useMemo(() => state.candidates.filter((c) => c.jobId === state.activeJobId).map((c) => ({ ...c, ...scoreCandidate(job, c.answers), missing: missingInfo(job, c) })), [state.candidates, job]);
-  const allScored = useMemo(() => state.jobs.map((j) => ({ job: j, list: state.candidates.filter((c) => c.jobId === j.id).map((c) => ({ ...c, ...scoreCandidate(j, c.answers) })) })), [state.candidates, state.jobs]);
+  const allScored = useMemo(() => state.jobs.map((j) => ({ job: j, list: state.candidates.filter((c) => c.jobId === j.id).map((c) => { const legacy = scoreCandidate(j, c.answers); const sc = currentScore(c); return { ...c, ...legacy, ...(sc ? { total: sc.percent, scoreRun: sc } : {}) }; }) })), [state.candidates, state.jobs]);
   const dupIndex = useMemo(() => { const by = {}; state.candidates.forEach((c) => { const k = (c.email || "").toLowerCase(); if (!k) return; (by[k] ||= []).push(c); }); return by; }, [state.candidates]);
   const showToast = useCallback((t) => { setToast(t); setTimeout(() => setToast(null), 2800); }, []);
   const togglePin = () => setPinned((p) => { store.set("rekyl_pin", !p); return !p; });
@@ -1370,6 +1437,7 @@ function AppInner() {
             {view === "calendar" && <CalendarView {...shared} />}
             {view === "career" && <CareerView {...shared} />}
             {view === "pipeline" && <PipelineView {...shared} />}
+            {view === "scoring" && <ScoringView {...shared} />}
             {view === "superadmin" && isSuper && <SuperadminView {...shared} />}
             </ErrorBoundary>
             {view === "queue" && <QueueView {...shared} />}
@@ -1425,7 +1493,7 @@ function publishBlockers(job) {
  * den blir state. Utan detta saknar jobb `pipeline` och kandidater `stageId`. */
 function hydrate(init, d) {
   if (!d || !Array.isArray(d.jobs) || !Array.isArray(d.candidates)) return init;
-  const jobs = d.jobs.map(migrateJob).map(ensurePipeline);
+  const jobs = d.jobs.map(migrateJob).map(ensurePipeline).map(ensureScoring);
   const pipeOf = {};
   jobs.forEach((j) => { pipeOf[j.id] = j.pipeline; });
   const arr = (v) => (Array.isArray(v) ? v : []);
@@ -1468,6 +1536,266 @@ class ErrorBoundary extends Component {
     </div>;
   }
 }
+/* ===================== SCORING: PROFILER, KRITERIER OCH MOTOR ===================== */
+/* Poängmodeller — varje modell är en ren funktion av (kriterium, värde). Ingen AI, ingen gissning. */
+const SCORE_MODELS = {
+  fixed:     { label: "Fast poäng",        help: "Full poäng om frågan är besvarad." },
+  boolean:   { label: "Ja / nej",          help: "Full poäng vid ja (eller nej, om du vänder riktningen)." },
+  linear:    { label: "Linjär mot mål",    help: "Poängen växer linjärt upp till målvärdet och taket." },
+  steps:     { label: "Trappsteg",         help: "Bestämda poäng vid bestämda nivåer." },
+  band:      { label: "Intervall",         help: "Full poäng inom intervallet, avtagande utanför." },
+  perOption: { label: "Poäng per alternativ", help: "Varje valt alternativ ger sin egen poäng." },
+  match:     { label: "Exakt värde",       help: "Full poäng om svaret matchar exakt." },
+  ordinal:   { label: "Nivåtrappa",        help: "Poäng efter var i skalan svaret ligger." },
+  document:  { label: "Dokument finns",    help: "Full poäng om filen är uppladdad." },
+  manual:    { label: "Manuell bedömning", help: "Poängen sätts av en bedömare. Räknas som obedömd tills dess." },
+};
+const SCORE_DIRS = { higher: "Högre är bättre", lower: "Lägre är bättre", inRange: "Inom intervall är bäst", exact: "Exakt värde" };
+const MISSING_MODES = { zero: "Ger 0 poäng (räknas med i maxpoängen)", skip: "Hoppas över helt (påverkar inte resultatet)", flag: "Hoppas över och flaggas som saknad data" };
+const NORM_METHODS = { weighted: "Gruppviktat medelvärde", sum: "Viktad summa av all poäng" };
+const COND_OPS = {
+  is: "är", isnot: "är inte", gt: "större än", lt: "mindre än", gte: "minst", lte: "högst",
+  between: "mellan", contains: "innehåller", notcontains: "innehåller inte",
+  empty: "är tomt", notempty: "är inte tomt", exists: "finns", missing: "saknas",
+};
+
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+const clampPts = (p, cr) => {
+  if (!Number.isFinite(p)) return 0;
+  const lo = Number.isFinite(cr.min) ? cr.min : (cr.negative ? -Math.abs(cr.weight) : 0);
+  const hi = Number.isFinite(cr.max) ? cr.max : Math.abs(cr.weight);
+  return Math.max(lo, Math.min(hi, p));
+};
+const maxPts = (cr) => Math.abs(Number.isFinite(cr.max) ? cr.max : (cr.weight || 0));
+
+/* ---- Villkor: deterministiska, grupperade ---- */
+function condHit(rule, answers, cand) {
+  const raw = rule.field === "_cv" ? (Object.values(answers || {}).some((v) => v && typeof v === "object" && v.url) ? "ja" : "") : answers[rule.field];
+  const v = Array.isArray(raw) ? raw : raw;
+  const has = !(v == null || v === "" || (Array.isArray(v) && v.length === 0));
+  const n = num(v), rn = num(rule.value);
+  switch (rule.op) {
+    case "exists": case "notempty": return has;
+    case "missing": case "empty": return !has;
+    case "is": return String(v) === String(rule.value);
+    case "isnot": return String(v) !== String(rule.value);
+    case "gt": return n != null && rn != null && n > rn;
+    case "lt": return n != null && rn != null && n < rn;
+    case "gte": return n != null && rn != null && n >= rn;
+    case "lte": return n != null && rn != null && n <= rn;
+    case "between": { const [a, b] = String(rule.value).split("-").map((x) => num(x)); return n != null && a != null && b != null && n >= a && n <= b; }
+    case "contains": return Array.isArray(v) ? v.includes(rule.value) : String(v || "").toLowerCase().includes(String(rule.value).toLowerCase());
+    case "notcontains": return !(Array.isArray(v) ? v.includes(rule.value) : String(v || "").toLowerCase().includes(String(rule.value).toLowerCase()));
+    default: return true;
+  }
+}
+function condsPass(cond, answers, cand) {
+  if (!cond || !Array.isArray(cond.rules) || cond.rules.length === 0) return true;
+  const hits = cond.rules.map((r) => condHit(r, answers, cand));
+  return cond.mode === "any" ? hits.some(Boolean) : hits.every(Boolean);
+}
+
+/* ---- Kärnan: poäng för ETT kriterium. Alltid förklarbar, aldrig NaN. ---- */
+function scoreCriterion(cr, answers, formField) {
+  const max = maxPts(cr);
+  const raw = cr.source === "_cv" ? (Object.values(answers || {}).some((v) => v && typeof v === "object" && v.url) ? true : null) : answers[cr.source];
+  const has = !(raw == null || raw === "" || (Array.isArray(raw) && raw.length === 0));
+
+  if (!formField && cr.source !== "_cv" && cr.model !== "manual") {
+    return { pts: 0, max: 0, applicable: false, broken: true, why: "Datakällan finns inte längre i formuläret — kriteriet räknas inte." };
+  }
+  if (cr.model === "manual") {
+    const m = (answers && answers["_manual_" + cr.id]);
+    if (m == null) return { pts: 0, max, applicable: true, pending: true, why: "Väntar på manuell bedömning. Räknas som 0 tills en bedömare satt poäng." };
+    return { pts: clampPts(num(m) || 0, cr), max, applicable: true, why: "Manuellt satt till " + m + " poäng." };
+  }
+  if (!has) {
+    if (cr.onMissing === "skip") return { pts: 0, max: 0, applicable: false, why: "Obesvarad och konfigurerad att hoppas över." };
+    if (cr.onMissing === "flag") return { pts: 0, max: 0, applicable: false, missing: true, why: "Obesvarad — flaggad som saknad data." };
+    return { pts: 0, max, applicable: true, missing: true, why: "Obesvarad. Ger 0 poäng men räknas med i maxpoängen." };
+  }
+
+  let pts = 0, why = "";
+  switch (cr.model) {
+    case "fixed": pts = max; why = "Besvarad — full poäng."; break;
+    case "boolean": {
+      const yes = raw === true || raw === "ja" || raw === "Ja";
+      const want = cr.dir !== "lower";
+      pts = (yes === want) ? max : (cr.negative ? -max : 0);
+      why = yes === want ? "Svarade " + (want ? "ja" : "nej") + " — full poäng." : "Svarade " + (yes ? "ja" : "nej") + " — " + (cr.negative ? "avdrag." : "ingen poäng.");
+      break; }
+    case "linear": {
+      const v = num(raw);
+      if (v == null) { pts = 0; why = "Värdet gick inte att tolka som ett tal."; break; }
+      const ideal = num(cr.ideal); const floor = num(cr.floor) ?? 0;
+      if (ideal == null || ideal === floor) { pts = 0; why = "Målvärdet är inte satt."; break; }
+      let f = (v - floor) / (ideal - floor);
+      if (cr.dir === "lower") f = 1 - f;
+      f = Math.max(0, Math.min(1, f));
+      pts = max * f;
+      why = v + " av målvärdet " + ideal + " → " + Math.round(f * 100) + " % av maxpoängen.";
+      break; }
+    case "band": {
+      const v = num(raw); const lo = num(cr.bandLo), hi = num(cr.bandHi);
+      if (v == null || lo == null || hi == null || hi < lo) { pts = 0; why = "Intervallet är inte giltigt."; break; }
+      if (v >= lo && v <= hi) { pts = max; why = v + " ligger inom intervallet " + lo + "–" + hi + " — full poäng."; }
+      else { const span = Math.max(1, (hi - lo)); const d = v < lo ? lo - v : v - hi; const f = Math.max(0, 1 - d / span); pts = max * f; why = v + " ligger utanför " + lo + "–" + hi + " → " + Math.round(f * 100) + " % av maxpoängen."; }
+      break; }
+    case "steps": {
+      const v = num(raw);
+      const steps = [...(cr.steps || [])].map((x) => ({ at: num(x.at), pts: num(x.pts) })).filter((x) => x.at != null).sort((a, b) => a.at - b.at);
+      if (v == null || !steps.length) { pts = 0; why = "Inga trappsteg definierade."; break; }
+      const hit = [...steps].reverse().find((x) => v >= x.at);
+      pts = hit ? clampPts(hit.pts, cr) : 0;
+      why = hit ? v + " når nivån " + hit.at + " → " + pts + " poäng." : v + " når ingen nivå — 0 poäng.";
+      break; }
+    case "perOption": {
+      const chosen = Array.isArray(raw) ? raw : [raw];
+      const opts = cr.options || [];
+      let sum = 0; const named = [];
+      chosen.forEach((c) => { const o = opts.find((x) => x.value === c); if (o) { sum += num(o.pts) || 0; named.push(c + " (+" + o.pts + ")"); } });
+      pts = clampPts(sum, cr);
+      why = named.length ? "Valde " + named.join(", ") + (sum > max ? " — taket " + max + " gäller." : "") : "Inget poänggivande alternativ valt.";
+      break; }
+    case "match": {
+      const ok = String(raw) === String(cr.matchValue);
+      pts = ok ? max : (cr.negative ? -max : 0);
+      why = ok ? "Matchar " + JSON.stringify(cr.matchValue) + " — full poäng." : "Svarade " + JSON.stringify(String(raw)) + ", förväntat " + JSON.stringify(cr.matchValue) + ".";
+      break; }
+    case "ordinal": {
+      const scale = (formField && formField.scale) || cr.scale || [];
+      const i = scale.indexOf(raw);
+      if (i < 0 || scale.length < 2) { pts = 0; why = "Svaret finns inte i skalan."; break; }
+      let f = i / (scale.length - 1);
+      if (cr.dir === "lower") f = 1 - f;
+      pts = max * f;
+      why = raw + " är steg " + (i + 1) + " av " + scale.length + " → " + Math.round(f * 100) + " % av maxpoängen.";
+      break; }
+    case "document": pts = max; why = "Dokumentet är uppladdat — full poäng."; break;
+    default: pts = 0; why = "Okänd poängmodell.";
+  }
+  return { pts: clampPts(pts, cr), max, applicable: true, why };
+}
+
+/* ---- Motorn: en profilversion + en kandidat -> ett komplett, förklarbart resultat ---- */
+function runScoring(ver, cand, job) {
+  const A = cand.answers || {};
+  const fieldOf = (id) => (job.criteria || []).find((f) => f.id === id);
+  const groups = (ver.groups || []).filter((g) => g.active !== false).sort((a, b) => a.order - b.order);
+  const crits = (ver.criteria || []).filter((c) => c.active !== false);
+  const warnings = [];
+  if (!crits.length) warnings.push("Profilen har inga aktiva kriterier — resultatet blir 0.");
+
+  const critRes = crits.map((cr) => {
+    const applicableByCond = condsPass(cr.conditions, A, cand);
+    if (!applicableByCond) return { id: cr.id, groupId: cr.groupId, name: cr.name, pts: 0, max: 0, applicable: false, why: "Gäller inte för den här kandidaten (villkoren uppfylldes inte)." };
+    const r = scoreCriterion(cr, A, fieldOf(cr.source));
+    if (r.broken) warnings.push("Kriteriet " + JSON.stringify(cr.name) + " pekar på ett formulärfält som inte längre finns.");
+    if (r.pending) warnings.push("Kriteriet " + JSON.stringify(cr.name) + " väntar på manuell bedömning.");
+    return { id: cr.id, groupId: cr.groupId, name: cr.name, model: cr.model, weight: cr.weight, answer: cr.source === "_cv" ? null : A[cr.source], ...r };
+  });
+
+  const groupRes = groups.map((g) => {
+    const rows = critRes.filter((r) => r.groupId === g.id && r.applicable);
+    const raw = rows.reduce((n, r) => n + r.pts, 0);
+    const max = rows.reduce((n, r) => n + r.max, 0);
+    const pct = max > 0 ? raw / max : null; /* aldrig division med noll */
+    return { id: g.id, name: g.name, weight: g.weight || 0, raw, max, pct, n: rows.length };
+  });
+  const orphan = critRes.filter((r) => r.applicable && !groups.some((g) => g.id === r.groupId));
+  if (orphan.length) {
+    const raw = orphan.reduce((n, r) => n + r.pts, 0), max = orphan.reduce((n, r) => n + r.max, 0);
+    groupRes.push({ id: "_none", name: "Övrigt", weight: 1, raw, max, pct: max > 0 ? raw / max : null, n: orphan.length });
+  }
+
+  const raw = groupRes.reduce((n, g) => n + g.raw, 0);
+  const maxApplicable = groupRes.reduce((n, g) => n + g.max, 0);
+  let percent = 0;
+  if (ver.norm === "sum" || groupRes.every((g) => !g.weight)) {
+    percent = maxApplicable > 0 ? (raw / maxApplicable) * 100 : 0;
+    if (maxApplicable === 0) warnings.push("Ingen tillämplig maxpoäng — resultatet sätts till 0.");
+  } else {
+    const scored = groupRes.filter((g) => g.pct != null && g.weight > 0);
+    const wsum = scored.reduce((n, g) => n + g.weight, 0);
+    percent = wsum > 0 ? scored.reduce((n, g) => n + g.weight * g.pct, 0) / wsum * 100 : 0;
+    if (wsum === 0) warnings.push("Ingen grupp har vikt — resultatet sätts till 0.");
+  }
+  percent = Number.isFinite(percent) ? Math.max(0, Math.min(100, Math.round(percent))) : 0;
+
+  const assessable = critRes.filter((r) => r.applicable).length;
+  const missing = critRes.filter((r) => r.missing || r.pending).length;
+  return {
+    raw: Math.round(raw * 10) / 10, maxApplicable: Math.round(maxApplicable * 10) / 10, percent,
+    groups: groupRes, criteria: critRes, warnings,
+    assessedShare: assessable ? Math.round(((assessable - missing) / assessable) * 100) : 0,
+    missingCount: missing,
+  };
+}
+
+/* Stabil datahash -> samma svar + samma version ger alltid samma körning (idempotens). */
+function dataHash(cand) {
+  const src = JSON.stringify({ a: cand.answers || {}, r: cand.rev || 0 });
+  let h = 5381;
+  for (let i = 0; i < src.length; i++) { h = ((h << 5) + h + src.charCodeAt(i)) >>> 0; }
+  return h.toString(36);
+}
+const runKey = (profileId, v, cand) => profileId + "#" + v + "#" + dataHash(cand);
+
+/* ---- Konfigurationsvarningar (byggaren) ---- */
+function profileWarnings(draft, job) {
+  const w = [];
+  const crits = (draft.criteria || []).filter((c) => c.active !== false);
+  const groups = (draft.groups || []).filter((g) => g.active !== false);
+  if (!crits.length) w.push({ kind: "err", msg: "Profilen har inga aktiva kriterier och kan inte beräknas." });
+  if (draft.norm !== "sum" && groups.length && groups.every((g) => !g.weight)) w.push({ kind: "err", msg: "Ingen grupp har vikt — med gruppviktad normalisering blir resultatet alltid 0." });
+  groups.forEach((g) => { if (!crits.some((c) => c.groupId === g.id)) w.push({ kind: "warn", msg: "Gruppen " + JSON.stringify(g.name) + " har inga kriterier." }); });
+  crits.forEach((c) => {
+    if (!c.weight && !c.max) w.push({ kind: "warn", msg: "Kriteriet " + JSON.stringify(c.name) + " har vikt 0 och kan aldrig ge poäng." });
+    if (c.source !== "_cv" && c.model !== "manual" && !(job.criteria || []).some((f) => f.id === c.source)) w.push({ kind: "err", msg: "Kriteriet " + JSON.stringify(c.name) + " pekar på ett formulärfält som inte finns." });
+    if (c.model === "band" && (num(c.bandHi) == null || num(c.bandLo) == null || num(c.bandHi) < num(c.bandLo))) w.push({ kind: "err", msg: "Kriteriet " + JSON.stringify(c.name) + " har ett ogiltigt intervall." });
+    if (c.model === "linear" && (num(c.ideal) == null || num(c.ideal) === (num(c.floor) ?? 0))) w.push({ kind: "err", msg: "Kriteriet " + JSON.stringify(c.name) + " saknar giltigt målvärde." });
+    if (c.model === "steps" && !(c.steps || []).length) w.push({ kind: "err", msg: "Kriteriet " + JSON.stringify(c.name) + " har inga trappsteg." });
+  });
+  const dupes = crits.filter((c, i) => crits.findIndex((x) => x.source === c.source && x.model === c.model) !== i);
+  dupes.forEach((c) => w.push({ kind: "warn", msg: "Kriteriet " + JSON.stringify(c.name) + " dubblerar en annan bedömning av samma fält." }));
+  return w;
+}
+
+/* ---- Modell ---- */
+const MODEL_FOR_FIELD = { number: "linear", budget: "band", ordinal: "ordinal", multiselect: "perOption", boolean: "boolean", match: "match", file: "document", text: "manual", date: "fixed", phone: "fixed", url: "fixed" };
+function mkCriterion(field, groupId, order) {
+  const model = MODEL_FOR_FIELD[field.type] || "fixed";
+  return {
+    id: "sc" + uid(), groupId, name: field.label, desc: "", source: field.id, type: field.type, model,
+    weight: field.weight || 10, min: null, max: null, dir: "higher", negative: false,
+    ideal: field.ideal ?? null, floor: 0, bandLo: null, bandHi: field.budget ?? null,
+    steps: [], options: (field.options || []).map((o) => ({ value: o.value ?? o, pts: field.weight || 10 })),
+    matchValue: "", scale: field.scale || null,
+    onMissing: "zero", conditions: { mode: "all", rules: [] }, order, active: true,
+  };
+}
+function defaultProfile(job, name) {
+  const g1 = { id: "sg" + uid(), name: "Obligatoriska krav", desc: "", order: 0, weight: 3, agg: "sum", active: true };
+  const g2 = { id: "sg" + uid(), name: "Erfarenhet och kompetens", desc: "", order: 1, weight: 2, agg: "sum", active: true };
+  const g3 = { id: "sg" + uid(), name: "Villkor och tillgänglighet", desc: "", order: 2, weight: 1, agg: "sum", active: true };
+  const pick = (f) => (f.knockout || f.required) ? g1.id : ["number", "ordinal", "multiselect"].includes(f.type) ? g2.id : g3.id;
+  const criteria = (job.criteria || []).filter((f) => f.scored !== false).map((f, i) => mkCriterion(f, pick(f), i));
+  return {
+    id: "sp" + uid(), name: name || "Standardprofil", desc: "", primary: true, active: true, archived: false,
+    norm: "weighted", version: 0, versions: [],
+    draft: { groups: [g1, g2, g3], criteria, norm: "weighted", updatedAt: Date.now() },
+    createdAt: Date.now(), updatedAt: Date.now(),
+  };
+}
+const ensureScoring = (job) => (job.scoring && Array.isArray(job.scoring.profiles) && job.scoring.profiles.length)
+  ? job : { ...job, scoring: { profiles: [defaultProfile(job)] } };
+const activeVersion = (job) => {
+  const p = ((job.scoring && job.scoring.profiles) || []).find((x) => x.primary && x.active && !x.archived && x.version > 0);
+  if (!p) return null;
+  const v = (p.versions || []).find((x) => x.v === p.version);
+  return v ? { profile: p, ver: v } : null;
+};
+const currentScore = (cand) => (cand.scores || []).find((s) => s.current) || null;
 /* ===================== PIPELINE, SLA OCH FÖRFLYTTNINGSMOTOR ===================== */
 /* Stegtyper. `legacy` håller den gamla statusmodellen synkad så att kö, statistik,
  * kalender och rapporter fortsätter fungera oförändrat. */
@@ -3224,6 +3552,298 @@ function PipeBuilder({ job, state, D, showToast }) {
           <button className="ats-ghost is-sm" onClick={() => { D({ type: "PIPE_RESTORE", jobId: job.id, v: v.v }); setShowVers(false); showToast({ kind: "ok", msg: "Återställd till v" + v.v + " — publicera för att spara" }); }}><RotateCcw size={13} /> Återställ</button>
         </div>)}</div>}
       <div className="ats-erase-note"><Info size={14} /> Historiska händelser behåller alltid det stegnamn som gällde när de inträffade — även om steget byter namn senare.</div>
+    </div></Modal>}
+  </div>;
+}
+/* ---- Poängförklaring: läsbar för en rekryterare, aldrig rå JSON ---- */
+function ScoreExplain({ sc, compact }) {
+  const [open, setOpen] = useState(compact ? [] : null);
+  if (!sc) return <div className="ats-col-empty" style={{ padding: 24 }}>Ingen scoring beräknad än. Publicera en scoringprofil och kör beräkningen.</div>;
+  const tone = sc.percent >= 75 ? "petrol" : sc.percent >= 50 ? "amber" : "brick";
+  const gname = (id) => (sc.groups.find((g) => g.id === id) || {}).name || "Övrigt";
+  const groups = sc.groups.filter((g) => g.n > 0);
+  return <div className="ats-se">
+    <div className="ats-se-top">
+      <div className={"ats-se-score is-" + tone}><b>{sc.percent}%</b><span>{sc.raw} av {sc.maxApplicable} p</span></div>
+      <div className="ats-se-meta">
+        <div><span>Profil</span><b>{sc.profileName} · v{sc.version}</b></div>
+        <div><span>Beräknad</span><b>{new Date(sc.at).toLocaleString("sv-SE").slice(0, 16)}</b></div>
+        <div><span>Bedömd andel</span><b>{sc.assessedShare}%{sc.missingCount ? " · " + sc.missingCount + " saknas" : ""}</b></div>
+      </div>
+    </div>
+    {sc.warnings.length > 0 && <div className="ats-se-warn"><AlertTriangle size={14} /><div>{sc.warnings.map((w, i) => <span key={i}>{w}</span>)}</div></div>}
+    <div className="ats-se-groups">{groups.map((g) => {
+      const rows = sc.criteria.filter((c) => c.groupId === g.id && c.applicable);
+      const pct = g.pct == null ? 0 : Math.round(g.pct * 100);
+      const isOpen = open === null || (Array.isArray(open) && open.includes(g.id));
+      return <div key={g.id} className="ats-se-group">
+        <button className="ats-se-gh" onClick={() => setOpen(Array.isArray(open) ? (isOpen ? open.filter((x) => x !== g.id) : [...open, g.id]) : [g.id])} aria-expanded={isOpen}>
+          <b>{g.name}</b>
+          <span className="ats-se-gbar"><i style={{ width: pct + "%" }} /></span>
+          <em>{g.raw} / {g.max} p{g.weight ? " · vikt " + g.weight : ""}</em>
+          <ChevronDown size={15} className={isOpen ? "is-open" : ""} />
+        </button>
+        {isOpen && <div className="ats-se-rows">{rows.map((c) => <div key={c.id} className={"ats-se-row" + (c.missing || c.pending ? " is-miss" : "") + (c.pts < 0 ? " is-neg" : "")}>
+          <div className="ats-se-c"><b>{c.name}</b><span>{c.why}</span></div>
+          <div className="ats-se-a">{c.answer != null && c.answer !== "" ? <em>{Array.isArray(c.answer) ? c.answer.join(", ") : String(c.answer)}</em> : <em className="ats-muted">—</em>}</div>
+          <div className="ats-se-p"><b>{c.pts > 0 ? "+" : ""}{Math.round(c.pts * 10) / 10}</b><span>av {c.max}</span></div>
+        </div>)}</div>}
+      </div>;
+    })}</div>
+    {sc.criteria.filter((c) => !c.applicable).length > 0 && <div className="ats-se-na">
+      <b>Gäller inte den här kandidaten</b>
+      {sc.criteria.filter((c) => !c.applicable).map((c) => <div key={c.id}><span>{c.name}</span><em>{c.why}</em></div>)}
+    </div>}
+  </div>;
+}
+
+/* ---- Scoringvyn: profiler, byggare, versioner, förhandsvisning ---- */
+function ScoringView({ state, D, me, job, cands, showToast }) {
+  const [pid, setPid] = useState(null);
+  const [selC, setSelC] = useState(null);
+  const [tab, setTab] = useState("build");
+  const [previewId, setPreviewId] = useState("");
+  const [showVers, setShowVers] = useState(false);
+  const [cmp, setCmp] = useState(null);
+  const [newName, setNewName] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addSrc, setAddSrc] = useState({ groupId: "", source: "" });
+  const canEdit = can(me.role, "edit") && job && !isReadonly(job);
+  const canScore = can(me.role, "decide");
+
+  useEffect(() => { if (job && !job.scoring) D({ type: "SCORING_INIT", jobId: job.id }); }, [job && job.id]);
+  if (!job) return <div className="ats-view"><PageHeader title="Scoring" /><div className="ats-col-empty" style={{ padding: 40 }}>Välj en tjänst först.</div></div>;
+  if (!job.scoring) return <div className="ats-view"><PageHeader title="Scoring" /><div className="ats-col-empty" style={{ padding: 40 }}>Förbereder scoringprofilen…</div></div>;
+
+  const profiles = job.scoring.profiles;
+  const p = profiles.find((x) => x.id === pid) || profiles.find((x) => x.primary) || profiles[0];
+  const d = p.draft;
+  const warns = profileWarnings(d, job);
+  const errs = warns.filter((w) => w.kind === "err");
+  const groups = [...(d.groups || [])].sort((a, b) => a.order - b.order);
+  const crits = d.criteria || [];
+  const cr = selC ? crits.find((c) => c.id === selC) : null;
+  const fields = (job.criteria || []);
+  const fieldOf = (id) => fields.find((f) => f.id === id);
+  const totalMax = crits.filter((c) => c.active !== false).reduce((n, c) => n + maxPts(c), 0);
+  const av = activeVersion(job);
+  const dirty = !p.version || JSON.stringify({ g: d.groups, c: d.criteria, n: d.norm }) !== JSON.stringify((() => { const v = (p.versions || []).find((x) => x.v === p.version); return v ? { g: v.groups, c: v.criteria, n: v.norm } : {}; })());
+
+  const setD = (patch) => D({ type: "SP_DRAFT", jobId: job.id, id: p.id, patch });
+  const setCr = (patch) => D({ type: "SC_SET", jobId: job.id, profileId: p.id, id: cr.id, patch });
+  const preview = previewId ? cands.find((c) => c.id === previewId) : null;
+  const previewRes = preview ? runScoring({ ...d, norm: d.norm || p.norm }, preview, job) : null;
+
+  const publish = () => {
+    if (errs.length) { showToast({ kind: "warn", msg: "Kan inte publiceras: " + errs[0].msg }); return; }
+    D({ type: "SP_PUBLISH", jobId: job.id, id: p.id });
+    showToast({ kind: "ok", msg: "Scoringversion v" + (p.version + 1) + " publicerad" });
+  };
+  const recalc = () => {
+    if (!av) { showToast({ kind: "warn", msg: "Publicera en primär profil först" }); return; }
+    D({ type: "SCORE_RUN", jobId: job.id, reason: "manuell omberäkning" });
+    showToast({ kind: "ok", msg: "Kandidaterna beräknades om mot v" + av.ver.v });
+  };
+
+  return <div className="ats-view">
+    <PageHeader title="Scoring" meta={<><span>{job.title}</span><Dot /><span>{p.name}</span><Dot /><span className="ats-mono">{p.version ? "v" + p.version : "utkast"}</span>{dirty && p.version > 0 && <><Dot /><span className="ats-pipe-dirty">Opublicerade ändringar</span></>}</>}
+      right={<>{canScore && av && <button className="ats-ghost is-sm" onClick={recalc}><RotateCw size={14} /> Beräkna om alla</button>}
+        {canEdit && <button className="ats-btn-primary is-sm" disabled={errs.length > 0} onClick={publish} title={errs.length ? errs[0].msg : "Publicera"}><Rocket size={14} /> Publicera version</button>}</>} />
+
+    <div className="ats-sv-profiles">
+      {profiles.filter((x) => !x.archived).map((x) => <button key={x.id} className={"ats-sv-p" + (x.id === p.id ? " is-on" : "")} onClick={() => { setPid(x.id); setSelC(null); }}>
+        <b>{x.name}</b>
+        <span>{x.primary ? "Primär" : "Alternativ"}{x.version ? " · v" + x.version : " · utkast"}</span>
+      </button>)}
+      {canEdit && <button className="ats-sv-p is-add" onClick={() => setAdding(true)}><Plus size={16} /> Ny profil</button>}
+    </div>
+
+    <div className="ats-tabs">
+      {[["build", "Byggare"], ["preview", "Förhandsvisning"], ["settings", "Profilinställningar"]].map(([id, l]) =>
+        <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}{id === "build" && warns.length > 0 && <span className="ats-tab-n">{warns.length}</span>}</button>)}
+    </div>
+
+    {warns.length > 0 && tab === "build" && <div className="ats-sv-warns">{warns.map((w, i) =>
+      <div key={i} className={"ats-sv-warn is-" + w.kind}>{w.kind === "err" ? <CircleAlert size={14} /> : <AlertTriangle size={14} />} {w.msg}</div>)}</div>}
+
+    {tab === "build" && <div className="ats-sv">
+      <div className="ats-sv-main">
+        <div className="ats-sv-sum">
+          <div><span>Maxpoäng</span><b>{Math.round(totalMax)}</b></div>
+          <div><span>Kriterier</span><b>{crits.filter((c) => c.active !== false).length}</b></div>
+          <div><span>Grupper</span><b>{groups.length}</b></div>
+          <div><span>Normalisering</span><b>{NORM_METHODS[d.norm || p.norm]}</b></div>
+        </div>
+        {groups.map((g, gi) => {
+          const rows = crits.filter((c) => c.groupId === g.id).sort((a, b) => a.order - b.order);
+          const gmax = rows.filter((c) => c.active !== false).reduce((n, c) => n + maxPts(c), 0);
+          return <div key={g.id} className="ats-panel ats-sv-group">
+            <div className="ats-panel-h">
+              <input className="ats-sv-gname" value={g.name} disabled={!canEdit} onChange={(e) => D({ type: "SG_SET", jobId: job.id, profileId: p.id, id: g.id, patch: { name: e.target.value } })} aria-label="Gruppnamn" />
+              <div className="ats-sv-gm">
+                <label className="ats-sv-w"><span>Vikt</span><input type="number" min="0" max="10" value={g.weight} disabled={!canEdit} onChange={(e) => D({ type: "SG_SET", jobId: job.id, profileId: p.id, id: g.id, patch: { weight: Number(e.target.value) } })} /></label>
+                <span className="ats-sv-gmax">{Math.round(gmax)} p</span>
+                {canEdit && <>
+                  <button className="ats-ghost is-sm" disabled={gi === 0} onClick={() => D({ type: "SG_MOVE", jobId: job.id, profileId: p.id, id: g.id, dir: -1 })} aria-label="Flytta upp"><ArrowUp size={13} /></button>
+                  <button className="ats-ghost is-sm" disabled={gi === groups.length - 1} onClick={() => D({ type: "SG_MOVE", jobId: job.id, profileId: p.id, id: g.id, dir: 1 })} aria-label="Flytta ner"><ArrowDown size={13} /></button>
+                  <button className="ats-ghost is-sm ats-cal-cancel" disabled={groups.length < 2} onClick={() => D({ type: "SG_DEL", jobId: job.id, profileId: p.id, id: g.id })} aria-label="Ta bort grupp"><Trash2 size={13} /></button>
+                </>}
+              </div>
+            </div>
+            <div className="ats-sv-crits">
+              {rows.map((c) => { const f = fieldOf(c.source); const broken = c.source !== "_cv" && c.model !== "manual" && !f;
+                return <div key={c.id} className={"ats-sv-crit" + (selC === c.id ? " is-on" : "") + (c.active === false ? " is-off" : "") + (broken ? " is-broken" : "")}>
+                  <button className="ats-sv-cn" onClick={() => setSelC(selC === c.id ? null : c.id)}>
+                    <b>{c.name}</b>
+                    <span>{SCORE_MODELS[c.model].label}{broken ? " · TRASIG DATAKÄLLA" : f ? " · " + f.label : ""}</span>
+                  </button>
+                  <span className="ats-sv-cw">{Math.round(maxPts(c))} p</span>
+                  {canEdit && <div className="ats-sv-ca">
+                    <button className="ats-ghost is-sm" onClick={() => D({ type: "SC_SET", jobId: job.id, profileId: p.id, id: c.id, patch: { active: c.active === false } })} aria-label={c.active === false ? "Aktivera" : "Inaktivera"}>{c.active === false ? <Eye size={13} /> : <EyeOff size={13} />}</button>
+                    <button className="ats-ghost is-sm" onClick={() => D({ type: "SC_DUP", jobId: job.id, profileId: p.id, id: c.id })} aria-label="Duplicera"><Copy size={13} /></button>
+                    <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => { D({ type: "SC_DEL", jobId: job.id, profileId: p.id, id: c.id }); if (selC === c.id) setSelC(null); }} aria-label="Ta bort"><Trash2 size={13} /></button>
+                  </div>}
+                </div>; })}
+              {rows.length === 0 && <div className="ats-kb-empty">Inga kriterier i gruppen.</div>}
+              {canEdit && <button className="ats-ghost is-sm" onClick={() => setAddSrc({ groupId: g.id, source: "" })}><Plus size={13} /> Lägg till kriterium</button>}
+            </div>
+          </div>;
+        })}
+        {canEdit && <button className="ats-ghost" onClick={() => D({ type: "SG_ADD", jobId: job.id, profileId: p.id, name: "Ny grupp" })}><Plus size={15} /> Lägg till grupp</button>}
+      </div>
+
+      {cr && <aside className="ats-sv-side"><div className="ats-panel">
+        <div className="ats-panel-h"><h2>{cr.name}</h2><button className="ats-ghost is-sm" onClick={() => setSelC(null)}><X size={15} /></button></div>
+        <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={cr.name} disabled={!canEdit} onChange={(e) => setCr({ name: e.target.value })} /></label>
+        <label className="ats-field"><span className="ats-field-l">Intern förklaring</span><textarea className="ats-inp" rows={2} value={cr.desc} disabled={!canEdit} onChange={(e) => setCr({ desc: e.target.value })} placeholder="Varför är detta relevant för rollen?" /></label>
+        <label className="ats-field"><span className="ats-field-l">Datakälla</span>
+          <select className="ats-inp" value={cr.source} disabled={!canEdit} onChange={(e) => setCr({ source: e.target.value })}>
+            {fields.map((f) => <option key={f.id} value={f.id}>{f.label} ({f.type})</option>)}
+            <option value="_cv">CV är uppladdat</option>
+          </select>
+          {!fieldOf(cr.source) && cr.source !== "_cv" && <span className="ats-af-err"><CircleAlert size={13} /> Fältet finns inte längre i formuläret.</span>}
+        </label>
+        <label className="ats-field"><span className="ats-field-l">Poängmodell</span>
+          <select className="ats-inp" value={cr.model} disabled={!canEdit} onChange={(e) => setCr({ model: e.target.value })}>{Object.entries(SCORE_MODELS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select>
+          <span className="ats-af-help">{SCORE_MODELS[cr.model].help}</span>
+        </label>
+        <div className="ats-tpl-two">
+          <label className="ats-field"><span className="ats-field-l">Vikt (maxpoäng)</span><input className="ats-inp" type="number" min="0" max="100" value={cr.weight} disabled={!canEdit} onChange={(e) => setCr({ weight: Number(e.target.value) })} /></label>
+          <label className="ats-field"><span className="ats-field-l">Riktning</span><select className="ats-inp" value={cr.dir} disabled={!canEdit} onChange={(e) => setCr({ dir: e.target.value })}>{Object.entries(SCORE_DIRS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+        </div>
+        {cr.model === "linear" && <div className="ats-tpl-two">
+          <label className="ats-field"><span className="ats-field-l">Målvärde</span><input className="ats-inp" type="number" value={cr.ideal ?? ""} disabled={!canEdit} onChange={(e) => setCr({ ideal: Number(e.target.value) })} /></label>
+          <label className="ats-field"><span className="ats-field-l">Nollpunkt</span><input className="ats-inp" type="number" value={cr.floor ?? 0} disabled={!canEdit} onChange={(e) => setCr({ floor: Number(e.target.value) })} /></label>
+        </div>}
+        {cr.model === "band" && <div className="ats-tpl-two">
+          <label className="ats-field"><span className="ats-field-l">Från</span><input className="ats-inp" type="number" value={cr.bandLo ?? ""} disabled={!canEdit} onChange={(e) => setCr({ bandLo: Number(e.target.value) })} /></label>
+          <label className="ats-field"><span className="ats-field-l">Till</span><input className="ats-inp" type="number" value={cr.bandHi ?? ""} disabled={!canEdit} onChange={(e) => setCr({ bandHi: Number(e.target.value) })} /></label>
+        </div>}
+        {cr.model === "steps" && <div className="ats-field"><span className="ats-field-l">Trappsteg</span>
+          <div className="ats-cb-list">{(cr.steps || []).map((st, i) => <div key={i} className="ats-cb-item">
+            <input className="ats-inp" type="number" value={st.at} placeholder="Vid värde" disabled={!canEdit} onChange={(e) => { const n = [...cr.steps]; n[i] = { ...n[i], at: Number(e.target.value) }; setCr({ steps: n }); }} />
+            <input className="ats-inp" type="number" value={st.pts} placeholder="Poäng" disabled={!canEdit} onChange={(e) => { const n = [...cr.steps]; n[i] = { ...n[i], pts: Number(e.target.value) }; setCr({ steps: n }); }} />
+            <button className="ats-ghost is-sm" disabled={!canEdit} onClick={() => setCr({ steps: cr.steps.filter((_, j) => j !== i) })}><Trash2 size={14} /></button>
+          </div>)}<button className="ats-ghost is-sm" disabled={!canEdit} onClick={() => setCr({ steps: [...(cr.steps || []), { at: 0, pts: 0 }] })}><Plus size={13} /> Lägg till steg</button></div>
+        </div>}
+        {cr.model === "perOption" && <div className="ats-field"><span className="ats-field-l">Poäng per alternativ</span>
+          <div className="ats-cb-list">{(cr.options || []).map((o, i) => <div key={i} className="ats-cb-item">
+            <input className="ats-inp" value={o.value} disabled={!canEdit} onChange={(e) => { const n = [...cr.options]; n[i] = { ...n[i], value: e.target.value }; setCr({ options: n }); }} />
+            <input className="ats-inp" type="number" value={o.pts} disabled={!canEdit} onChange={(e) => { const n = [...cr.options]; n[i] = { ...n[i], pts: Number(e.target.value) }; setCr({ options: n }); }} />
+            <button className="ats-ghost is-sm" disabled={!canEdit} onClick={() => setCr({ options: cr.options.filter((_, j) => j !== i) })}><Trash2 size={14} /></button>
+          </div>)}<button className="ats-ghost is-sm" disabled={!canEdit} onClick={() => setCr({ options: [...(cr.options || []), { value: "", pts: 0 }] })}><Plus size={13} /> Lägg till</button></div>
+        </div>}
+        {cr.model === "match" && <label className="ats-field"><span className="ats-field-l">Förväntat värde</span><input className="ats-inp" value={cr.matchValue} disabled={!canEdit} onChange={(e) => setCr({ matchValue: e.target.value })} /></label>}
+        <label className="ats-cb-check"><input type="checkbox" checked={!!cr.negative} disabled={!canEdit} onChange={(e) => setCr({ negative: e.target.checked })} /> Tillåt negativ poäng (avdrag)</label>
+        <label className="ats-field"><span className="ats-field-l">Om svaret saknas</span><select className="ats-inp" value={cr.onMissing} disabled={!canEdit} onChange={(e) => setCr({ onMissing: e.target.value })}>{Object.entries(MISSING_MODES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+
+        <h3 className="ats-pb-h">Gäller bara när…</h3>
+        <div className="ats-cb-list">
+          {(cr.conditions.rules || []).map((r, i) => <div key={i} className="ats-sv-cond">
+            <select className="ats-inp" value={r.field} disabled={!canEdit} onChange={(e) => { const n = [...cr.conditions.rules]; n[i] = { ...n[i], field: e.target.value }; setCr({ conditions: { ...cr.conditions, rules: n } }); }}>
+              <option value="">Fält…</option>{fields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select>
+            <select className="ats-inp" value={r.op} disabled={!canEdit} onChange={(e) => { const n = [...cr.conditions.rules]; n[i] = { ...n[i], op: e.target.value }; setCr({ conditions: { ...cr.conditions, rules: n } }); }}>
+              {Object.entries(COND_OPS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+            <input className="ats-inp" value={r.value || ""} disabled={!canEdit || ["empty", "notempty", "exists", "missing"].includes(r.op)} onChange={(e) => { const n = [...cr.conditions.rules]; n[i] = { ...n[i], value: e.target.value }; setCr({ conditions: { ...cr.conditions, rules: n } }); }} />
+            <button className="ats-ghost is-sm" disabled={!canEdit} onClick={() => setCr({ conditions: { ...cr.conditions, rules: cr.conditions.rules.filter((_, j) => j !== i) } })}><Trash2 size={14} /></button>
+          </div>)}
+          {canEdit && <div className="ats-sv-condadd">
+            <select className="ats-select is-sm" value={cr.conditions.mode} onChange={(e) => setCr({ conditions: { ...cr.conditions, mode: e.target.value } })}><option value="all">Alla villkor</option><option value="any">Något villkor</option></select>
+            <button className="ats-ghost is-sm" onClick={() => setCr({ conditions: { ...cr.conditions, rules: [...(cr.conditions.rules || []), { field: fields[0] ? fields[0].id : "", op: "is", value: "" }] } })}><Plus size={13} /> Lägg till villkor</button>
+          </div>}
+          {(cr.conditions.rules || []).length === 0 && <span className="ats-af-help">Inga villkor — kriteriet gäller alla kandidater.</span>}
+        </div>
+      </div></aside>}
+    </div>}
+
+    {tab === "preview" && <div className="ats-sv-prev">
+      <div className="ats-jfilters">
+        <select className="ats-select is-sm" value={previewId} onChange={(e) => setPreviewId(e.target.value)} aria-label="Kandidat">
+          <option value="">Välj kandidat att testa mot…</option>{cands.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <span className="ats-af-help">Förhandsvisningen räknar mot <b>utkastet</b> — riktig kandidatdata ändras aldrig.</span>
+      </div>
+      {previewRes
+        ? <ScoreExplain sc={{ ...previewRes, profileName: p.name + " (utkast)", version: p.version + 1, at: Date.now() }} />
+        : <div className="ats-col-empty" style={{ padding: 40 }}>{cands.length === 0 ? "Inga kandidater att testa mot än." : "Välj en kandidat för att se hur profilen skulle bedöma hen."}</div>}
+    </div>}
+
+    {tab === "settings" && <div className="ats-panel ats-sv-set">
+      <label className="ats-field"><span className="ats-field-l">Profilnamn</span><input className="ats-inp" value={p.name} disabled={!canEdit} onChange={(e) => D({ type: "SP_SET", jobId: job.id, id: p.id, patch: { name: e.target.value } })} /></label>
+      <label className="ats-field"><span className="ats-field-l">Intern beskrivning</span><textarea className="ats-inp" rows={2} value={p.desc} disabled={!canEdit} onChange={(e) => D({ type: "SP_SET", jobId: job.id, id: p.id, patch: { desc: e.target.value } })} /></label>
+      <label className="ats-field"><span className="ats-field-l">Normalisering</span>
+        <select className="ats-inp" value={d.norm || p.norm} disabled={!canEdit} onChange={(e) => setD({ norm: e.target.value })}>{Object.entries(NORM_METHODS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+        <span className="ats-af-help">{(d.norm || p.norm) === "weighted" ? "Varje grupp normaliseras för sig och vägs samman efter gruppvikt." : "All poäng summeras och delas med maximal tillämplig poäng."}</span>
+      </label>
+      <label className="ats-cb-check"><input type="checkbox" checked={!!p.primary} disabled={!canEdit} onChange={() => D({ type: "SP_SET", jobId: job.id, id: p.id, patch: { primary: true }, note: "Primär profil" })} /> Primär profil — den som används för kandidaternas poäng</label>
+      <label className="ats-cb-check"><input type="checkbox" checked={p.active !== false} disabled={!canEdit} onChange={(e) => D({ type: "SP_SET", jobId: job.id, id: p.id, patch: { active: e.target.checked } })} /> Aktiv</label>
+      <div className="ats-cb-brandacts">
+        <button className="ats-ghost is-sm" onClick={() => setShowVers(true)}><History size={14} /> Versioner ({(p.versions || []).length})</button>
+        {canEdit && <button className="ats-ghost is-sm" onClick={() => { D({ type: "SP_ADD", jobId: job.id, name: p.name + " (kopia)", from: p.id }); showToast({ kind: "ok", msg: "Profil duplicerad" }); }}><Copy size={14} /> Duplicera</button>}
+        {canEdit && profiles.filter((x) => !x.archived).length > 1 && <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => { D({ type: "SP_DEL", jobId: job.id, id: p.id }); setPid(null); }}><Trash2 size={14} /> Ta bort</button>}
+      </div>
+    </div>}
+
+    {adding && <Modal title="Ny scoringprofil" onClose={() => setAdding(false)}><div className="ats-erase">
+      <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Seniorprofil" autoFocus /></label>
+      <p>Profilen skapas som ett fristående utkast från formulärets fält. Den påverkar inga befintliga kandidatresultat.</p>
+      <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setAdding(false)}>Avbryt</button>
+        <button className="ats-ghost" disabled={!newName.trim()} onClick={() => { D({ type: "SP_ADD", jobId: job.id, name: newName.trim(), from: p.id }); setNewName(""); setAdding(false); }}>Kopiera {p.name}</button>
+        <button className="ats-btn-primary" disabled={!newName.trim()} onClick={() => { D({ type: "SP_ADD", jobId: job.id, name: newName.trim() }); setNewName(""); setAdding(false); }}><Plus size={15} /> Skapa från formuläret</button></div>
+    </div></Modal>}
+
+    {addSrc.groupId && <Modal title="Lägg till kriterium" onClose={() => setAddSrc({ groupId: "", source: "" })}><div className="ats-erase">
+      <p>Välj vilket formulärfält som ska bedömas. Poängmodellen föreslås automatiskt utifrån fälttypen.</p>
+      <div className="ats-mv-stages">{fields.filter((f) => !crits.some((c) => c.source === f.id)).map((f) => <button key={f.id} className="ats-mv-stage" onClick={() => { D({ type: "SC_ADD", jobId: job.id, profileId: p.id, groupId: addSrc.groupId, source: f.id }); setAddSrc({ groupId: "", source: "" }); }}>
+        <span className="ats-mv-dot" style={{ background: "var(--petrol)" }} /><div><b>{f.label}</b><span>{f.type} → {SCORE_MODELS[MODEL_FOR_FIELD[f.type] || "fixed"].label}</span></div>
+      </button>)}</div>
+      {fields.filter((f) => !crits.some((c) => c.source === f.id)).length === 0 && <div className="ats-col-empty" style={{ padding: 24 }}>Alla formulärfält används redan.</div>}
+    </div></Modal>}
+
+    {showVers && <Modal title="Scoringversioner" onClose={() => { setShowVers(false); setCmp(null); }} wide><div className="ats-erase">
+      {(p.versions || []).length === 0 ? <div className="ats-col-empty" style={{ padding: 24 }}>Ingen version publicerad än.</div>
+        : <div className="ats-sa-rows">{p.versions.map((v) => <div key={v.v} className="ats-sa-row is-card">
+          <div className="ats-sa-main"><b>Version {v.v}{v.v === p.version ? " · aktiv" : ""}</b>
+            <span>{v.criteria.filter((c) => c.active !== false).length} kriterier · {v.groups.length} grupper · {NORM_METHODS[v.norm]} · {v.by}{v.note ? " · " + v.note : ""}</span></div>
+          <span className="ats-sa-when">{new Date(v.at).toLocaleString("sv-SE").slice(0, 16)}</span>
+          <button className="ats-ghost is-sm" onClick={() => setCmp(cmp === v.v ? null : v.v)}><GitCompare size={13} /> Jämför</button>
+          {canEdit && <button className="ats-ghost is-sm" onClick={() => { D({ type: "SP_RESTORE", jobId: job.id, id: p.id, v: v.v }); setShowVers(false); showToast({ kind: "ok", msg: "Utkast skapat från v" + v.v + " — publicera för att aktivera" }); }}><RotateCcw size={13} /> Skapa utkast</button>}
+        </div>)}</div>}
+      {cmp && (() => {
+        const v = p.versions.find((x) => x.v === cmp);
+        const nowIds = new Set(d.criteria.map((c) => c.id)), oldIds = new Set(v.criteria.map((c) => c.id));
+        const added = d.criteria.filter((c) => !oldIds.has(c.id));
+        const removed = v.criteria.filter((c) => !nowIds.has(c.id));
+        const changed = d.criteria.filter((c) => { const o = v.criteria.find((x) => x.id === c.id); return o && JSON.stringify(o) !== JSON.stringify(c); });
+        return <div className="ats-sv-diff">
+          <h4>Skillnad mot utkastet</h4>
+          {added.length === 0 && removed.length === 0 && changed.length === 0 && <p>Ingen skillnad.</p>}
+          {added.map((c) => <div key={c.id} className="is-add">+ Tillagt: {c.name}</div>)}
+          {removed.map((c) => <div key={c.id} className="is-del">− Borttaget: {c.name}</div>)}
+          {changed.map((c) => { const o = v.criteria.find((x) => x.id === c.id); return <div key={c.id} className="is-chg">~ Ändrat: {c.name}{o.weight !== c.weight ? " · vikt " + o.weight + " → " + c.weight : ""}{o.model !== c.model ? " · modell " + SCORE_MODELS[o.model].label + " → " + SCORE_MODELS[c.model].label : ""}</div>; })}
+        </div>;
+      })()}
+      <div className="ats-erase-note"><Info size={14} /> Publicerade versioner är oföränderliga. Kandidaternas historiska resultat pekar alltid på den version som faktiskt användes.</div>
     </div></Modal>}
   </div>;
 }
@@ -6404,6 +7024,104 @@ section.ats-cs-cta p{font-size:17px;opacity:.9;margin-bottom:28px}
 .ats-fab{bottom:calc(84px + env(safe-area-inset-bottom))}
 .ats-jp-mobar{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
 @media (max-width:640px){ .ats-eb-card{padding:24px 20px} .ats-eb-acts button{width:100%} }
+
+/* ---- Scoring ---- */
+.ats-sv-profiles{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.ats-sv-p{display:flex;flex-direction:column;gap:2px;text-align:left;padding:12px 16px;border:1px solid var(--line);border-radius:11px;background:var(--surface);min-height:58px;transition:.14s}
+.ats-sv-p:hover{border-color:var(--petrol-soft)}
+.ats-sv-p.is-on{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-sv-p.is-add{flex-direction:row;align-items:center;gap:7px;color:var(--petrol);border-style:dashed;font-weight:600;font-size:13.5px}
+.ats-sv-p b{font-size:14px}
+.ats-sv-p span{font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.ats-sv-warns{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.ats-sv-warn{display:flex;align-items:center;gap:9px;padding:10px 13px;border-radius:9px;font-size:12.5px;line-height:1.5}
+.ats-sv-warn.is-err{background:var(--brick-soft);color:var(--brick)}
+.ats-sv-warn.is-warn{background:var(--amber-soft);color:var(--gold)}
+.ats-sv-warn svg{flex-shrink:0}
+.ats-sv{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:start}
+.ats-sv-main{display:flex;flex-direction:column;gap:14px}
+.ats-sv-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.ats-sv-sum div{background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:3px}
+.ats-sv-sum span{font-size:11.5px;color:var(--muted)}
+.ats-sv-sum b{font-family:'Bricolage Grotesque';font-size:18px}
+.ats-sv-gname{flex:1;min-width:0;font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;border:0;background:transparent;color:var(--ink);padding:4px 0}
+.ats-sv-gname:focus{outline:none;border-bottom:1px solid var(--petrol)}
+.ats-sv-gm{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.ats-sv-w{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.ats-sv-w input{width:52px;min-height:34px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;text-align:center}
+.ats-sv-gmax{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--petrol);background:var(--petrol-soft);padding:4px 9px;border-radius:8px}
+.ats-sv-crits{display:flex;flex-direction:column;gap:6px}
+.ats-sv-crit{display:flex;align-items:center;gap:10px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);transition:.14s}
+.ats-sv-crit.is-on{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-sv-crit.is-off{opacity:.5}
+.ats-sv-crit.is-broken{border-color:var(--brick);background:var(--brick-soft)}
+.ats-sv-cn{flex:1;min-width:0;text-align:left}
+.ats-sv-cn b{display:block;font-size:13.5px}
+.ats-sv-cn span{font-size:11.5px;color:var(--muted)}
+.ats-sv-cw{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--sub);background:var(--paper2);padding:3px 9px;border-radius:8px;flex-shrink:0}
+.ats-sv-ca{display:flex;gap:2px;flex-shrink:0}
+.ats-sv-side .ats-panel{max-height:calc(100vh - 200px);overflow-y:auto}
+.ats-sv-cond{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px;align-items:center}
+.ats-sv-cond .ats-inp{min-height:40px;padding:8px 10px;font-size:13px}
+.ats-sv-condadd{display:flex;gap:8px;align-items:center}
+.ats-sv-set{display:flex;flex-direction:column;gap:12px;max-width:640px}
+.ats-sv-prev{display:flex;flex-direction:column;gap:14px}
+.ats-sv-diff{margin-top:16px;padding:14px;background:var(--paper2);border-radius:10px;font-size:13px}
+.ats-sv-diff h4{font-family:'Bricolage Grotesque';font-weight:600;font-size:14px;margin-bottom:10px}
+.ats-sv-diff div{padding:4px 0;font-family:'IBM Plex Mono',monospace;font-size:12.5px}
+.ats-sv-diff .is-add{color:var(--petrol)}
+.ats-sv-diff .is-del{color:var(--brick)}
+.ats-sv-diff .is-chg{color:var(--gold)}
+/* Poängförklaring */
+.ats-se{display:flex;flex-direction:column;gap:14px}
+.ats-se-top{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:16px 18px;background:var(--surface);border:1px solid var(--line);border-radius:13px}
+.ats-se-score{display:flex;flex-direction:column;align-items:center;padding:10px 18px;border-radius:11px;flex-shrink:0}
+.ats-se-score.is-petrol{background:var(--petrol-soft);color:var(--petrol-deep)}
+.ats-se-score.is-amber{background:var(--amber-soft);color:var(--gold)}
+.ats-se-score.is-brick{background:var(--brick-soft);color:var(--brick)}
+.ats-se-score b{font-family:'Bricolage Grotesque';font-size:30px;line-height:1}
+.ats-se-score span{font-size:11px;font-family:'IBM Plex Mono',monospace;margin-top:3px}
+.ats-se-meta{display:flex;gap:24px;flex-wrap:wrap;flex:1}
+.ats-se-meta div{display:flex;flex-direction:column;gap:2px}
+.ats-se-meta span{font-size:11px;color:var(--muted)}
+.ats-se-meta b{font-size:13px}
+.ats-se-warn{display:flex;gap:10px;padding:11px 13px;background:var(--amber-soft);border-radius:10px}
+.ats-se-warn svg{color:var(--gold);flex-shrink:0;margin-top:2px}
+.ats-se-warn div{display:flex;flex-direction:column;gap:3px}
+.ats-se-warn span{font-size:12.5px;color:var(--sub);line-height:1.5}
+.ats-se-groups{display:flex;flex-direction:column;gap:8px}
+.ats-se-group{border:1px solid var(--line);border-radius:11px;background:var(--surface);overflow:hidden}
+.ats-se-gh{width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;text-align:left;min-height:52px}
+.ats-se-gh>b{font-size:13.5px;flex-shrink:0;min-width:120px}
+.ats-se-gbar{flex:1;height:6px;background:var(--line2);border-radius:3px;overflow:hidden;min-width:60px}
+.ats-se-gbar i{display:block;height:100%;background:var(--petrol);border-radius:3px}
+.ats-se-gh em{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);flex-shrink:0}
+.ats-se-gh svg{color:var(--muted);transition:transform .2s;flex-shrink:0}
+.ats-se-gh svg.is-open{transform:rotate(180deg)}
+.ats-se-rows{border-top:1px solid var(--line);background:var(--paper2)}
+.ats-se-row{display:grid;grid-template-columns:minmax(0,1fr) 120px 74px;gap:12px;padding:11px 14px;border-bottom:1px solid var(--line);align-items:center}
+.ats-se-row:last-child{border-bottom:0}
+.ats-se-row.is-miss{background:var(--amber-soft)}
+.ats-se-row.is-neg{background:var(--brick-soft)}
+.ats-se-c b{display:block;font-size:13px}
+.ats-se-c span{font-size:11.5px;color:var(--sub);line-height:1.45}
+.ats-se-a em{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink);word-break:break-word}
+.ats-se-p{text-align:right}
+.ats-se-p b{font-family:'Bricolage Grotesque';font-size:15px;color:var(--petrol)}
+.ats-se-row.is-neg .ats-se-p b{color:var(--brick)}
+.ats-se-p span{display:block;font-size:10.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.ats-se-na{padding:13px 15px;background:var(--paper2);border-radius:10px}
+.ats-se-na>b{display:block;font-size:12.5px;color:var(--muted);margin-bottom:8px}
+.ats-se-na div{display:flex;justify-content:space-between;gap:14px;padding:4px 0;font-size:12.5px}
+.ats-se-na em{font-style:normal;color:var(--muted);text-align:right}
+@media (max-width:1024px){ .ats-sv{grid-template-columns:1fr} .ats-sv-side .ats-panel{max-height:none} }
+@media (max-width:640px){
+  .ats-se-row{grid-template-columns:1fr;gap:6px}
+  .ats-se-p{text-align:left}
+  .ats-se-gh>b{min-width:0}
+  .ats-sv-cond{grid-template-columns:1fr 1fr;gap:6px}
+  .ats-se-top{gap:14px}
+}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
