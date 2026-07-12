@@ -562,22 +562,10 @@ function CookieBanner() {
   if (dismissed) return null;
   return <div className="ats-cookie"><div className="ats-cookie-in"><span><Info size={15} /> Vi använder endast nödvändiga cookies och lokal lagring för att appen ska fungera — inga spårningscookies.</span><button className="ats-btn-primary" onClick={() => { store.set("rekyl_cookie", true); setDismissed(true); }}>Okej</button></div></div>;
 }
-function LandingPage({ onLogin, onSignup }) {
-  const [open, setOpen] = useState(false);
+function HomePage() {
+  const onSignup = () => navTo("/skapa-konto");
   const [faq, setFaq] = useState(0);
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 12);
-    onScroll(); window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-  useEffect(() => {
-    if (typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("is-in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -10% 0px" });
-    document.querySelectorAll(".ats-rv").forEach((el) => io.observe(el));
-    return () => io.disconnect();
-  }, []);
-  const go = (id) => { setOpen(false); const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const go = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
 
   const PLANS = [
     { n: "Start", p: "0 kr", per: "för din första tjänst", d: "Rekrytera en roll hela vägen, utan kostnad.", f: ["1 aktiv tjänst", "Formulärbyggare och poängsättning", "Publik jobbannons", "Automatiska besked till kandidater"], cta: "Skapa konto" },
@@ -592,34 +580,7 @@ function LandingPage({ onLogin, onSignup }) {
     ["Vad kostar det när vi växer?", "Start är gratis för din första tjänst. Pro kostar 790 kr per månad utan bindningstid, och Enterprise prissätts efter behov. Du kan byta paket när du vill."],
   ];
 
-  return <div className="ats-root"><Style /><div className="ats-lp">
-    <header className={"ats-lp-nav" + (scrolled ? " is-stuck" : "")}>
-      <div className="ats-lp-nav-in">
-        <button className="ats-lp-brand" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span className="ats-logo">R</span> Rekyl</button>
-        <nav className="ats-lp-links">
-          <button onClick={() => go("produkt")}>Produkt</button>
-          <button onClick={() => go("kandidaten")}>Kandidatupplevelse</button>
-          <button onClick={() => go("priser")}>Priser</button>
-          <button onClick={() => go("fragor")}>Vanliga frågor</button>
-        </nav>
-        <div className="ats-lp-nav-r">
-          <button className="ats-lp-login" onClick={onLogin}>Logga in</button>
-          <button className="ats-lp-cta" onClick={onSignup}>Kom igång</button>
-        </div>
-        <button className="ats-lp-burger" onClick={() => setOpen(!open)} aria-label={open ? "Stäng menyn" : "Öppna menyn"}>{open ? <X size={22} /> : <MenuIcon size={22} />}</button>
-      </div>
-      {open && <div className="ats-lp-mob">
-        <button onClick={() => go("produkt")}>Produkt</button>
-        <button onClick={() => go("kandidaten")}>Kandidatupplevelse</button>
-        <button onClick={() => go("priser")}>Priser</button>
-        <button onClick={() => go("fragor")}>Vanliga frågor</button>
-        <div className="ats-lp-mob-acts">
-          <button className="ats-lp-ghost is-block" onClick={onLogin}>Logga in</button>
-          <button className="ats-lp-cta is-block" onClick={onSignup}>Kom igång</button>
-        </div>
-      </div>}
-    </header>
-
+  return <>
     {/* 1. HERO */}
     <section className="ats-lp-hero">
       <div className="ats-lp-hero-in">
@@ -813,22 +774,7 @@ function LandingPage({ onLogin, onSignup }) {
       </div>
     </section>
 
-    <footer className="ats-lp-foot">
-      <div className="ats-lp-wrap ats-lp-foot-in">
-        <div className="ats-lp-foot-brand">
-          <div className="ats-lp-brand"><span className="ats-logo">R</span> Rekyl</div>
-          <p>Rekryteringsverktyget för svenska arbetsgivare som vill fatta beslut de kan förklara.</p>
-        </div>
-        <div className="ats-lp-foot-cols">
-          <div><h4>Produkt</h4><button onClick={() => go("produkt")}>Formulärbyggaren</button><button onClick={() => go("kandidaten")}>Kandidatupplevelse</button><button onClick={() => go("priser")}>Priser</button></div>
-          <div><h4>Kom igång</h4><button onClick={onSignup}>Skapa konto</button><button onClick={onLogin}>Logga in</button><button onClick={() => go("fragor")}>Vanliga frågor</button></div>
-          <div><h4>Ansvar</h4><span>Data inom EU</span><span>GDPR-anpassad</span><span>Deterministisk poängsättning</span></div>
-        </div>
-      </div>
-      <div className="ats-lp-foot-bot"><span>© {new Date().getFullYear()} Rekyl</span><span>Byggt i Sverige</span></div>
-    </footer>
-    <CookieBanner />
-  </div></div>;
+  </>;
 }
 function SpinnerScreen({ text }) { return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>{text || "Laddar…"}</span></div></div></div>; }
 function OrgSetupScreen({ session, onReady, onLogout }) {
@@ -1103,6 +1049,7 @@ export default function App() {
   const [cloudErr, setCloudErr] = useState(null);
   const [mail, setMail] = useState({ configured: false, provider: null, from: null, reason: null, notify: false, reminders: false, checked: false });
   const bootRef = useRef(Date.now());
+  const path = usePath();
   const [isSuper, setIsSuper] = useState(false);
   const [plan, setPlan] = useState(null);
   const setOrg = (o) => { setOrgState(o); store.set("rekyl_org", o); if (o) sbSetOrg(o.id); };
@@ -1133,14 +1080,29 @@ export default function App() {
 
   useEffect(() => { if (!sbEnabled || !job) return; let alive = true; const pull = async () => { const rows = await sbGet("applications?job_slug=eq." + encodeURIComponent(job.slug) + "&select=*&order=created_at.desc"); if (alive && rows) D({ type: "SYNC_APPLICATIONS", slug: job.slug, rows }); }; pull(); const t = setInterval(pull, 20000); return () => { alive = false; clearInterval(t); }; }, [job && job.slug]);
 
+  const renderPublic = () => {
+    if (path === "/logga-in" || path === "/skapa-konto") {
+      if (session) { navTo("/"); return <SpinnerScreen />; }
+      return <LoginScreen onAuthed={login} start={path === "/skapa-konto" ? "signup" : "login"} onBack={() => navTo("/")} />;
+    }
+    const pg = PAGE_MAP[path] || PAGE_MAP["/"];
+    const isLegal = !!LEGAL_TITLES[path];
+    const C = pg.c;
+    return <MShell path={PAGE_MAP[path] ? path : "/"} title={pg.t} desc={pg.d} session={session}>
+      {isLegal && <MHero kicker="Juridik" title={LEGAL_TITLES[path]} sub={"Senast uppdaterad " + new Date().toLocaleDateString("sv-SE")} />}
+      <C />
+    </MShell>;
+  };
   const navList = useMemo(() => (isSuper ? [...NAV, { id: "superadmin", label: "Superadmin", icon: ShieldAlert }] : NAV), [isSuper]);
   const openNewJob = useCallback(() => { if (plan && state.jobs.length >= plan.maxJobs) { setLimitHit(true); return; } setNewJob(true); }, [plan, state.jobs.length]);
   const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, setNewJob: openNewJob, allScored, dupIndex, onLogout: logout, session, mail, sendMailNow, plan, isSuper };
   const primary = navList.slice(0, 5), more = navList.slice(5);
 
-  const pubMatch = typeof window !== "undefined" ? window.location.pathname.match(/^\/j\/([^/]+)/) : null;
+  const pubMatch = path.match(/^\/j\/([^/]+)/);
   if (pubMatch) return <PublicApply slug={decodeURIComponent(pubMatch[1])} localJobs={state.jobs} localOrg={state.org} />;
-  if (sbEnabled && !session) return authView === "landing" ? <LandingPage onLogin={() => setAuthView("login")} onSignup={() => setAuthView("signup")} /> : <LoginScreen onAuthed={login} start={authView} onBack={() => setAuthView("landing")} />;
+  /* Marknadssidorna är alltid nåbara — även inloggad. Appen bor på "/". */
+  if (path !== "/" && (PAGE_MAP[path] || path === "/logga-in" || path === "/skapa-konto")) return renderPublic();
+  if (sbEnabled && !session) return renderPublic();
   if (sbEnabled && session && !orgChecked) return <SpinnerScreen text="Laddar…" />;
   if (sbEnabled && session && orgChecked && !org) return <OrgSetupScreen session={session} onReady={(o) => { setOrg(o); dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: o.role }); }} onLogout={logout} />;
   if (sbEnabled && session && org && !loaded) return <SpinnerScreen text="Synkar din data…" />;
@@ -1197,6 +1159,583 @@ function NewJobModal({ onClose, onCreate }) { const [title, setTitle] = useState
 function ReasonModal({ onClose, onPick }) { return <Modal title="Anledning till avslag" onClose={onClose}><div className="ats-reasons">{REASONS.map((r) => <button key={r} className="ats-reason" onClick={() => onPick(r)}>{r}</button>)}</div><p className="ats-reason-note">Anledningen sparas i kandidatens timeline och i statistiken, och används i avslagsmejlet ({"{{rejectionReason}}"}).</p></Modal>; }
 function PrintModal({ doc, onClose }) { return <div className="ats-printwrap"><div className="ats-print-toolbar"><span>{doc.title}</span><div><button className="ats-ghost" onClick={() => window.print()}><Download size={15} /> Skriv ut / PDF</button><button className="ats-ghost" onClick={onClose}><X size={15} /> Stäng</button></div></div><div className="ats-printdoc">{doc.node}</div></div>; }
 
+/* ===================== MARKNADSWEBBPLATS ===================== *//* ---- Funktionskatalog: enda källan för funktionssidan ---- */
+const FEATURES = [
+  { cat: "Jobb och publicering", icon: "Briefcase", items: [
+    ["Skapa från branschmall", "Sju färdiga mallar med förladdade frågor, vikter och krav — eller börja från ett tomt formulär."],
+    ["Jobbstatus", "Öppen, pausad, tillsatt eller arkiverad. Statusen styr vad som syns publikt."],
+    ["Duplicera tjänst", "Klona formulär, scoring och annons till en ny tjänst med egen länk och nollställd statistik."],
+    ["Arkivera", "Ta bort tjänsten ur vyerna utan att förlora historik eller kandidatdata."],
+    ["Publicera eller avpublicera", "Ta ned den publika annonsen med ett klick. Länken slutar fungera direkt."],
+    ["Delningslänkar med källspårning", "En länk per kanal. Varje ansökan vet varifrån den kom."],
+    ["Anpassad jobbannons", "Pitch, om rollen, krav, meriter, förmåner, process och FAQ — allt redigerbart."],
+    ["Deadline", "Sista ansökningsdag visas i annonsen och i sidokolumnen."],
+  ] },
+  { cat: "Rekryteringsprocess", icon: "Workflow", items: [
+    ["Kvalificerande frågor", "Bygg formuläret med de frågor som faktiskt avgör — inte en generisk mall."],
+    ["Knockoutregler", "Absoluta krav sållar bort ansökningar automatiskt, med angiven orsak i kandidatens timeline."],
+    ["Deterministisk scoring", "Du sätter vikten. Samma svar ger alltid samma poäng. Varje poäng går att bryta ned."],
+    ["Villkorsstyrda frågor", "Följdfrågor visas bara när de är relevanta för kandidatens tidigare svar."],
+    ["Tröskelvärde", "Ansökningar under din tröskel flaggas som under tröskeln, inte bortsorterade i tysthet."],
+    ["Regelbaserade åtgärder", "Automatiska regler flyttar kandidater till rätt steg utan att du gör något."],
+    ["Intervjubokning", "Tid, längd, form, plats och intervjuare — med krockvarning innan du bekräftar."],
+    ["Anställning", "Markera tillsatt, skicka erbjudandemejl och stäng tjänsten."],
+    ["Fullständig historik", "Varje beslut, mejl och statusändring loggas med vem och när."],
+  ] },
+  { cat: "Kandidathantering", icon: "ClipboardList", items: [
+    ["Kandidatkort", "Poäng, styrkor, risker, rekommenderad åtgärd och hela svarsunderlaget på ett ställe."],
+    ["Kö med swipe", "Beta av nya ansökningar som en kortlek. Rätt mejl skickas vid varje beslut."],
+    ["Filter och sökning", "Sök på namn eller e-post, filtrera på status och källa, sortera på matchning."],
+    ["Betyg och kommentarer", "Sätt stjärnor och skriv interna anteckningar som teamet ser."],
+    ["Jämförelse", "Ställ kandidater sida vid sida med poängunderlaget synligt."],
+    ["Dubblettvarning", "Har någon sökt tidigare syns det direkt på kandidatkortet."],
+    ["Kandidatens tidslinje", "Ansökan, poäng, beslut, mejl och kommentarer i kronologisk ordning."],
+    ["Radering och export", "Radera all data för en kandidat, eller exportera den som JSON på begäran."],
+  ] },
+  { cat: "Kommunikation", icon: "Mail", items: [
+    ["Mejlmallar", "En mall per beslut: bekräftelse, shortlist, intervju, reservlista, avslag, erbjudande."],
+    ["Variabler i mallar", "Kandidatens namn, tjänsten, företaget, intervjutiden och avslagsorsaken fylls i automatiskt."],
+    ["Automatiska besked", "Varje beslut skickar rätt mejl direkt. Ingen kandidat lämnas i tystnad."],
+    ["Kalenderinbjudan", "Intervjun bifogas som kalenderfil. Ombokning flyttar händelsen, avbokning tar bort den."],
+    ["Påminnelser", "Kandidaten påminns automatiskt dagen före intervjun."],
+    ["Leveransstatus", "Du ser den verkliga statusen från mejlleverantören — skickad, misslyckad eller köad."],
+    ["Felhantering", "Misslyckas ett utskick visas den verkliga orsaken, med möjlighet att försöka igen."],
+    ["Kommunikationshistorik", "Varje utskick loggas i mejlloggen och i kandidatens timeline."],
+  ] },
+  { cat: "Team och samarbete", icon: "Users", items: [
+    ["Roller och behörigheter", "Admin, rekryterare, rekryterande chef och insyn. Var och en ser bara sitt."],
+    ["Inbjudningskoder", "Bjud in kollegor med en engångskod och en förvald roll."],
+    ["Teamröstning", "Ja, osäker eller nej — direkt på kandidatkortet."],
+    ["Kommentarer", "Interna anteckningar som aldrig syns för kandidaten."],
+    ["Aktivitetslogg", "Vem gjorde vad och när, i hela organisationen."],
+    ["Organisationsisolering", "Varje företags data är helt separerad på databasnivå."],
+  ] },
+  { cat: "Analys och rapporter", icon: "BarChart3", items: [
+    ["Jobbstatistik", "Påbörjade och skickade ansökningar, snittmatchning och toppmatchning per tjänst."],
+    ["Rekryteringsfunnel", "Se var kandidaterna faller bort — från påbörjad ansökan till anställning."],
+    ["Källkvalitet", "Vilken kanal ger bäst kandidater, inte bara flest. Snittmatchning per källa."],
+    ["Avslagsorsaker", "Varje avslag har en registrerad orsak som syns i statistiken."],
+    ["Rekryteringsrapport", "Exportera en utskriftsklar rapport med beslut, motiveringar och källor."],
+    ["Kandidatexport", "Exportera kandidatlistan som CSV för egen analys."],
+  ] },
+  { cat: "Säkerhet och GDPR", icon: "ShieldCheck", items: [
+    ["Samtycke vid ansökan", "Kandidaten godkänner behandlingen. Samtycket tidsstämplas och visas på kandidatkortet."],
+    ["Rätt att bli glömd", "Radera all data för en kandidat permanent — inklusive uppladdade filer i molnet."],
+    ["Lagringstid", "Sätt en retentionperiod så rensas gamla ansökningar automatiskt."],
+    ["Rollbaserad åtkomst", "Behörighet styr vad varje användare får se och göra."],
+    ["Organisationsisolering", "Databasens säkerhetsregler hindrar åtkomst mellan organisationer."],
+    ["Revisionslogg", "Beslut, mejl, ändringar och administrativa åtgärder loggas."],
+    ["Data inom EU", "Kandidatuppgifter och filer lagras inom EU."],
+    ["Cookiehantering", "Endast nödvändiga cookies. Ingen spårning för marknadsföring."],
+  ] },
+];
+
+function FeaturesPage() {
+  const [cat, setCat] = useState("Alla");
+  const [q, setQ] = useState("");
+  const cats = ["Alla", ...FEATURES.map((f) => f.cat)];
+  const IC = { Briefcase, Workflow, ClipboardList, Mail, Users, BarChart3, ShieldCheck };
+  const shown = FEATURES
+    .filter((f) => cat === "Alla" || f.cat === cat)
+    .map((f) => ({ ...f, items: f.items.filter(([t, d]) => !q.trim() || (t + " " + d).toLowerCase().includes(q.toLowerCase())) }))
+    .filter((f) => f.items.length > 0);
+  const total = shown.reduce((n, f) => n + f.items.length, 0);
+  return <>
+    <MHero kicker="Funktioner" title="Allt som behövs för att rekrytera rätt" sub="Rekyl är byggt på regler, poäng och mallar — inte på gissningar. Här är varje funktion, kategori för kategori." primary="Skapa konto gratis" onPrimary={() => navTo("/skapa-konto")} />
+    <section className="ats-msec">
+      <div className="ats-lp-wrap">
+        <div className="ats-feat-tools">
+          <div className="ats-feat-cats" role="tablist">{cats.map((c) => <button key={c} role="tab" aria-selected={cat === c} className={"ats-feat-cat" + (cat === c ? " is-on" : "")} onClick={() => setCat(c)}>{c}</button>)}</div>
+          <div className="ats-feat-search"><Search size={17} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sök funktion…" aria-label="Sök funktion" /></div>
+        </div>
+        <p className="ats-feat-count">{total} funktioner{q.trim() ? " matchar " + JSON.stringify(q) : ""}</p>
+        {total === 0
+          ? <div className="ats-feat-empty"><Search size={26} /><h3>Ingen funktion matchar</h3><p>Prova ett annat ord, eller rensa sökningen.</p><button className="ats-lp-ghost" onClick={() => { setQ(""); setCat("Alla"); }}>Rensa filter</button></div>
+          : shown.map((f) => { const I = IC[f.icon]; return <div key={f.cat} className="ats-feat-block ats-rv">
+            <h2><I size={19} /> {f.cat}</h2>
+            <div className="ats-feat-grid">{f.items.map(([t, d]) => <div key={t} className="ats-feat-i"><b>{t}</b><span>{d}</span></div>)}</div>
+          </div>; })}
+      </div>
+    </section>
+    <MCta title="Redo att testa?" sub="Skapa konto, välj en branschmall och publicera din första tjänst idag." label="Skapa konto gratis" onClick={() => navTo("/skapa-konto")} />
+  </>;
+}
+
+function CareerPage() {
+  return <>
+    <MHero kicker="Karriärsidor" title="Annonser kandidaten faktiskt vill söka på" sub="Varje tjänst får en egen publik jobbsida med er profil, tydlig process och ett ansökningsflöde som fungerar lika bra i mobilen." primary="Kom igång" onPrimary={() => navTo("/skapa-konto")} secondary="Se priser" onSecondary={() => navTo("/priser")} />
+    <MSplit eyebrow="Jobbannonsen" title="En annons, inte ett databasformulär" body="Pitch, om rollen, krav, meriter, förmåner, rekryteringsprocess och vanliga frågor — allt redigeras i appen och publiceras med ett klick. Kandidaten möts av en läsbar artikel, inte ett rutnät av kort."
+      points={["Metadata: plats, arbetsform, anställning, lön, start och deadline", "Kontaktperson med direkt mejllänk", "Delning med ett klick", "Sticky ansökningsknapp på mobil"]}
+      visual={<div className="ats-lp-mini"><div className="ats-lp-mini-h"><Globe size={15} /> Publik jobbannons</div><div className="ats-lp-jobmini"><div className="ats-lp-jm-kicker">Sälj — Växjö — Hybrid</div><div className="ats-lp-jm-title">Säljare till Nordpuls</div><div className="ats-lp-jm-line" /><div className="ats-lp-jm-line is-s" /><div className="ats-lp-jm-btn">Ansök till tjänsten</div></div></div>} />
+    <MSplit flip eyebrow="Ansökan" title="Ett steg i taget — inget krångel" body="Kandidaten fyller i formuläret i lugn takt, med progressindikator, tydliga fel och en granskning innan inskick. Poäng, krav och interna bedömningar syns aldrig."
+      points={["Villkorsstyrda frågor visas bara när de behövs", "CV-uppladdning som bara fungerar", "Tydlig GDPR-sektion, inte en juridisk textvägg", "Bekräftelse som berättar vad som händer härnäst"]}
+      visual={<div className="ats-lp-mini"><div className="ats-lp-mini-h"><ListChecks size={15} /> Ansökningsformulär</div><div className="ats-lp-jobmini"><div className="ats-lp-jm-kicker">Steg 2 av 4 — Kompetens och krav</div><div className="ats-lp-jm-line" /><div className="ats-lp-jm-line is-s" /><div className="ats-lp-jm-btn">Nästa</div><div className="ats-lp-jm-prog"><span>Halvvägs</span><i><b /></i></div></div></div>} />
+    <MSec eyebrow="Källspårning" title="Se varifrån de bästa kandidaterna kommer" lead="Skapa en delningslänk per kanal. Varje ansökan bär med sig sin källa, så du kan mäta kvalitet — inte bara volym.">
+      <div className="ats-lp-explain">
+        {[["LinkedIn", "12 ansökningar · 74 % snitt", "ok"], ["Platsbanken", "31 ansökningar · 51 % snitt", "warn"], ["Egen sajt", "6 ansökningar · 81 % snitt", "ok"], ["Tips", "3 ansökningar · 88 % snitt", "rec"]].map(([t, d, k]) =>
+          <div key={t} className={"ats-lp-ex is-" + k}><b>{t}</b><span>{d}</span></div>)}
+      </div>
+      <p className="ats-feat-note">Exempel på hur källkvalitet presenteras. Siffrorna kommer från dina egna delningslänkar.</p>
+    </MSec>
+    <MCta title="Ge kandidaterna en bättre upplevelse" sub="Publicera din första tjänst på några minuter." label="Skapa konto gratis" onClick={() => navTo("/skapa-konto")} />
+  </>;
+}
+
+function CandidatesPage() {
+  return <>
+    <MHero kicker="Kandidathantering" title="Beslut du kan förklara — även ett år senare" sub="Kandidatkortet visar exakt varför någon fick sin poäng: vad som drog upp, vad som drog ner och om ett absolut krav saknas." primary="Kom igång" onPrimary={() => navTo("/skapa-konto")} />
+    <MSec eyebrow="Kandidatkortet" title="Underlaget, inte bara ett tal">
+      <div className="ats-lp-explain">
+        {[["Styrkor", "Det som drog upp poängen, med exakt viktning per fråga.", "ok"],
+          ["Risker", "Det som drog ner — synligt, inte gömt i en modell.", "warn"],
+          ["Absoluta krav", "Saknas ett skallkrav sållas ansökan bort automatiskt, med angiven orsak.", "ko"],
+          ["Rekommendation", "Boka intervju, shortlista, begär komplettering eller avslå.", "rec"]].map(([t, d, k]) =>
+          <div key={t} className={"ats-lp-ex is-" + k}><b>{t}</b><span>{d}</span></div>)}
+      </div>
+    </MSec>
+    <MSplit flip eyebrow="Kön" title="Beta av nya ansökningar på en kafferast" body="Kön visar en kandidat i taget med poäng, underlag och rekommendation. Swipa för beslut — rätt mejl går ut automatiskt och allt loggas i kandidatens timeline."
+      points={["Ångra senaste beslutet", "Avslagsorsak registreras och används i mejlet", "Kommentarer och betyg direkt i kortet", "Dubblettvarning om någon sökt tidigare"]}
+      visual={<div className="ats-lp-mini"><div className="ats-lp-mini-h"><Layers size={15} /> Kön</div><div className="ats-lp-card"><div className="ats-lp-card-top"><div><b>Amina Karlsson</b><span>Säljare · via LinkedIn</span></div><ScoreDial value={92} knockout={false} size={54} /></div><div className="ats-lp-rec"><Sparkles size={15} /> Rekommenderad åtgärd: <b>Boka intervju</b></div></div></div>} />
+    <MSec eyebrow="Överblick" title="Filter, sökning och jämförelse" lead="Filtrera på status och källa, sök på namn eller e-post, sortera på matchning — och ställ två kandidater sida vid sida när det är jämnt.">
+      <ul className="ats-lp-checks ats-lp-checks-2">
+        {["Statusflikar: nya, shortlist, intervju, reserv, avslag, anställda", "Källfilter för varje delningslänk", "Sortering på matchning eller datum", "Jämför två kandidater med poängunderlaget synligt", "Exportera listan som CSV", "Radera all data för en kandidat på begäran"].map((p) => <li key={p}><Check size={17} /> {p}</li>)}
+      </ul>
+    </MSec>
+    <MCta title="Sluta gissa" sub="Låt kraven göra jobbet — och behåll beslutet hos dig." label="Skapa konto gratis" onClick={() => navTo("/skapa-konto")} />
+  </>;
+}
+
+function ProcessPage() {
+  const STEPS = [
+    ["Bestäm kraven", "Välj en branschmall eller börja från ett tomt formulär. Sätt vikt på det som väger tungt och markera absoluta krav."],
+    ["Publicera annonsen", "Skriv annonsen i appen, publicera och dela med en länk per kanal."],
+    ["Ta emot ansökningar", "Varje ansökan poängsätts direkt. Saknas ett skallkrav sållas den bort automatiskt, med orsak."],
+    ["Beta av kön", "Gå igenom kandidaterna, kommentera, rösta med teamet och fatta beslut."],
+    ["Boka intervjun", "Tid, längd, form och intervjuare. Kalenderinbjudan skickas och kandidaten påminns dagen före."],
+    ["Ge besked", "Varje beslut skickar rätt mejl. Ingen kandidat lämnas i tystnad."],
+    ["Anställ och följ upp", "Markera tillsatt, exportera rapporten och se vilken källa som gav bäst kandidater."],
+  ];
+  return <>
+    <MHero kicker="Rekryteringsprocess" title="Från annons till anställd — utan att något faller mellan stolarna" sub="Rekyl bygger processen på regler du själv sätter. Ingenting händer automatiskt utan att det går att spåra." primary="Kom igång" onPrimary={() => navTo("/skapa-konto")} />
+    <MSec>
+      <ol className="ats-lp-timeline">{STEPS.map(([t, d], i) => <li key={t}><span>{String(i + 1).padStart(2, "0")}</span><div><b>{t}</b><p>{d}</p></div></li>)}</ol>
+    </MSec>
+    <MSec tone="mint" eyebrow="Automatiska regler" title="Automatik du kan följa steg för steg" lead="Regler flyttar kandidater till rätt steg utan att du gör något — men varje åtgärd registreras i kandidatens timeline med vilken regel som utlöste den. Ingen svart låda.">
+      <ul className="ats-lp-checks ats-lp-checks-2">
+        {["Villkor på poäng, svar eller saknade uppgifter", "Åtgärder: flytta till shortlist, reservlista eller avslag", "Automatisk begäran om komplettering", "Varje utlöst regel loggas med tidpunkt"].map((p) => <li key={p}><Check size={17} /> {p}</li>)}
+      </ul>
+    </MSec>
+    <MCta title="Bygg din process en gång" sub="Sedan sköter den sig — och du kan alltid se varför." label="Skapa konto gratis" onClick={() => navTo("/skapa-konto")} />
+  </>;
+}
+
+function AnalyticsPage() {
+  return <>
+    <MHero kicker="Analys och rapportering" title="Mät kvalitet, inte bara volym" sub="Femtio ansökningar från en kanal som ger sämre kandidater är inte bättre än tio från en som ger bra. Rekyl visar skillnaden." primary="Kom igång" onPrimary={() => navTo("/skapa-konto")} />
+    <MSplit eyebrow="Källkvalitet" title="Vilken kanal ger faktiskt bra kandidater?" body="Varje delningslänk bär med sig sin källa. Rekyl räknar snittmatchning, toppmatchning, intervjuer och anställningar per kanal — så du vet var du ska lägga pengarna nästa gång."
+      points={["Snittmatchning per kanal", "Andel som gick till intervju", "Antal anställda per källa", "Bästa kanalen lyfts fram automatiskt"]}
+      visual={<div className="ats-lp-mini"><div className="ats-lp-mini-h"><TrendingUp size={15} /> Källkvalitet</div><div className="ats-lp-bars">
+        <div className="ats-lp-bar"><span>Tips</span><i style={{ width: "88%" }} /><b>88%</b></div>
+        <div className="ats-lp-bar"><span>Egen sajt</span><i style={{ width: "81%" }} /><b>81%</b></div>
+        <div className="ats-lp-bar"><span>LinkedIn</span><i style={{ width: "74%" }} /><b>74%</b></div>
+        <div className="ats-lp-bar is-weak"><span>Platsbanken</span><i style={{ width: "51%" }} /><b>51%</b></div>
+      </div></div>} />
+    <MSec eyebrow="Rapporter" title="Underlag du kan visa chefen" lead="Rekryteringsrapporten sammanfattar tjänsten: antal ansökningar, snittmatchning, anställda, källor och hela beslutsloggen med motiveringar. Skriv ut eller spara som PDF.">
+      <ul className="ats-lp-checks ats-lp-checks-2">
+        {["Utskriftsklar rekryteringsrapport per tjänst", "Rekryteringsfunnel: påbörjade, skickade, shortlist, intervju, anställda", "Avslagsorsaker sammanställda", "Kandidatexport som CSV", "Statistik per tjänst och per källa"].map((p) => <li key={p}><Check size={17} /> {p}</li>)}
+      </ul>
+    </MSec>
+    <MCta title="Se vad som faktiskt fungerar" sub="Källkvalitet ingår i alla betalande paket." label="Se priser" onClick={() => navTo("/priser")} />
+  </>;
+}
+
+function SecurityPage() {
+  return <>
+    <MHero kicker="Säkerhet och GDPR" title="Ansvarsfullt med människors uppgifter" sub="Rekrytering handlar om människor. Rekyl är byggt för att du ska kunna förklara varje beslut — och radera allt när det är dags." primary="Läs integritetspolicyn" onPrimary={() => navTo("/integritetspolicy")} />
+    <MSec tone="mint" eyebrow="Så skyddas data" title="Konkret, inte en badge-vägg">
+      <div className="ats-sec-grid">
+        {[["Samtycke vid ansökan", "Kandidaten godkänner behandlingen innan inskick. Samtycket tidsstämplas och visas på kandidatkortet."],
+          ["Rätt att bli glömd", "Radering tar bort kandidatens alla uppgifter permanent — svar, timeline och uppladdade filer i molnlagringen."],
+          ["Lagringstid", "Sätt en retentionperiod i inställningarna så rensas gamla ansökningar regelbundet."],
+          ["Organisationsisolering", "Databasens säkerhetsregler hindrar åtkomst mellan organisationer — inte bara gränssnittet."],
+          ["Rollbaserad åtkomst", "Admin, rekryterare, rekryterande chef och insyn har olika rättigheter."],
+          ["Revisionslogg", "Beslut, mejl, ändringar och administrativa åtgärder loggas med vem och när."],
+          ["Data inom EU", "Kandidatuppgifter och filer lagras inom EU."],
+          ["Deterministisk bedömning", "Ingen språkmodell bedömer kandidater. Varje poäng går att bryta ned och förklara."]].map(([t, d]) =>
+          <div key={t} className="ats-sec-i"><ShieldCheck size={18} /><div><b>{t}</b><span>{d}</span></div></div>)}
+      </div>
+    </MSec>
+    <MSec eyebrow="Ärlighet" title="Vad vi inte påstår" lead="Rekyl är inte ISO 27001- eller SOC 2-certifierat, och vi låtsas inte att vi är det. Vi berättar exakt hur data hanteras så att du kan göra din egen bedömning. Har du frågor inför ett personuppgiftsbiträdesavtal — hör av dig, så svarar vi rakt.">
+      <button className="ats-lp-ghost" onClick={() => navTo("/kontakt")}>Kontakta oss</button>
+    </MSec>
+    <MCta title="Frågor om dataskydd?" sub="Vi svarar konkret, inte med marknadsföringsspråk." label="Kontakta oss" onClick={() => navTo("/kontakt")} />
+  </>;
+}
+
+function PricingPage() {
+  const PLANS = [
+    { n: "Start", p: "0 kr", per: "för din första tjänst", d: "Rekrytera en roll hela vägen, utan kostnad.", f: ["1 aktiv tjänst", "Formulärbyggare och deterministisk poängsättning", "Publik jobbannons med källspårning", "Automatiska besked till kandidater", "GDPR-radering och samtycke"], cta: "Skapa konto" },
+    { n: "Pro", p: "790 kr", per: "per månad", d: "För dig som rekryterar löpande.", f: ["25 aktiva tjänster", "Team, roller och aktivitetslogg", "Kalender med intervjubokning", "Påminnelser till kandidater", "Källkvalitet och rekryteringsrapport", "Allt i Start"], cta: "Börja med Pro", hot: true },
+    { n: "Enterprise", p: "Offert", per: "efter behov", d: "För större organisationer med egna krav.", f: ["Obegränsat antal tjänster", "Egna mallar och processer", "Utökad behörighetsstyrning", "Namngiven kontaktperson", "Allt i Pro"], cta: "Kontakta oss" },
+  ];
+  const FAQ = [
+    ["Kan jag byta paket?", "Ja, när som helst. Byter du ner måste antalet aktiva tjänster rymmas i det nya paketet — arkivera de du inte behöver, så går det igenom."],
+    ["Finns bindningstid?", "Nej. Pro löper månadsvis och kan sägas upp när du vill."],
+    ["Vad räknas som en aktiv tjänst?", "En tjänst med status öppen eller pausad. Tillsatta och arkiverade tjänster räknas inte, men behåller all sin data."],
+    ["Ingår moms?", "Nej, alla priser är exklusive moms."],
+  ];
+  const [faq, setFaq] = useState(0);
+  return <>
+    <MHero kicker="Priser" title="Börja gratis. Betala när du växer." sub="Inga bindningstider, ingen demo att boka och inga dolda avgifter." />
+    <section className="ats-msec is-top">
+      <div className="ats-lp-wrap ats-rv">
+        <div className="ats-lp-plans">{PLANS.map((p) => <div key={p.n} className={"ats-lp-plan" + (p.hot ? " is-hot" : "")}>
+          {p.hot && <span className="ats-lp-plan-tag">Populärast</span>}
+          <h3>{p.n}</h3>
+          <div className="ats-lp-price"><b>{p.p}</b><span>{p.per}</span></div>
+          <p className="ats-lp-plan-d">{p.d}</p>
+          <ul>{p.f.map((f) => <li key={f}><Check size={15} /> {f}</li>)}</ul>
+          <button className={p.hot ? "ats-lp-cta is-block" : "ats-lp-ghost is-block"} onClick={() => navTo(p.n === "Enterprise" ? "/kontakt" : "/skapa-konto")}>{p.cta}</button>
+        </div>)}</div>
+        <p className="ats-lp-plans-note">Alla priser exklusive moms. Inga bindningstider.</p>
+      </div>
+    </section>
+    <MSec eyebrow="Vanliga frågor" title="Om priser och paket">
+      <div className="ats-lp-faq ats-lp-faqwrap">{FAQ.map(([q, a], i) => <div key={q} className={"ats-lp-faq-i" + (faq === i ? " is-on" : "")}>
+        <button onClick={() => setFaq(faq === i ? -1 : i)} aria-expanded={faq === i}>{q}<ChevronDown size={19} /></button>
+        <div className="ats-lp-faq-a" style={{ maxHeight: faq === i ? 260 : 0 }}><p>{a}</p></div>
+      </div>)}</div>
+    </MSec>
+    <MCta title="Testa utan att betala" sub="Start är gratis för din första tjänst. Uppgradera först när du behöver." label="Skapa konto gratis" onClick={() => navTo("/skapa-konto")} />
+  </>;
+}
+
+function AboutPage() {
+  return <>
+    <MHero kicker="Om Rekyl" title="Rekrytering ska gå att förklara" sub="Rekyl byggdes för att mindre arbetsgivare förtjänar samma struktur som stora bolag — utan att behöva en HR-avdelning eller ett sexsiffrigt avtal." />
+    <MSec>
+      <div className="ats-about">
+        <div className="ats-about-txt">
+          <h2>Varför Rekyl finns</h2>
+          <p>De flesta mindre arbetsgivare rekryterar i mejlkorgen. Ansökningar blandas med fakturor, någon glöms bort, och beslutet fattas på den som råkade skriva bäst personligt brev. Det är inte slarv — det är att verktygen antingen kostar som en halvtidstjänst eller kräver en HR-avdelning för att sättas upp.</p>
+          <p>Samtidigt fylls marknaden av verktyg som lovar att en AI ska välja kandidat åt dig. Vi tycker det är fel väg. Ett beslut om någons försörjning ska kunna förklaras — för kandidaten, för chefen och för dig själv om ett år.</p>
+          <h2>Vad vi tror på</h2>
+          <p>Rekyl bygger på regler du sätter själv. Du bestämmer vilka frågor som väger tungt, vad som är ett absolut krav och var tröskeln går. Poängen räknas ut på samma sätt varje gång, och varje poäng går att bryta ned. Ingen modell gissar, och ingen kandidat sorteras bort utan angiven orsak.</p>
+          <p>Vi tror också att alla ska få besked. Därför är mallarna kopplade till besluten — säger du nej, går ett nej ut.</p>
+        </div>
+        <div className="ats-about-side">
+          <div className="ats-about-card">
+            <h3>Kort om oss</h3>
+            <dl>
+              <div><dt>Byggt i</dt><dd>Sverige</dd></div>
+              <div><dt>Datalagring</dt><dd>Inom EU</dd></div>
+              <div><dt>Bedömning</dt><dd>Deterministisk, ingen AI</dd></div>
+              <div><dt>Målgrupp</dt><dd>Svenska arbetsgivare</dd></div>
+            </dl>
+          </div>
+          <div className="ats-about-card is-quiet">
+            <h3>Vad vi inte gör</h3>
+            <p>Vi använder inga språkmodeller för att bedöma, ranka eller sammanfatta kandidater. Vi säljer inte kandidatdata. Och vi påstår oss inte ha certifieringar vi inte har.</p>
+          </div>
+        </div>
+      </div>
+    </MSec>
+    <MCta title="Nyfiken?" sub="Skapa konto och publicera din första tjänst — det tar några minuter." label="Skapa konto gratis" onClick={() => navTo("/skapa-konto")} />
+  </>;
+}
+
+function ContactPage() {
+  const [f, setF] = useState({ name: "", email: "", org: "", msg: "" });
+  const [touched, setTouched] = useState(false);
+  const ok = f.name.trim().length > 1 && validEmail(f.email.trim()) && f.msg.trim().length > 5;
+  const send = () => {
+    if (!ok) { setTouched(true); return; }
+    const body = "Namn: " + f.name + "\nFöretag: " + (f.org || "-") + "\nE-post: " + f.email + "\n\n" + f.msg;
+    window.location.href = "mailto:hej@rekyl.se?subject=" + encodeURIComponent("Kontakt från rekyl.se — " + f.name) + "&body=" + encodeURIComponent(body);
+  };
+  return <>
+    <MHero kicker="Kontakt" title="Hör av dig" sub="Frågor om produkten, priser, Enterprise eller dataskydd — vi svarar rakt och utan säljsnack." />
+    <MSec>
+      <div className="ats-contact">
+        <div className="ats-contact-form">
+          <h2>Skicka ett meddelande</h2>
+          <p className="ats-contact-sub">Formuläret öppnar ditt mejlprogram med uppgifterna ifyllda. Vi svarar normalt inom en arbetsdag.</p>
+          <div className="ats-af-fields">
+            <div className="ats-af-f">
+              <label className="ats-af-l" htmlFor="ct-n">Namn <i aria-hidden="true">*</i></label>
+              <input id="ct-n" className={"ats-inp" + (touched && f.name.trim().length < 2 ? " is-err" : "")} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+              {touched && f.name.trim().length < 2 && <span className="ats-af-err"><CircleAlert size={14} /> Fyll i ditt namn.</span>}
+            </div>
+            <div className="ats-af-f">
+              <label className="ats-af-l" htmlFor="ct-e">E-post <i aria-hidden="true">*</i></label>
+              <input id="ct-e" type="email" className={"ats-inp" + (touched && !validEmail(f.email.trim()) ? " is-err" : "")} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
+              {touched && !validEmail(f.email.trim()) && <span className="ats-af-err"><CircleAlert size={14} /> Ange en giltig e-postadress.</span>}
+            </div>
+            <div className="ats-af-f">
+              <label className="ats-af-l" htmlFor="ct-o">Företag</label>
+              <input id="ct-o" className="ats-inp" value={f.org} onChange={(e) => setF({ ...f, org: e.target.value })} />
+            </div>
+            <div className="ats-af-f">
+              <label className="ats-af-l" htmlFor="ct-m">Meddelande <i aria-hidden="true">*</i></label>
+              <textarea id="ct-m" className={"ats-inp" + (touched && f.msg.trim().length < 6 ? " is-err" : "")} value={f.msg} onChange={(e) => setF({ ...f, msg: e.target.value })} />
+              {touched && f.msg.trim().length < 6 && <span className="ats-af-err"><CircleAlert size={14} /> Skriv några rader om vad du undrar.</span>}
+            </div>
+          </div>
+          <button className="ats-af-submit ats-contact-btn" onClick={send}>Skicka meddelande <ArrowRight size={17} /></button>
+        </div>
+        <aside className="ats-contact-side">
+          <div className="ats-about-card">
+            <h3>Mejla direkt</h3>
+            <a className="ats-contact-mail" href="mailto:hej@rekyl.se"><Mail size={16} /> hej@rekyl.se</a>
+            <p>Allmänna frågor, priser och Enterprise.</p>
+          </div>
+          <div className="ats-about-card">
+            <h3>Dataskydd</h3>
+            <a className="ats-contact-mail" href="mailto:dataskydd@rekyl.se"><ShieldCheck size={16} /> dataskydd@rekyl.se</a>
+            <p>Personuppgiftsbiträdesavtal, radering och registerutdrag.</p>
+          </div>
+          <div className="ats-about-card is-quiet">
+            <h3>Är du kandidat?</h3>
+            <p>Har du sökt ett jobb via Rekyl ska du kontakta arbetsgivaren direkt — kontaktuppgifterna finns i jobbannonsen. Vi hanterar era uppgifter för arbetsgivarens räkning.</p>
+          </div>
+        </aside>
+      </div>
+    </MSec>
+  </>;
+}
+
+function PrivacyPage() {
+  return <MLegal intro="Den här policyn beskriver hur Rekyl behandlar personuppgifter. Rekyl är personuppgiftsbiträde åt de arbetsgivare som använder tjänsten — det är arbetsgivaren som är personuppgiftsansvarig för kandidaternas uppgifter."
+    sections={[
+      { h: "Vem ansvarar för uppgifterna?", p: ["När du söker ett jobb via Rekyl är det arbetsgivaren som annonserar tjänsten som ansvarar för dina uppgifter. Rekyl behandlar dem på arbetsgivarens uppdrag och enligt deras instruktioner.", "Vill du utöva dina rättigheter — till exempel få dina uppgifter raderade — kontaktar du i första hand arbetsgivaren. Kontaktuppgifterna finns i jobbannonsen."] },
+      { h: "Vilka uppgifter behandlas?", p: ["Vi behandlar de uppgifter du själv lämnar i ansökningsformuläret."], list: ["Namn, e-postadress och telefonnummer", "Svaren på arbetsgivarens frågor i formuläret", "Eventuellt uppladdat CV eller andra bilagor", "Vilken kanal du kom via, om arbetsgivaren använt en spårad delningslänk", "Tidpunkt för ditt samtycke"] },
+      { h: "Varför behandlas de?", p: ["Uppgifterna används enbart för den rekrytering du sökt till: urval, kontakt, intervjubokning och besked. De används aldrig för marknadsföring och säljs aldrig vidare."] },
+      { h: "Hur bedöms din ansökan?", p: ["Arbetsgivaren definierar i förväg vilka frågor som väger tungt och vilka krav som är absoluta. Poängen räknas ut med en fast formel — samma svar ger alltid samma resultat. Ingen språkmodell eller AI bedömer, rankar eller sammanfattar din ansökan.", "Ett absolut krav kan leda till att en ansökan sorteras bort automatiskt. Orsaken registreras alltid och kan lämnas ut på begäran."] },
+      { h: "Hur länge sparas uppgifterna?", p: ["Arbetsgivaren bestämmer lagringstiden och kan ställa in att ansökningar rensas automatiskt efter en viss period. Uppgifterna raderas dessförinnan om du begär det."] },
+      { h: "Var lagras uppgifterna?", p: ["Inom EU. Överföringen sker krypterat, och uppladdade filer lagras separat med begränsad åtkomst."] },
+      { h: "Dina rättigheter", p: ["Du har rätt att få veta vilka uppgifter som behandlas, att få dem rättade, att få dem raderade och att få ut dem i ett läsbart format."], list: ["Registerutdrag och dataportabilitet", "Rättelse av felaktiga uppgifter", "Radering (rätt att bli glömd)", "Återkallat samtycke"] },
+      { h: "Kontakt", p: ["Frågor om hur Rekyl som leverantör hanterar uppgifter: dataskydd@rekyl.se. Frågor om en specifik ansökan riktas till arbetsgivaren."] },
+    ]} />;
+}
+function CookiePage() {
+  return <MLegal intro="Rekyl använder så få cookies som möjligt. Vi har ingen annonsspårning, inga tredjepartspixlar och ingen profilering för marknadsföring."
+    sections={[
+      { h: "Vilka cookies används?", p: ["Endast sådana som krävs för att tjänsten ska fungera."], list: ["Inloggningssession — håller dig inloggad i appen", "Sparade inställningar — till exempel om menyn är fastlåst", "Samtyckesval — kommer ihåg att du sett cookie-informationen"] },
+      { h: "Vad används inte", p: ["Vi använder inga cookies för annonser, retargeting eller försäljning av data. Vi bäddar inte in spårningspixlar från tredje part."] },
+      { h: "Kandidater", p: ["När du söker ett jobb via en publik jobbannons sätts inga marknadsföringscookies. Om arbetsgivaren använt en spårad delningslänk registreras endast vilken kanal ansökan kom via — det är en uppgift på ansökan, inte en cookie som följer dig vidare."] },
+      { h: "Hantera cookies", p: ["Du kan när som helst rensa cookies i din webbläsares inställningar. Rensar du inloggningssessionen behöver du logga in igen."] },
+    ]} />;
+}
+function TermsPage() {
+  return <MLegal intro="Dessa villkor gäller för användning av Rekyl. Genom att skapa konto godkänner du dem."
+    sections={[
+      { h: "Tjänsten", p: ["Rekyl är ett verktyg för rekrytering. Du som kund ansvarar för innehållet i dina jobbannonser, för de frågor och krav du ställer och för de beslut du fattar om kandidater."] },
+      { h: "Konto och åtkomst", p: ["Du ansvarar för att hålla dina inloggningsuppgifter säkra och för vilka kollegor du bjuder in. Roller styr behörighet — se till att varje användare har rätt roll."] },
+      { h: "Ditt ansvar som arbetsgivare", p: ["Du är personuppgiftsansvarig för kandidaternas uppgifter. Det innebär bland annat att du ska ha laglig grund för behandlingen, informera kandidaterna, besvara deras förfrågningar och sätta en rimlig lagringstid.", "Du ansvarar också för att de krav du ställer är sakliga och inte diskriminerar."] },
+      { h: "Vårt ansvar", p: ["Vi tillhandahåller tjänsten i befintligt skick och arbetar för hög tillgänglighet, men kan inte garantera avbrottsfri drift. Vi behandlar personuppgifter endast enligt dina instruktioner."] },
+      { h: "Priser och betalning", p: ["Priser anges exklusive moms. Pro faktureras månadsvis utan bindningstid och kan sägas upp när som helst. Enterprise regleras i separat avtal."] },
+      { h: "Begränsningar", p: ["Paketet avgör hur många aktiva tjänster du kan ha. Överskrids gränsen kan ändringar inte sparas förrän du arkiverar tjänster eller uppgraderar."] },
+      { h: "Upphörande", p: ["Du kan när som helst avsluta ditt konto. Din data raderas då enligt överenskommelse. Vi kan stänga av konton som används i strid med villkoren eller mot lag."] },
+      { h: "Ändringar", p: ["Vi kan uppdatera villkoren. Väsentliga ändringar meddelas i god tid via e-post."] },
+    ]} />;
+}
+
+function MShell({ path, title, desc, session, children }) {
+  useSeo(title, desc);
+  const [open, setOpen] = useState(false);
+  const [prod, setProd] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const on = () => setScrolled(window.scrollY > 12);
+    on(); window.addEventListener("scroll", on, { passive: true });
+    return () => window.removeEventListener("scroll", on);
+  }, []);
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("is-in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -10% 0px" });
+    document.querySelectorAll(".ats-rv").forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [path]);
+  const go = (p) => { setOpen(false); setProd(false); navTo(p); };
+  const isProd = NAV_PRODUCT.some((n) => n.path === path);
+
+  return <div className="ats-root"><Style /><div className="ats-lp">
+    <a className="ats-skip" href="#main">Hoppa till innehållet</a>
+    <header className={"ats-lp-nav" + (scrolled ? " is-stuck" : "")}>
+      <div className="ats-lp-nav-in">
+        <button className="ats-lp-brand" onClick={() => go("/")} aria-label="Rekyl, till startsidan"><span className="ats-logo">R</span> Rekyl</button>
+        <nav className="ats-lp-links" aria-label="Huvudmeny">
+          <div className="ats-lp-drop" onMouseEnter={() => setProd(true)} onMouseLeave={() => setProd(false)}>
+            <button className={isProd ? "is-active" : ""} onClick={() => setProd(!prod)} aria-expanded={prod}>Produkt <ChevronDown size={15} /></button>
+            {prod && <div className="ats-lp-dropmenu">{NAV_PRODUCT.map((n) => <button key={n.path} onClick={() => go(n.path)} className={path === n.path ? "is-active" : ""}>
+              <b>{n.label}</b><span>{n.desc}</span>
+            </button>)}</div>}
+          </div>
+          {NAV_MAIN.map((n) => <button key={n.path} className={path === n.path ? "is-active" : ""} onClick={() => go(n.path)}>{n.label}</button>)}
+        </nav>
+        <div className="ats-lp-nav-r">
+          {session
+            ? <button className="ats-lp-cta" onClick={() => go("/")}>Till appen <ArrowRight size={16} /></button>
+            : <><button className="ats-lp-login" onClick={() => go("/logga-in")}>Logga in</button><button className="ats-lp-cta" onClick={() => go("/skapa-konto")}>Kom igång</button></>}
+        </div>
+        <button className="ats-lp-burger" onClick={() => setOpen(!open)} aria-label={open ? "Stäng menyn" : "Öppna menyn"} aria-expanded={open}>{open ? <X size={22} /> : <MenuIcon size={22} />}</button>
+      </div>
+      {open && <div className="ats-lp-mob">
+        <span className="ats-lp-mobh">Produkt</span>
+        {NAV_PRODUCT.map((n) => <button key={n.path} className={path === n.path ? "is-active" : ""} onClick={() => go(n.path)}>{n.label}</button>)}
+        <span className="ats-lp-mobh">Rekyl</span>
+        {NAV_MAIN.map((n) => <button key={n.path} className={path === n.path ? "is-active" : ""} onClick={() => go(n.path)}>{n.label}</button>)}
+        <div className="ats-lp-mob-acts">
+          {session ? <button className="ats-lp-cta is-block" onClick={() => go("/")}>Till appen</button>
+            : <><button className="ats-lp-ghost is-block" onClick={() => go("/logga-in")}>Logga in</button><button className="ats-lp-cta is-block" onClick={() => go("/skapa-konto")}>Kom igång</button></>}
+        </div>
+      </div>}
+    </header>
+
+    <main id="main">{children}</main>
+
+    <footer className="ats-lp-foot">
+      <div className="ats-lp-wrap ats-lp-foot-in">
+        <div className="ats-lp-foot-brand">
+          <button className="ats-lp-brand" onClick={() => go("/")}><span className="ats-logo">R</span> Rekyl</button>
+          <p>Rekryteringsverktyget för svenska arbetsgivare som vill fatta beslut de kan förklara. Deterministiskt urval, ingen AI som gissar.</p>
+        </div>
+        <div className="ats-lp-foot-cols">
+          <div><h4>Produkt</h4>{NAV_PRODUCT.map((n) => <button key={n.path} onClick={() => go(n.path)}>{n.label}</button>)}</div>
+          <div><h4>Rekyl</h4>{NAV_MAIN.map((n) => <button key={n.path} onClick={() => go(n.path)}>{n.label}</button>)}<button onClick={() => go("/skapa-konto")}>Skapa konto</button></div>
+          <div><h4>Juridik</h4>{NAV_LEGAL.map((n) => <button key={n.path} onClick={() => go(n.path)}>{n.label}</button>)}</div>
+        </div>
+      </div>
+      <div className="ats-lp-foot-bot"><span>© {new Date().getFullYear()} Rekyl</span><span>Byggt i Sverige · Data inom EU</span></div>
+    </footer>
+    <CookieBanner />
+  </div></div>;
+}
+
+/* Återanvändbara sektioner */
+function MHero({ kicker, title, sub, primary, secondary, onPrimary, onSecondary }) {
+  return <section className="ats-mh">
+    <div className="ats-lp-wrap ats-mh-in">
+      {kicker && <span className="ats-lp-eyebrow">{kicker}</span>}
+      <h1>{title}</h1>
+      {sub && <p className="ats-mh-sub">{sub}</p>}
+      {(primary || secondary) && <div className="ats-mh-acts">
+        {primary && <button className="ats-lp-cta is-lg" onClick={onPrimary}>{primary} <ArrowRight size={19} /></button>}
+        {secondary && <button className="ats-lp-ghost" onClick={onSecondary}>{secondary}</button>}
+      </div>}
+    </div>
+  </section>;
+}
+function MSec({ eyebrow, title, lead, children, tone }) {
+  return <section className={"ats-msec" + (tone ? " is-" + tone : "")}>
+    <div className="ats-lp-wrap ats-rv">
+      {eyebrow && <span className="ats-lp-eyebrow">{eyebrow}</span>}
+      {title && <h2 className="ats-lp-h2">{title}</h2>}
+      {lead && <p className="ats-lp-lead">{lead}</p>}
+      {children}
+    </div>
+  </section>;
+}
+function MSplit({ eyebrow, title, body, points, visual, flip }) {
+  return <section className={"ats-lp-split" + (flip ? " is-flip" : "")}>
+    <div className="ats-lp-wrap ats-lp-split-in ats-rv">
+      {flip && <div className="ats-lp-split-v">{visual}</div>}
+      <div className="ats-lp-split-t">
+        <span className="ats-lp-eyebrow">{eyebrow}</span>
+        <h2>{title}</h2>
+        <p>{body}</p>
+        {points && <ul className="ats-lp-checks">{points.map((p) => <li key={p}><Check size={17} /> {p}</li>)}</ul>}
+      </div>
+      {!flip && <div className="ats-lp-split-v">{visual}</div>}
+    </div>
+  </section>;
+}
+function MCta({ title, sub, label, onClick }) {
+  return <section className="ats-lp-final">
+    <div className="ats-lp-wrap ats-lp-final-in ats-rv">
+      <h2>{title}</h2>
+      <p>{sub}</p>
+      <button className="ats-lp-cta is-lg" onClick={onClick}>{label} <ArrowRight size={19} /></button>
+      <span className="ats-lp-final-note">Inget kreditkort. Ingen demo att boka.</span>
+    </div>
+  </section>;
+}
+function MLegal({ intro, sections }) {
+  return <div className="ats-legal">
+    <div className="ats-lp-wrap ats-legal-in">
+      <p className="ats-legal-intro">{intro}</p>
+      {sections.map((s2, i) => <section key={i} className="ats-legal-sec">
+        <h2>{i + 1}. {s2.h}</h2>
+        {s2.p.map((p, j) => <p key={j}>{p}</p>)}
+        {s2.list && <ul>{s2.list.map((l, j) => <li key={j}>{l}</li>)}</ul>}
+      </section>)}
+    </div>
+  </div>;
+}
+const PAGE_MAP = {
+  "/": { c: HomePage, t: "Rekyl — rekrytera på krav, inte på magkänsla", d: "Rekryteringsverktyget för svenska arbetsgivare. Deterministisk poängsättning, publika jobbannonser, automatiska besked och full spårbarhet. Ingen AI som gissar." },
+  "/funktioner": { c: FeaturesPage, t: "Funktioner — Rekyl", d: "Varje funktion i Rekyl: jobb och publicering, rekryteringsprocess, kandidathantering, kommunikation, team, analys samt säkerhet och GDPR." },
+  "/karriarsidor": { c: CareerPage, t: "Karriärsidor och jobbannonser — Rekyl", d: "Publika jobbannonser med er profil, källspårade delningslänkar och ett ansökningsflöde som fungerar i mobilen." },
+  "/kandidathantering": { c: CandidatesPage, t: "Kandidathantering — Rekyl", d: "Kandidatkort med poängunderlag, kö med swipe, filter, jämförelse och GDPR-radering." },
+  "/rekryteringsprocess": { c: ProcessPage, t: "Rekryteringsprocess — Rekyl", d: "Från annons till anställd: kvalificerande frågor, knockoutregler, scoring, intervjubokning och automatiska besked." },
+  "/analys": { c: AnalyticsPage, t: "Analys och rapportering — Rekyl", d: "Källkvalitet, rekryteringsfunnel, avslagsorsaker och utskriftsklara rapporter." },
+  "/sakerhet": { c: SecurityPage, t: "Säkerhet och GDPR — Rekyl", d: "Samtycke, rätt att bli glömd, lagringstid, rollbaserad åtkomst, revisionslogg och data inom EU." },
+  "/priser": { c: PricingPage, t: "Priser — Rekyl", d: "Start är gratis för din första tjänst. Pro kostar 790 kr per månad utan bindningstid. Enterprise efter behov." },
+  "/om-rekyl": { c: AboutPage, t: "Om Rekyl", d: "Varför Rekyl finns: rekrytering ska gå att förklara — för kandidaten, för chefen och för dig själv om ett år." },
+  "/kontakt": { c: ContactPage, t: "Kontakt — Rekyl", d: "Frågor om produkten, priser, Enterprise eller dataskydd. Vi svarar rakt och utan säljsnack." },
+  "/integritetspolicy": { c: PrivacyPage, t: "Integritetspolicy — Rekyl", d: "Hur Rekyl behandlar personuppgifter, och vilka rättigheter du som kandidat har." },
+  "/cookiepolicy": { c: CookiePage, t: "Cookiepolicy — Rekyl", d: "Rekyl använder endast nödvändiga cookies. Ingen annonsspårning och ingen profilering." },
+  "/villkor": { c: TermsPage, t: "Användarvillkor — Rekyl", d: "Villkor för användning av Rekyl: tjänsten, ditt ansvar som arbetsgivare, priser och begränsningar." },
+};
+const LEGAL_TITLES = { "/integritetspolicy": "Integritetspolicy", "/cookiepolicy": "Cookiepolicy", "/villkor": "Användarvillkor" };
+/* ===================== PUBLIK ROUTING ===================== */
+function navTo(p) {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === p) { window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+  window.history.pushState({}, "", p);
+  window.dispatchEvent(new Event("rekyl:nav"));
+  window.scrollTo(0, 0);
+}
+function usePath() {
+  const [path, setPath] = useState(() => (typeof window === "undefined" ? "/" : window.location.pathname));
+  useEffect(() => {
+    const on = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", on);
+    window.addEventListener("rekyl:nav", on);
+    return () => { window.removeEventListener("popstate", on); window.removeEventListener("rekyl:nav", on); };
+  }, []);
+  return path;
+}
+function useSeo(title, desc) {
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.title = title;
+    let m = document.querySelector('meta[name="description"]');
+    if (!m) { m = document.createElement("meta"); m.setAttribute("name", "description"); document.head.appendChild(m); }
+    m.setAttribute("content", desc);
+    document.documentElement.lang = "sv";
+  }, [title, desc]);
+}
+
+/* Sidkarta — enda sanningen för navigation, footer och routing. Inga döda länkar. */
+const NAV_PRODUCT = [
+  { path: "/funktioner", label: "Alla funktioner", desc: "Varje funktion i Rekyl, kategori för kategori." },
+  { path: "/karriarsidor", label: "Karriärsidor", desc: "Egen karriärsida och jobbannonser med er profil." },
+  { path: "/kandidathantering", label: "Kandidathantering", desc: "Pipeline, kandidatkort och beslut du kan förklara." },
+  { path: "/rekryteringsprocess", label: "Rekryteringsprocess", desc: "Steg, regler, intervjuer och automatiska besked." },
+  { path: "/analys", label: "Analys och rapporter", desc: "Källkvalitet, funnel och rapporter som går att exportera." },
+  { path: "/sakerhet", label: "Säkerhet och GDPR", desc: "Samtycke, radering, roller och revisionslogg." },
+];
+const NAV_MAIN = [
+  { path: "/priser", label: "Priser" },
+  { path: "/om-rekyl", label: "Om Rekyl" },
+  { path: "/kontakt", label: "Kontakt" },
+];
+const NAV_LEGAL = [
+  { path: "/integritetspolicy", label: "Integritetspolicy" },
+  { path: "/cookiepolicy", label: "Cookiepolicy" },
+  { path: "/villkor", label: "Användarvillkor" },
+];
 /* ===================== SUPERADMIN ===================== */
 function SuperadminView({ showToast, session }) {
   const [tab, setTab] = useState("overview");
@@ -3773,6 +4312,120 @@ html{scroll-behavior:smooth}
   .ats-af{padding:24px 18px}
   .ats-af-nextlbl{display:none}
   .ats-lp-trust{gap:14px}
+}
+
+/* ---- Marknadswebbplats ---- */
+.ats-skip{position:absolute;left:-9999px;top:12px;z-index:99;background:var(--petrol);color:#fff;padding:12px 18px;border-radius:var(--r-sm);font-weight:600}
+.ats-skip:focus{left:24px}
+.ats-lp-links button.is-active{color:var(--ink)}
+.ats-lp-links button.is-active::after{right:0}
+.ats-lp-drop{position:relative}
+.ats-lp-drop>button{display:inline-flex;align-items:center;gap:6px}
+.ats-lp-dropmenu{position:absolute;top:calc(100% + 14px);left:-16px;width:340px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:8px;box-shadow:0 24px 54px -26px rgba(16,32,28,.34);display:flex;flex-direction:column;gap:2px;animation:mobin .18s var(--ease)}
+.ats-lp-dropmenu::before{content:"";position:absolute;top:-14px;left:0;right:0;height:14px}
+.ats-lp-dropmenu button{display:flex;flex-direction:column;gap:3px;text-align:left;padding:12px 14px;border-radius:var(--r-sm);transition:background .14s}
+.ats-lp-dropmenu button:hover,.ats-lp-dropmenu button.is-active{background:var(--petrol-soft)}
+.ats-lp-dropmenu b{font-size:14.5px;font-weight:600;color:var(--ink)}
+.ats-lp-dropmenu span{font-size:13px;color:var(--muted);line-height:1.5}
+.ats-lp-mobh{display:block;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:16px 4px 6px}
+.ats-lp-mob>button.is-active{color:var(--petrol)}
+
+/* Sidhero */
+.ats-mh{padding:76px 0 56px;border-bottom:1px solid var(--line)}
+.ats-mh-in{max-width:920px}
+.ats-mh h1{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(36px,4.8vw,64px);line-height:1.06;letter-spacing:-.032em;margin-bottom:22px}
+.ats-mh-sub{font-size:19px;line-height:1.68;color:var(--sub);max-width:680px}
+.ats-mh-acts{display:flex;gap:14px;flex-wrap:wrap;margin-top:34px}
+.ats-msec{padding:88px 0}
+.ats-msec.is-top{padding-top:64px}
+.ats-msec.is-mint{background:var(--petrol-soft);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ats-lp-checks-2{display:grid;grid-template-columns:1fr 1fr;gap:14px 32px}
+
+/* Funktionssidan */
+.ats-feat-tools{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:16px}
+.ats-feat-cats{display:flex;gap:8px;flex-wrap:wrap}
+.ats-feat-cat{padding:10px 16px;border-radius:22px;border:1px solid var(--line);background:var(--surface);font-size:13.5px;font-weight:600;color:var(--sub);min-height:44px;transition:.15s}
+.ats-feat-cat:hover{border-color:var(--petrol);color:var(--petrol)}
+.ats-feat-cat.is-on{background:var(--petrol);border-color:var(--petrol);color:#fff}
+.ats-feat-search{display:flex;align-items:center;gap:10px;padding:0 16px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);min-height:46px;min-width:240px}
+.ats-feat-search svg{color:var(--muted);flex-shrink:0}
+.ats-feat-search input{flex:1;border:0;background:transparent;font-size:15px;font-family:inherit;color:var(--ink);min-width:0}
+.ats-feat-search input:focus{outline:none}
+.ats-feat-count{font-size:13.5px;color:var(--muted);margin-bottom:34px}
+.ats-feat-block{margin-bottom:52px}
+.ats-feat-block h2{display:flex;align-items:center;gap:11px;font-family:'Bricolage Grotesque';font-weight:600;font-size:24px;letter-spacing:-.02em;margin-bottom:22px}
+.ats-feat-block h2 svg{color:var(--petrol)}
+.ats-feat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.ats-feat-i{background:var(--surface);padding:22px 24px}
+.ats-feat-i b{display:block;font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;margin-bottom:7px}
+.ats-feat-i span{font-size:14.5px;line-height:1.62;color:var(--sub)}
+.ats-feat-empty{text-align:center;padding:64px 20px;color:var(--muted)}
+.ats-feat-empty svg{color:var(--line2);margin-bottom:16px}
+.ats-feat-empty h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:19px;color:var(--ink);margin-bottom:8px}
+.ats-feat-empty p{font-size:15px;margin-bottom:22px}
+.ats-feat-note{font-size:13.5px;color:var(--muted);margin-top:18px}
+
+/* Säkerhetssidan */
+.ats-sec-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.ats-sec-i{display:flex;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:22px}
+.ats-sec-i svg{color:var(--petrol);flex-shrink:0;margin-top:2px}
+.ats-sec-i b{display:block;font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;margin-bottom:6px}
+.ats-sec-i span{font-size:14.5px;line-height:1.62;color:var(--sub)}
+
+/* Om Rekyl */
+.ats-about{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:64px;align-items:start}
+.ats-about-txt h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:28px;letter-spacing:-.022em;margin:0 0 16px}
+.ats-about-txt h2:not(:first-child){margin-top:44px}
+.ats-about-txt p{font-size:17.5px;line-height:1.78;color:var(--sub);margin-bottom:18px;max-width:660px}
+.ats-about-side{display:flex;flex-direction:column;gap:16px}
+.ats-about-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:24px}
+.ats-about-card.is-quiet{background:transparent;border-style:dashed}
+.ats-about-card h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;margin-bottom:16px}
+.ats-about-card p{font-size:14px;line-height:1.65;color:var(--sub)}
+.ats-about-card dl{display:flex;flex-direction:column;gap:14px}
+.ats-about-card dl div{display:flex;justify-content:space-between;gap:14px;font-size:14px}
+.ats-about-card dt{color:var(--muted)}
+.ats-about-card dd{color:var(--ink);font-weight:600;text-align:right}
+
+/* Kontakt */
+.ats-contact{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:64px;align-items:start}
+.ats-contact-form h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:26px;letter-spacing:-.02em;margin-bottom:10px}
+.ats-contact-sub{font-size:15.5px;line-height:1.65;color:var(--sub);margin-bottom:30px;max-width:520px}
+.ats-contact-btn{margin-left:0;margin-top:30px}
+.ats-contact-side{display:flex;flex-direction:column;gap:16px}
+.ats-contact-mail{display:inline-flex;align-items:center;gap:9px;font-size:15px;font-weight:600;color:var(--petrol);margin-bottom:8px;word-break:break-all}
+.ats-contact-mail:hover{text-decoration:underline}
+
+/* Juridiska sidor */
+.ats-legal{padding:64px 0 96px}
+.ats-legal-in{max-width:760px}
+.ats-legal-intro{font-size:18px;line-height:1.75;color:var(--sub);padding-bottom:32px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.ats-legal-sec{padding:32px 0;border-bottom:1px solid var(--line)}
+.ats-legal-sec:last-child{border-bottom:0}
+.ats-legal-sec h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:22px;letter-spacing:-.018em;margin-bottom:14px}
+.ats-legal-sec p{font-size:16.5px;line-height:1.75;color:var(--sub);margin-bottom:14px}
+.ats-legal-sec p:last-child{margin-bottom:0}
+.ats-legal-sec ul{display:flex;flex-direction:column;gap:9px;margin-top:6px}
+.ats-legal-sec li{position:relative;padding-left:22px;font-size:16px;line-height:1.65;color:var(--sub)}
+.ats-legal-sec li::before{content:"";position:absolute;left:0;top:10px;width:6px;height:6px;border-radius:50%;background:var(--petrol)}
+
+@media (max-width:1024px){
+  .ats-about,.ats-contact{grid-template-columns:1fr;gap:44px}
+  .ats-sec-grid{grid-template-columns:1fr}
+  .ats-lp-checks-2{grid-template-columns:1fr}
+  .ats-mh{padding:56px 0 44px}
+  .ats-msec{padding:68px 0}
+}
+@media (max-width:860px){
+  .ats-lp-dropmenu{display:none}
+}
+@media (max-width:640px){
+  .ats-feat-tools{flex-direction:column;align-items:stretch}
+  .ats-feat-search{min-width:0}
+  .ats-feat-grid{grid-template-columns:1fr}
+  .ats-mh-acts{flex-direction:column}
+  .ats-mh-acts button{width:100%}
+  .ats-legal{padding:44px 0 72px}
 }
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
