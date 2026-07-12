@@ -58,6 +58,11 @@ async function sbRefresh(refresh_token) { try { const r = await fetch(SB_URL + "
 const MAIL_FN = "/.netlify/functions/send-email";
 const MAIL_INFLIGHT = new Set();
 async function mailConfig() { try { const r = await fetch(MAIL_FN, { headers: { Accept: "application/json" } }); if (!r.ok) return { configured: false }; const d = await r.json(); return d && typeof d === "object" ? d : { configured: false }; } catch (e) { return { configured: false }; } }
+const ADMIN_FN = "/.netlify/functions/admin";
+async function adminCall(action, args) { try { const r = await sbFetch(ADMIN_FN, "POST", () => ({ "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }), JSON.stringify({ action, ...(args || {}) })); const d = await r.json().catch(() => ({})); if (!r.ok) return { ok: false, error: (d && d.error) || ("Fel (" + r.status + ")") }; return { ok: true, ...d }; } catch (e) { return { ok: false, error: "Ingen kontakt med admin-tjänsten." }; } }
+const PLAN_LABEL = { start: "Start", pro: "Pro", enterprise: "Enterprise" };
+const kb = (n) => (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : n > 1024 ? Math.round(n / 1024) + " kB" : n + " B");
+async function runRemindersNow() { try { const r = await sbFetch(MAIL_FN, "POST", () => ({ "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }), JSON.stringify({ action: "run-reminders" })); const d = await r.json().catch(() => ({})); if (!r.ok) return { ok: false, error: (d && d.error) || ("Fel (" + r.status + ")") }; return { ok: true, ...d }; } catch (e) { return { ok: false, error: "Ingen kontakt med utskickstjänsten." }; } }
 async function sendMail(payload) { try { const r = await sbFetch(MAIL_FN, "POST", () => ({ "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }), JSON.stringify(payload)); const d = await r.json().catch(() => ({})); if (!r.ok) return { ok: false, error: (d && d.error) || ("Utskicksfel (" + r.status + ")") }; return { ok: true, id: (d && d.id) || null }; } catch (e) { return { ok: false, error: "Ingen kontakt med utskickstjänsten." }; } }
 
 
@@ -312,6 +317,7 @@ const DEFAULT_TEMPLATES = [
   { id: "t_reject", name: "Avslag", trigger: "reject", active: true, subject: "Besked om din ansökan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}} hos {{companyName}}. Den har gången går vi vidare med andra kandidater ({{rejectionReason}}). Vi önskar dig lycka till framöver.\n\nVänliga hälsningar,\n{{hrName}}" },
   { id: "t_completion", name: "Begär komplettering", trigger: "completion", active: true, subject: "Komplettering behövs - {{jobTitle}}", body: "Hej {{candidateName}},\n\nDin ansökan ser bra ut, men vi saknar: {{missingField}}. Kan du komplettera genom att svara på detta mejl?\n\nTack,\n{{hrName}}" },
   { id: "t_offer", name: "Erbjudande", trigger: "offer", active: true, subject: "Erbjudande - {{jobTitle}} hos {{companyName}}", body: "Hej {{candidateName}},\n\nVi är glada att erbjuda dig rollen som {{jobTitle}} hos {{companyName}}. Vi mejlar detaljerna separat. Hör garna av dig till {{hrName}} på {{hrEmail}} vid frågor.\n\nVarmt välkommen!\n{{hrName}}" },
+  { id: "t_interview_reminder", name: "Påminnelse intervju", trigger: "interview_reminder", active: true, subject: "Påminnelse: intervju imorgon - {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn vänlig påminnelse om din intervju för {{jobTitle}} hos {{companyName}}.\n\nTid: {{interviewTime}}\n\nHör av dig om något har kommit emellan.\n\nVänliga hälsningar,\n{{hrName}}\n{{companyName}}" },
   { id: "t_interview_cancelled", name: "Avbokad intervju", trigger: "interview_cancelled", active: true, subject: "Ändrad tid - {{jobTitle}}", body: "Hej {{candidateName}},\n\nTyvärr måste vi avboka den inplanerade intervjun för {{jobTitle}} hos {{companyName}}. Kalenderinbjudan tas bort automatiskt.\n\nVi återkommer med ett nytt tidsförslag så snart vi kan.\n\nVänliga hälsningar,\n{{hrName}}\n{{companyName}}" },
   { id: "t_reminder", name: "Paminnelse", trigger: "reminder", active: true, subject: "Paminnelse - {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn liten paminnelse angående din ansökan till {{jobTitle}}. Hör av dig till {{hrName}} ({{hrEmail}}) om du har frågor.\n\nVänliga hälsningar,\n{{hrName}}" },
 ];
@@ -400,7 +406,8 @@ function reducer(state, ac) {
     case "DECIDE": {
       const cand = state.candidates.find((c) => c.id === ac.id); if (!cand) return state;
       const job = state.jobs.find((j) => j.id === cand.jobId);
-      const { c2, msg } = applyDecision(state, cand, job, ac.status, ac.reason, who, ac.interviewTime ? { interviewTime: ac.interviewTime } : null);
+      const extra = (ac.interviewTime || ac.interview) ? { ...(ac.interviewTime ? { interviewTime: ac.interviewTime } : {}), ...(ac.interview ? { interview: ac.interview } : {}) } : null;
+      const { c2, msg } = applyDecision(state, cand, job, ac.status, ac.reason, who, extra);
       const s2 = mapCand(state, ac.id, () => c2);
       return { ...s2, messages: msg ? [msg, ...state.messages] : state.messages, history: [...state.history, { id: ac.id, prev: cand.status }], log: withLog(s2, "Beslut", `${statusLabel(ac.status)} · ${cand.name}`) };
     }
@@ -743,6 +750,7 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [newJob, setNewJob] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
+  const [limitHit, setLimitHit] = useState(false);
   const [reasonFor, setReasonFor] = useState(null);
   const [detailId, setDetailId] = useState(null);
   const [compareIds, setCompareIds] = useState([]);
@@ -755,8 +763,10 @@ export default function App() {
   const [authView, setAuthView] = useState("landing");
   const [cloudOk, setCloudOk] = useState(true);
   const [cloudErr, setCloudErr] = useState(null);
-  const [mail, setMail] = useState({ configured: false, provider: null, from: null, reason: null, checked: false });
+  const [mail, setMail] = useState({ configured: false, provider: null, from: null, reason: null, notify: false, reminders: false, checked: false });
   const bootRef = useRef(Date.now());
+  const [isSuper, setIsSuper] = useState(false);
+  const [plan, setPlan] = useState(null);
   const setOrg = (o) => { setOrgState(o); store.set("rekyl_org", o); if (o) sbSetOrg(o.id); };
   const login = (sv) => { const acct = store.get("rekyl_account", null); if (acct && sv.userId && acct !== sv.userId) { store.set("rekyl_state", null); store.set("rekyl_org", null); setOrgState(null); dispatch({ type: "LOAD_STATE", data: {} }); } store.set("rekyl_account", sv.userId); store.set("rekyl_session", sv); sbSetAuth(sv.token, sv.refresh, sv.exp); setOrgChecked(false); setLoaded(false); setCloudOk(true); setSession(sv); };
   const logout = () => { store.set("rekyl_session", null); store.set("rekyl_state", null); store.set("rekyl_org", null); store.set("rekyl_account", null); sbSetAuth(null, null, 0); sbSetOrg(null); setLoaded(false); setOrgState(null); setOrgChecked(true); setCloudOk(true); setSession(null); dispatch({ type: "LOAD_STATE", data: {} }); dispatch({ type: "SET_TEAM", team: [] }); };
@@ -765,7 +775,8 @@ export default function App() {
   useEffect(() => { if (!sbEnabled || !session) { setOrgChecked(true); return; } let alive = true; (async () => { const rows = await sbGet("members?user_id=eq." + session.userId + "&select=org_id,role"); if (!alive) return; if (rows === null) { setCloudOk(false); if (org) sbSetOrg(org.id); setOrgChecked(true); return; } setCloudOk(true); if (rows.length) { const o = { id: rows[0].org_id, role: rows[0].role }; sbSetOrg(o.id); setOrgState(o); store.set("rekyl_org", o); } else { store.set("rekyl_org", null); setOrgState(null); sbSetOrg(null); } setOrgChecked(true); })(); return () => { alive = false; }; }, [session && session.userId]);
   useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } if (!org) return; let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data"); if (!alive) return; if (rows === null) setCloudOk(false); else { setCloudOk(true); if (rows.length && rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); } dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: org.role }); setLoaded(true); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
   useEffect(() => { if (!sbEnabled || !session || !org || !loaded) return; const t = setTimeout(async () => { const ok = await sbUpsert("org_state", { org_id: org.id, data: state, updated_at: new Date().toISOString() }); setCloudOk(ok); setCloudErr(ok ? null : sbLastError()); }, 1600); return () => clearTimeout(t); }, [state, loaded, org && org.id]);
-  useEffect(() => { if (!session) return; let alive = true; (async () => { const c = await mailConfig(); if (alive) setMail({ configured: !!c.configured, provider: c.provider || null, from: c.from || null, reason: c.reason || null, checked: true }); })(); return () => { alive = false; }; }, [session && session.userId]);
+  useEffect(() => { if (!session || !org) { setIsSuper(false); return; } let alive = true; (async () => { const r = await adminCall("whoami"); if (alive) setIsSuper(!!(r.ok && r.superadmin)); const rows = await sbGet("orgs?id=eq." + org.id + "&select=plan,suspended,max_jobs"); if (alive && rows && rows[0]) setPlan({ plan: rows[0].plan || "start", suspended: !!rows[0].suspended, maxJobs: rows[0].max_jobs == null ? 999 : rows[0].max_jobs }); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
+  useEffect(() => { if (!session) return; let alive = true; (async () => { const c = await mailConfig(); if (alive) setMail({ configured: !!c.configured, provider: c.provider || null, from: c.from || null, reason: c.reason || null, notify: !!c.notify, reminders: !!c.reminders, checked: true }); })(); return () => { alive = false; }; }, [session && session.userId]);
   const sendMailNow = useCallback(async (m) => { if (!m || MAIL_INFLIGHT.has(m.id) || !validEmail(m.to)) return { ok: false }; MAIL_INFLIGHT.add(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: "sending" }); const _c = state.candidates.find((c) => c.id === m.candidateId); const _j = _c && state.jobs.find((j) => j.id === _c.jobId); const attachment = _c && _j ? icsForMessage(m, _c, _j, state.org) : null; const res = await sendMail({ to: m.to, subject: m.subject, body: m.body, fromName: state.org.companyName, replyTo: state.org.hrEmail, ...(attachment ? { attachment } : {}) }); MAIL_INFLIGHT.delete(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: res.ok ? "sent" : "failed", error: res.error || null, providerId: res.id || null }); if (!res.ok) showToast({ kind: "warn", msg: "Mejlet till " + m.to + " kunde inte skickas: " + (res.error || "okänt fel") }); return res; }, [state.org, state.candidates, state.jobs]);
   useEffect(() => { if (!mail.configured || !session || !org || !loaded) return; state.messages.filter((m) => m.status === "queued" && m.at >= bootRef.current && validEmail(m.to) && !MAIL_INFLIGHT.has(m.id)).forEach((m) => sendMailNow(m)); }, [state.messages, mail.configured, session, org, loaded, sendMailNow]);
   useEffect(() => { store.set("rekyl_state", state); }, [state]);
@@ -784,8 +795,10 @@ export default function App() {
 
   useEffect(() => { if (!sbEnabled || !job) return; let alive = true; const pull = async () => { const rows = await sbGet("applications?job_slug=eq." + encodeURIComponent(job.slug) + "&select=*&order=created_at.desc"); if (alive && rows) D({ type: "SYNC_APPLICATIONS", slug: job.slug, rows }); }; pull(); const t = setInterval(pull, 20000); return () => { alive = false; clearInterval(t); }; }, [job && job.slug]);
 
-  const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, setNewJob, allScored, dupIndex, onLogout: logout, session, mail, sendMailNow };
-  const primary = NAV.slice(0, 5), more = NAV.slice(5);
+  const navList = useMemo(() => (isSuper ? [...NAV, { id: "superadmin", label: "Superadmin", icon: ShieldAlert }] : NAV), [isSuper]);
+  const openNewJob = useCallback(() => { if (plan && state.jobs.length >= plan.maxJobs) { setLimitHit(true); return; } setNewJob(true); }, [plan, state.jobs.length]);
+  const shared = { state, D, me, job, cands, showToast, setDetailId, setPrintDoc, compareIds, toggleCompare, openCompare: () => setCompareOpen(true), setReasonFor, setView: go, setNewJob: openNewJob, allScored, dupIndex, onLogout: logout, session, mail, sendMailNow, plan, isSuper };
+  const primary = navList.slice(0, 5), more = navList.slice(5);
 
   const pubMatch = typeof window !== "undefined" ? window.location.pathname.match(/^\/j\/([^/]+)/) : null;
   if (pubMatch) return <PublicApply slug={decodeURIComponent(pubMatch[1])} localJobs={state.jobs} localOrg={state.org} />;
@@ -801,7 +814,7 @@ export default function App() {
       <div className={"ats-app" + (pinned ? " is-pinned" : "")}>
         <aside className="ats-side">
           <div className="ats-side-top"><div className="ats-brand"><span className="ats-logo">R</span><span className="ats-lbl ats-brandtxt">Rekyl</span></div><div className="ats-side-top-btns"><button className="ats-help" onClick={() => setTourOpen(true)} title="Rundtur"><HelpCircle size={15} /></button><button className="ats-pin" onClick={togglePin} title={pinned ? "Las upp meny" : "Las fast meny"}>{pinned ? <Pin size={15} /> : <PinOff size={15} />}</button></div></div>
-          <nav className="ats-nav">{NAV.map((n) => <button key={n.id} data-tour={"nav-" + n.id} className={"ats-side-item" + (view === n.id ? " is-active" : "")} onClick={() => go(n.id)}><n.icon size={18} strokeWidth={2} /><span className="ats-lbl">{n.label}</span></button>)}</nav>
+          <nav className="ats-nav">{navList.map((n) => <button key={n.id} data-tour={"nav-" + n.id} className={"ats-side-item" + (view === n.id ? " is-active" : "")} onClick={() => go(n.id)}><n.icon size={18} strokeWidth={2} /><span className="ats-lbl">{n.label}</span></button>)}</nav>
           <div className="ats-side-foot"><Menu trigger={<button className="ats-side-user"><span className="ats-avatar is-sm">{me.initials}</span><span className="ats-lbl ats-side-userinfo"><b>{me.name}</b><small>{ROLE_LABEL[me.role]}</small></span></button>}><div className="ats-menu-label">{me.name}</div>{me.email && <div style={{ padding: "0 12px 7px", fontSize: 11, color: "var(--muted)" }}>{me.email} · {ROLE_LABEL[me.role]}</div>}{sbEnabled && session && <><div className="ats-menu-sep" /><button className="ats-menu-item is-danger" onClick={logout}><LogOut size={14} /> Logga ut</button></>}</Menu></div>
         </aside>
 
@@ -810,6 +823,7 @@ export default function App() {
             {view === "dashboard" && <DashboardView {...shared} />}
             {view === "jobs" && <JobsView {...shared} />}
             {view === "calendar" && <CalendarView {...shared} />}
+            {view === "superadmin" && isSuper && <SuperadminView {...shared} />}
             {view === "queue" && <QueueView {...shared} />}
             {view === "candidates" && <CandidatesView {...shared} />}
             {view === "form" && <FormView {...shared} />}
@@ -830,7 +844,11 @@ export default function App() {
       {newJob && <NewJobModal onClose={() => setNewJob(false)} onCreate={(t, tmpl) => { D({ type: "ADD_JOB", title: t, tmplId: tmpl }); setNewJob(false); go("form"); }} />}
       {reasonFor && <ReasonModal onClose={() => setReasonFor(null)} onPick={(reason) => { D({ type: "DECIDE", id: reasonFor.id, status: "reject", reason }); showToast({ kind: "ok", msg: "Avslag · avslagsmejl köat" }); if (reasonFor.after) reasonFor.after(); setReasonFor(null); }} />}
       {printDoc && <PrintModal doc={printDoc} onClose={() => setPrintDoc(null)} />}
-      <button className="ats-fab" data-tour="new-job" onClick={() => setNewJob(true)} title="Ny tjänst"><Plus size={20} /></button>
+      <button className="ats-fab" data-tour="new-job" onClick={openNewJob} title="Ny tjänst"><Plus size={20} /></button>
+      {limitHit && plan && <Modal title="Paketets gräns är nådd" onClose={() => setLimitHit(false)}><div className="ats-erase">
+        <p>Ditt paket <b>{PLAN_LABEL[plan.plan] || plan.plan}</b> tillåter <b>{plan.maxJobs} tjänster</b> och du har {state.jobs.length}. Arkivera eller radera en tjänst under <b>Tjänster</b>, eller uppgradera paketet.</p>
+        <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setLimitHit(false)}>Stäng</button><button className="ats-btn-primary" onClick={() => { setLimitHit(false); go("jobs"); }}>Till Tjänster</button></div>
+      </div></Modal>}
       {tourOpen && <ProductTour steps={TOUR_STEPS} setView={go} onClose={(done) => { setTourOpen(false); if (done) store.set("rekyl_tour_done", true); }} />}
       {sbEnabled && session && org && !cloudOk && <div className="ats-cloudbar"><AlertTriangle size={14} /> {cloudHint(cloudErr)} <button onClick={cloudRetry}>Försök igen</button></div>}
     </div>
@@ -841,11 +859,156 @@ function NewJobModal({ onClose, onCreate }) { const [title, setTitle] = useState
 function ReasonModal({ onClose, onPick }) { return <Modal title="Anledning till avslag" onClose={onClose}><div className="ats-reasons">{REASONS.map((r) => <button key={r} className="ats-reason" onClick={() => onPick(r)}>{r}</button>)}</div><p className="ats-reason-note">Anledningen sparas i kandidatens timeline och i statistiken, och anvands i avslagsmejlet ({"{{rejectionReason}}"}).</p></Modal>; }
 function PrintModal({ doc, onClose }) { return <div className="ats-printwrap"><div className="ats-print-toolbar"><span>{doc.title}</span><div><button className="ats-ghost" onClick={() => window.print()}><Download size={15} /> Skriv ut / PDF</button><button className="ats-ghost" onClick={onClose}><X size={15} /> Stang</button></div></div><div className="ats-printdoc">{doc.node}</div></div>; }
 
+/* ===================== SUPERADMIN ===================== */
+function SuperadminView({ showToast, session }) {
+  const [tab, setTab] = useState("overview");
+  const [busy, setBusy] = useState(true);
+  const [err, setErr] = useState(null);
+  const [data, setData] = useState(null);
+  const [users, setUsers] = useState(null);
+  const [sys, setSys] = useState(null);
+  const [log, setLog] = useState(null);
+  const [q, setQ] = useState("");
+  const [delOrg, setDelOrg] = useState(null);
+  const [delText, setDelText] = useState("");
+
+  const loadOverview = useCallback(async () => {
+    setBusy(true); setErr(null);
+    const r = await adminCall("overview");
+    setBusy(false);
+    if (!r.ok) { setErr(r.error); return; }
+    setData({ tenants: r.tenants || [], totals: r.totals || {}, failures: r.failures || [] });
+  }, []);
+  useEffect(() => { loadOverview(); }, [loadOverview]);
+  useEffect(() => { if (tab === "users" && !users) adminCall("users").then((r) => r.ok ? setUsers(r.users) : setErr(r.error)); }, [tab, users]);
+  useEffect(() => { if (tab === "system" && !sys) adminCall("system").then((r) => r.ok ? setSys(r) : setErr(r.error)); }, [tab, sys]);
+  useEffect(() => { if (tab === "audit" && !log) adminCall("audit").then((r) => r.ok ? setLog(r.audit) : setErr(r.error)); }, [tab, log]);
+
+  const act = async (action, args, msg) => {
+    const r = await adminCall(action, args);
+    if (!r.ok) { showToast({ kind: "warn", msg: r.error }); return false; }
+    showToast({ kind: "ok", msg });
+    setUsers(null); setLog(null);
+    await loadOverview();
+    return true;
+  };
+  const doDelete = async () => {
+    const o = delOrg;
+    const okDone = await act("delete_org", { org_id: o.id, confirm: delText }, "Organisationen raderades permanent");
+    if (okDone) { setDelOrg(null); setDelText(""); }
+  };
+
+  const T = data ? data.tenants.filter((t) => !q.trim() || (t.name + " " + (t.company || "")).toLowerCase().includes(q.toLowerCase())) : [];
+  const TABS = [["overview", "Översikt"], ["tenants", "Organisationer"], ["users", "Användare"], ["system", "System"], ["errors", "Fel"], ["audit", "Säkerhetslogg"]];
+  const K = ({ v, l, tone }) => <div className={"ats-sa-kpi" + (tone ? " is-" + tone : "")}><span className="ats-sa-kpi-v">{v}</span><span className="ats-sa-kpi-l">{l}</span></div>;
+  const when = (t) => (t ? new Date(t).toLocaleString("sv-SE").slice(0, 16) : "—");
+
+  return (
+    <div className="ats-view">
+      <PageHeader title="Superadmin" meta={<><ShieldAlert size={13} /><span>SaaS-ägare · {session.email}</span></>} right={<button className="ats-ghost is-sm" onClick={loadOverview}><RotateCw size={14} /> Uppdatera</button>} />
+      <div className="ats-tabs">{TABS.map(([id, l]) => <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}{id === "errors" && data && data.failures.length > 0 && <span className="ats-tab-n">{data.failures.length}</span>}</button>)}</div>
+      {err && <div className="ats-intv-warn is-err"><CircleAlert size={14} /> {err}</div>}
+      {busy && !data ? <div className="ats-col-empty" style={{ padding: 40 }}>Hämtar…</div> : null}
+
+      {tab === "overview" && data && <>
+        <div className="ats-sa-kpis">
+          <K v={data.totals.orgs} l="Organisationer" />
+          <K v={data.totals.members} l="Användare" />
+          <K v={data.totals.jobs} l="Tjänster" />
+          <K v={data.totals.candidates} l="Kandidater" />
+          <K v={data.totals.interviews} l="Bokade intervjuer" />
+          <K v={data.totals.hired} l="Anställda" />
+          <K v={data.totals.mailSent} l="Mejl skickade" />
+          <K v={data.totals.mailFailed} l="Mejl misslyckade" tone={data.totals.mailFailed > 0 ? "warn" : null} />
+          <K v={data.totals.cvFiles} l="CV-filer" />
+          <K v={kb(data.totals.bytes)} l="Datastorlek" />
+          <K v={data.totals.suspended} l="Pausade konton" tone={data.totals.suspended > 0 ? "warn" : null} />
+        </div>
+        <h3 className="ats-sa-h">Senaste aktivitet</h3>
+        <div className="ats-sa-rows">{[...data.tenants].sort((a, b) => new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0)).slice(0, 6).map((t) => <div key={t.id} className="ats-sa-row">
+          <div className="ats-sa-main"><b>{t.name}</b><span>{t.jobs} tjänster · {t.candidates} kandidater · {t.members} användare</span></div>
+          <span className="ats-sa-when">{when(t.lastActivity)}</span>
+        </div>)}</div>
+      </>}
+
+      {tab === "tenants" && data && <>
+        <div className="ats-jobs-tools"><div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sök organisation…" /></div></div>
+        <div className="ats-sa-rows">{T.map((t) => <div key={t.id} className={"ats-sa-row is-card" + (t.suspended ? " is-susp" : "")}>
+          <div className="ats-sa-main">
+            <div className="ats-sa-top"><b>{t.name}</b><span className={"ats-jobbadge is-" + (t.plan === "enterprise" ? "pub" : t.plan === "pro" ? "open" : "unpub")}>{PLAN_LABEL[t.plan] || t.plan}</span>{t.suspended && <span className="ats-jobbadge is-archived">Pausad</span>}</div>
+            <span>{t.jobs}/{t.maxJobs === 999 ? "∞" : t.maxJobs} tjänster · {t.candidates} kandidater · {t.members} användare · {t.interviews} intervjuer · {kb(t.bytes)}{t.hrEmail ? " · " + t.hrEmail : ""}</span>
+            <span className="ats-sa-when">Skapad {when(t.createdAt)} · Senast aktiv {when(t.lastActivity)}</span>
+          </div>
+          <div className="ats-sa-acts">
+            <select className="ats-select is-sm" value={t.plan} onChange={(e) => act("set_plan", { org_id: t.id, plan: e.target.value }, "Paket ändrat till " + (PLAN_LABEL[e.target.value] || e.target.value))}>
+              {Object.keys(PLAN_LABEL).map((p) => <option key={p} value={p}>{PLAN_LABEL[p]}</option>)}
+            </select>
+            <button className="ats-ghost is-sm" onClick={() => act("set_suspended", { org_id: t.id, suspended: !t.suspended }, t.suspended ? "Kontot aktiverat" : "Kontot pausat")}>{t.suspended ? <><Check size={13} /> Aktivera</> : <><PauseCircle size={13} /> Pausa</>}</button>
+            <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => { setDelOrg(t); setDelText(""); }}><Trash2 size={13} /></button>
+          </div>
+        </div>)}</div>
+        {T.length === 0 && <div className="ats-col-empty" style={{ padding: 30 }}>Ingen organisation matchar.</div>}
+      </>}
+
+      {tab === "users" && <div className="ats-sa-rows">
+        {!users ? <div className="ats-col-empty" style={{ padding: 30 }}>Hämtar…</div>
+          : users.map((u) => <div key={u.user_id} className="ats-sa-row is-card">
+            <div className="ats-sa-main"><b>{u.email || u.user_id}</b><span>{u.orgName} · {ROLE_LABEL[u.role] || u.role}</span></div>
+            <div className="ats-sa-acts">
+              <select className="ats-select is-sm" value={u.role} onChange={(e) => act("set_member_role", { user_id: u.user_id, role: e.target.value }, "Roll ändrad")}>
+                {Object.keys(ROLE_LABEL).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+              </select>
+              <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => act("remove_member", { user_id: u.user_id }, "Användaren togs bort")}><Trash2 size={13} /></button>
+            </div>
+          </div>)}
+      </div>}
+
+      {tab === "system" && <div className="ats-auto">
+        {!sys ? <div className="ats-col-empty" style={{ padding: 30 }}>Hämtar…</div> : <>
+          {[["E-postutskick", sys.mail.ok, sys.mail.ok ? "Aktivt via " + sys.mail.provider + " · avsändare " + sys.mail.from : sys.mail.reason],
+            ["Databas (Supabase)", sys.supabase, sys.supabase ? "Ansluten och svarar" : "Svarar inte"],
+            ["Avisering vid ny ansökan", sys.notify, sys.notify ? "Aktiv (NOTIFY_SECRET satt + webhook i Supabase)" : "NOTIFY_SECRET saknas i Netlify"],
+            ["Intervjupåminnelser", sys.reminders, sys.reminders ? "Aktiva · körs varje timme" : "SUPABASE_SERVICE_ROLE_KEY saknas"]].map(([l, on, d]) =>
+            <div key={l} className={"ats-auto-row" + (on ? " is-on" : "")}>
+              <div className="ats-auto-i">{on ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}</div>
+              <div className="ats-auto-t"><b>{l}</b><span>{d}</span></div>
+            </div>)}
+          <div className="ats-sa-plans">{Object.entries(sys.plans).map(([p, v]) => <div key={p} className="ats-sa-plan"><b>{PLAN_LABEL[p] || p}</b><span>{v.maxJobs === 999 ? "Obegränsat" : v.maxJobs + " tjänster"}</span></div>)}</div>
+        </>}
+      </div>}
+
+      {tab === "errors" && data && <div className="ats-sa-rows">
+        {data.failures.length === 0 ? <div className="ats-col-empty" style={{ padding: 30 }}>Inga misslyckade utskick. Allt fungerar.</div>
+          : data.failures.map((f, i) => <div key={i} className="ats-sa-row is-card is-err">
+            <div className="ats-sa-main"><b>{f.to}</b><span>{f.org} · {f.subject}</span><span className="ats-msgerr">{f.error}</span></div>
+            <span className="ats-sa-when">{when(f.at)}</span>
+          </div>)}
+      </div>}
+
+      {tab === "audit" && <div className="ats-sa-rows">
+        {!log ? <div className="ats-col-empty" style={{ padding: 30 }}>Hämtar…</div>
+          : log.length === 0 ? <div className="ats-col-empty" style={{ padding: 30 }}>Inga registrerade åtgärder än.</div>
+            : log.map((a) => <div key={a.id} className="ats-sa-row is-card">
+              <div className="ats-sa-main"><b>{a.action}</b><span>{a.actor_email || "—"} → {a.target || "—"}{a.meta ? " · " + JSON.stringify(a.meta) : ""}</span></div>
+              <span className="ats-sa-when">{when(a.at)}</span>
+            </div>)}
+      </div>}
+
+      {delOrg && <Modal title="Radera organisationen permanent?" onClose={() => setDelOrg(null)}><div className="ats-erase">
+        <p><b>{delOrg.name}</b> raderas helt: {delOrg.jobs} tjänster, {delOrg.candidates} kandidater, {delOrg.members} användare, alla ansökningar och all sparad data. Detta går inte att ångra.</p>
+        <label className="ats-field"><span className="ats-field-l">Skriv organisationens namn för att bekräfta</span><input value={delText} onChange={(e) => setDelText(e.target.value)} placeholder={delOrg.name} /></label>
+        <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setDelOrg(null)}>Avbryt</button><button className="ats-btn-danger" disabled={delText !== delOrg.name} onClick={doDelete}><Trash2 size={15} /> Radera permanent</button></div>
+      </div></Modal>}
+    </div>
+  );
+}
 /* ===================== KALENDER ===================== */
 function CalendarView({ state, D, me, showToast, setDetailId }) {
   const [jobFilter, setJobFilter] = useState("all");
   const [rebook, setRebook] = useState(null);
   const [cancelC, setCancelC] = useState(null);
+  const [reminded, setReminded] = useState({});
+  useEffect(() => { if (!sbEnabled || !SB_ORG) return; let alive = true; (async () => { const rows = await sbGet("reminders_sent?org_id=eq." + SB_ORG + "&select=candidate_id"); if (alive && Array.isArray(rows)) { const m = {}; rows.forEach((r) => { m[r.candidate_id] = true; }); setReminded(m); } })(); return () => { alive = false; }; }, []);
   const canDecide = can(me.role, "decide");
   const now = Date.now();
   const jobOf = (c) => state.jobs.find((j) => j.id === c.jobId);
@@ -854,6 +1017,7 @@ function CalendarView({ state, D, me, showToast, setDetailId }) {
     .filter((c) => jobFilter === "all" || c.jobId === jobFilter)
     .map((c) => ({ c, at: new Date(c.interview.at).getTime() }))
     .sort((a, b) => a.at - b.at);
+  const unbooked = state.candidates.filter((c) => c.status === "interview" && !ivActive(c)).filter((c) => jobFilter === "all" || c.jobId === jobFilter);
   const upcoming = all.filter((x) => ivEnd(x.c.interview) >= now);
   const past = all.filter((x) => ivEnd(x.c.interview) < now).reverse();
   const dayKey = (t) => { const d = new Date(t); return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); };
@@ -872,7 +1036,7 @@ function CalendarView({ state, D, me, showToast, setDetailId }) {
     return <div className={"ats-cal-row" + (isPast ? " is-past" : "")}>
       <div className="ats-cal-time"><b>{pad2(new Date(iv.at).getHours())}.{pad2(new Date(iv.at).getMinutes())}</b><small>{iv.duration || 45} min</small></div>
       <div className="ats-cal-main">
-        <div className="ats-cal-top"><button className="ats-cal-name" onClick={() => setDetailId(c.id)}>{c.name}</button>{conflictIds.has(c.id) && !isPast && <span className="ats-cal-conflict"><AlertTriangle size={11} /> Krock</span>}</div>
+        <div className="ats-cal-top"><button className="ats-cal-name" onClick={() => setDetailId(c.id)}>{c.name}</button>{conflictIds.has(c.id) && !isPast && <span className="ats-cal-conflict"><AlertTriangle size={11} /> Krock</span>}{reminded[c.id] && <span className="ats-cal-remind"><Bell size={11} /> Påminnelse skickad</span>}</div>
         <div className="ats-cal-meta">{(jobOf(c) || {}).title || "—"} · {c.email}</div>
         <div className="ats-cal-mode"><I size={13} /> {m.label}{iv.location ? " · " + iv.location : ""}{who ? " · " + who : ""}</div>
       </div>
@@ -884,8 +1048,16 @@ function CalendarView({ state, D, me, showToast, setDetailId }) {
   };
   return (
     <div className="ats-view">
-      <PageHeader title="Kalender" meta={<><span>{upcoming.length} kommande</span>{conflictIds.size > 0 && <><Dot /><span className="ats-cal-warn">{conflictIds.size} krockar</span></>}</>} right={<select className="ats-select is-sm" value={jobFilter} onChange={(e) => setJobFilter(e.target.value)}><option value="all">Alla tjänster</option>{state.jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}</select>} />
-      {upcoming.length === 0 && past.length === 0
+      <PageHeader title="Kalender" meta={<><span>{upcoming.length} kommande</span>{unbooked.length > 0 && <><Dot /><span className="ats-cal-warn">{unbooked.length} att boka</span></>}{conflictIds.size > 0 && <><Dot /><span className="ats-cal-warn">{conflictIds.size} krockar</span></>}</>} right={<select className="ats-select is-sm" value={jobFilter} onChange={(e) => setJobFilter(e.target.value)}><option value="all">Alla tjänster</option>{state.jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}</select>} />
+      {unbooked.length > 0 && <div className="ats-cal-day">
+        <div className="ats-cal-dayh is-todo"><CircleAlert size={14} /> Att boka<span>{unbooked.length} i intervjusteget utan tid</span></div>
+        <div className="ats-cal-rows">{unbooked.map((c) => <div key={c.id} className="ats-cal-row is-todo">
+          <div className="ats-cal-time"><b>—</b><small>ingen tid</small></div>
+          <div className="ats-cal-main"><div className="ats-cal-top"><button className="ats-cal-name" onClick={() => setDetailId(c.id)}>{c.name}</button></div><div className="ats-cal-meta">{(jobOf(c) || {}).title || "—"} · {c.email}</div></div>
+          {canDecide && <div className="ats-cal-acts"><button className="ats-btn-primary is-sm" onClick={() => setRebook(c)}><CalendarCheck size={13} /> Boka tid</button></div>}
+        </div>)}</div>
+      </div>}
+      {upcoming.length === 0 && past.length === 0 && unbooked.length === 0
         ? <div className="ats-col-empty" style={{ padding: 44 }}>Inga bokade intervjuer. Boka en genom att swipa upp i kön eller från kandidatens panel.</div>
         : <>
           {groups.map((g) => <div key={g.k} className="ats-cal-day">
@@ -1701,6 +1873,9 @@ function SettingsView({ state, D, me, job, cands, showToast, onLogout, session, 
   const previewCand = cands.find((c) => c.id === prevId) || cands[0];
   const vars = previewCand ? tplVars(state, previewCand, job) : {};
   const [testBusy, setTestBusy] = useState(false); const [testRes, setTestRes] = useState(null);
+  const isAdmin = me.role === "admin";
+  const [remBusy, setRemBusy] = useState(false); const [remRes, setRemRes] = useState(null);
+  const runRem = async () => { setRemBusy(true); setRemRes(null); const r = await runRemindersNow(); setRemBusy(false); setRemRes(r.ok ? { ok: true, msg: r.sent + " påminnelse" + (r.sent === 1 ? "" : "r") + " skickade" + (r.skipped ? " · " + r.skipped + " redan skickade" : "") + (r.errors && r.errors.length ? " · " + r.errors.length + " fel" : "") } : { ok: false, msg: r.error || "Kunde inte köra" }); };
   const sendTest = async () => { setTestBusy(true); setTestRes(null); const to = session && session.email; const res = await sendMail({ to, subject: "Testmejl från Rekyl", body: "Detta är ett testmejl från " + org.companyName + ".\n\nOm du läser det här fungerar utskicket. Svar går till " + org.hrEmail + ".", fromName: org.companyName, replyTo: org.hrEmail }); setTestBusy(false); setTestRes(res.ok ? { ok: true, msg: "Testmejl skickat till " + to } : { ok: false, msg: res.error || "Kunde inte skicka" }); };
   return (
     <div className="ats-view">
@@ -1728,6 +1903,20 @@ function SettingsView({ state, D, me, job, cands, showToast, onLogout, session, 
               <button className="ats-ghost" onClick={() => { copyText(MAIL_ENV); showToast({ kind: "ok", msg: "Variabler kopierade" }); }}><Copy size={14} /> Kopiera</button>
             </>}
         </div>
+        {mail.configured && <div className="ats-panel"><div className="ats-panel-h"><h2>Automatisering</h2><span className={"ats-smtp-status" + (mail.notify && mail.reminders ? " is-on" : "")}><Zap size={13} /> {mail.notify && mail.reminders ? "Båda aktiva" : mail.notify || mail.reminders ? "Delvis aktiv" : "Ej aktiverad"}</span></div>
+          <div className="ats-auto">
+            <div className={"ats-auto-row" + (mail.notify ? " is-on" : "")}>
+              <div className="ats-auto-i">{mail.notify ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}</div>
+              <div className="ats-auto-t"><b>Avisering vid ny ansökan</b><span>{mail.notify ? "Aktiv — du får ett mejl så fort någon söker, även när appen är stängd." : "Kräver NOTIFY_SECRET i Netlify + en databas-webhook i Supabase."}</span></div>
+            </div>
+            <div className={"ats-auto-row" + (mail.reminders ? " is-on" : "")}>
+              <div className="ats-auto-i">{mail.reminders ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}</div>
+              <div className="ats-auto-t"><b>Intervjupåminnelse (24 h innan)</b><span>{mail.reminders ? "Aktiv — körs varje timme och påminner kandidaten dagen innan. Skickas aldrig dubbelt." : "Kräver SUPABASE_SERVICE_ROLE_KEY i Netlify."}</span></div>
+            </div>
+          </div>
+          {mail.reminders && isAdmin && <button className="ats-ghost" disabled={remBusy} onClick={runRem}><Bell size={14} /> {remBusy ? "Kör…" : "Kör påminnelser nu"}</button>}
+          {remRes && <div className={"ats-testres" + (remRes.ok ? " is-ok" : " is-err")}>{remRes.ok ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />} {remRes.msg}</div>}
+        </div>}
       </div>
 
       <div className="ats-panel"><div className="ats-panel-h"><h2>Meddelandemallar</h2><span className="ats-summono">skickas automatiskt via swipe</span></div>
@@ -2781,6 +2970,41 @@ function Style() {
 .ats-dr-iv div{display:flex;flex-direction:column;min-width:0}
 .ats-dr-iv b{font-family:'Bricolage Grotesque';font-size:13.5px}
 .ats-dr-iv span{font-size:11.5px;opacity:.85;overflow:hidden;text-overflow:ellipsis}
+.ats-cal-dayh.is-todo{color:var(--brick)}
+.ats-cal-row.is-todo{border-style:dashed}
+.ats-cal-row.is-todo .ats-cal-time b{color:var(--muted)}
+.ats-cal-remind{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:11px;background:var(--petrol-soft);color:var(--petrol)}
+.ats-auto{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.ats-auto-row{display:flex;align-items:flex-start;gap:11px;padding:12px 13px;border-radius:11px;background:var(--paper2);border:1px solid var(--line)}
+.ats-auto-row.is-on{background:var(--petrol-soft);border-color:transparent}
+.ats-auto-i{flex-shrink:0;color:var(--muted);display:flex;padding-top:1px}
+.ats-auto-row.is-on .ats-auto-i{color:var(--petrol)}
+.ats-auto-t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ats-auto-t b{font-family:'Bricolage Grotesque';font-size:13.5px;color:var(--ink)}
+.ats-auto-t span{font-size:12px;color:var(--sub);line-height:1.5}
+.ats-sa-kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:22px}
+.ats-sa-kpi{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:15px 16px;display:flex;flex-direction:column;gap:3px}
+.ats-sa-kpi.is-warn{border-color:var(--brick);background:var(--brick-soft)}
+.ats-sa-kpi-v{font-family:'Bricolage Grotesque';font-weight:600;font-size:24px;color:var(--ink);line-height:1.1}
+.ats-sa-kpi.is-warn .ats-sa-kpi-v{color:var(--brick)}
+.ats-sa-kpi-l{font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono'}
+.ats-sa-h{font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;margin-bottom:10px}
+.ats-sa-rows{display:flex;flex-direction:column;gap:8px}
+.ats-sa-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 14px;border-radius:11px;background:var(--paper2)}
+.ats-sa-row.is-card{background:var(--surface);border:1px solid var(--line)}
+.ats-sa-row.is-susp{opacity:.62;border-style:dashed}
+.ats-sa-row.is-err{border-color:var(--brick-soft)}
+.ats-sa-main{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.ats-sa-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ats-sa-main b{font-family:'Bricolage Grotesque';font-size:14px;color:var(--ink)}
+.ats-sa-main span{font-size:12px;color:var(--sub);overflow:hidden;text-overflow:ellipsis}
+.ats-sa-when{font-family:'IBM Plex Mono';font-size:11px;color:var(--muted);flex-shrink:0;white-space:nowrap}
+.ats-sa-acts{display:flex;align-items:center;gap:7px;flex-shrink:0}
+.ats-sa-plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px;margin-top:6px}
+.ats-sa-plan{background:var(--paper2);border-radius:10px;padding:11px 13px;display:flex;flex-direction:column;gap:2px}
+.ats-sa-plan b{font-family:'Bricolage Grotesque';font-size:13px}
+.ats-sa-plan span{font-size:11.5px;color:var(--muted)}
+.ats-susp-meta{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin:8px 0 14px;font-family:'IBM Plex Mono'}
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
@@ -2800,6 +3024,7 @@ function Style() {
   .ats-flagcols{grid-template-columns:1fr}
   .ats-jobcard{flex-direction:column;align-items:stretch}.ats-jobcard-acts{flex-wrap:wrap}
   .ats-cal-row{flex-wrap:wrap}.ats-cal-acts{width:100%;justify-content:flex-end}
+  .ats-sa-row{flex-direction:column;align-items:stretch}.ats-sa-acts{justify-content:flex-end}.ats-sa-kpis{grid-template-columns:repeat(2,1fr)}
   /* Inställningssidan – luftigare på mobil */
   .ats-grid-2{gap:14px}
   .ats-tpl-two{grid-template-columns:1fr;gap:11px}

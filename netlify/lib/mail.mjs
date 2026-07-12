@@ -103,6 +103,26 @@ export async function sbAdminInsert(table, row) {
     return r.ok ? "ok" : "error";
   } catch (e) { return "error"; }
 }
+export async function sbAdminPatch(table, filter, row) {
+  if (!SB_SERVICE) return false;
+  try {
+    const r = await fetch(SB_URL + "/rest/v1/" + table + "?" + filter, {
+      method: "PATCH",
+      headers: { apikey: SB_SERVICE, Authorization: "Bearer " + SB_SERVICE, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify(row),
+    });
+    return r.ok;
+  } catch (e) { return false; }
+}
+
+/* Auditlogg — varje kansslig superadmin-atgard registreras server-side. */
+export async function audit(actor, action, target, meta) {
+  return sbAdminInsert("audit_log", {
+    actor_id: actor && actor.id, actor_email: actor && actor.email,
+    action, target: target == null ? null : String(target), meta: meta || null,
+  });
+}
+
 export async function sbAdminDelete(table, filter) {
   if (!SB_SERVICE) return false;
   try {
