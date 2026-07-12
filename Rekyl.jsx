@@ -18,6 +18,8 @@ const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsIn
 const sbEnabled = !!(SB_URL && SB_KEY);
 let SB_TOKEN = SB_KEY, SB_REFRESH = null, SB_EXP = 0;
 let SB_LAST = { status: 0, msg: "" };
+let SB_REV = 0;
+function sbSetRev(r) { SB_REV = r || 0; }
 function sbLastError() { return SB_LAST; }
 function sbSetToken(t) { SB_TOKEN = t || SB_KEY; }
 function sbSetAuth(token, refresh, exp) { SB_TOKEN = token || SB_KEY; SB_REFRESH = refresh || null; SB_EXP = exp || 0; }
@@ -272,7 +274,7 @@ function makeJob(id, title, team, slug, tmplId, extra = {}) {
     publicTitle: title, ref: "REK-" + String(id).slice(-4).toUpperCase(),
     unit: "", extent: "Heltid", category: "", priority: "normal",
     ownerId: null, managerId: null, teamIds: [], tags: [], internal: false,
-    _m: 2, status: "draft", published: false, createdAt: Date.now(), updatedAt: Date.now(),
+    _m: 2, status: "draft", published: false, createdAt: Date.now(), updatedAt: Date.now(), pipeline: defaultPipeline(),
     publishedAt: null, closedAt: null, closedReason: "", hiredId: null, activity: [],
     criteria: TEMPLATES.find((t) => t.id === tmplId).build(),
     profiles: [{ id: "std", name: "Standard", weights: {} }, ...(extra.profiles || [])], activeProfileId: "std",
@@ -510,6 +512,97 @@ function reducer(state, ac) {
     case "CAREER_BLOCK_DEL": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => p.id === ac.pageId ? { ...p, blocks: p.blocks.filter((b) => b.id !== ac.id) } : p) } };
     case "CAREER_BLOCK_DUP": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => { if (p.id !== ac.pageId) return p; const i = p.blocks.findIndex((b) => b.id === ac.id); if (i < 0) return p; const c = { ...JSON.parse(JSON.stringify(p.blocks[i])), id: "b" + uid() }; const bs = [...p.blocks]; bs.splice(i + 1, 0, c); return { ...p, blocks: bs }; }) } };
     case "CAREER_BLOCK_MOVE": return { ...state, career: { ...state.career, pages: state.career.pages.map((p) => { if (p.id !== ac.pageId) return p; const i = p.blocks.findIndex((b) => b.id === ac.id); const j = i + ac.dir; if (i < 0 || j < 0 || j >= p.blocks.length) return p; const bs = [...p.blocks]; const [m] = bs.splice(i, 1); bs.splice(j, 0, m); return { ...p, blocks: bs }; }) } };
+    case "ADD_CANDIDATE": { const job0 = state.jobs.find((j) => j.id === ac.jobId); if (!job0) return state; const pipe0 = (ensurePipeline(job0)).pipeline; const st0 = startStage(pipe0);
+      const c0 = migrateCandidate({ ...ac.cand, status: "new", timeline: [], at: Date.now() }, pipe0);
+      const s2 = { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? ensurePipeline(j) : j), candidates: [{ ...c0, stageId: st0.id, ownerId: job0.ownerId || null, pipeVersion: pipe0.version }, ...state.candidates] };
+      return { ...s2, log: withLog(s2, "Ansökan mottagen", ac.cand.name) };
+    }
+    case "PIPE_INIT": return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? ensurePipeline(j) : j) };
+    case "PIPE_SET": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...j, pipeline: { ...j.pipeline, ...ac.patch, dirty: true, updatedAt: Date.now() } }, "pipeline", ac.note || "Pipeline ändrad", who) : j) }; }
+    case "STAGE_ADD": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const p = jj.pipeline; const st = mkStage({ key: "k" + uid(), name: ac.name || "Nytt steg", type: ac.type || "custom", color: STAGE_COLORS[p.stages.length % STAGE_COLORS.length] });
+      st.order = Math.max(...p.stages.filter((x) => !STAGE_TYPES[x.type].final).map((x) => x.order), -1) + 1;
+      const stages = [...p.stages.map((x) => x.order >= st.order && !STAGE_TYPES[x.type].final ? x : x), st].map((x) => x);
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...j, pipeline: { ...p, stages, dirty: true } }, "pipeline", "Steg tillagt: " + st.name, who) : j) }; }
+    case "STAGE_SET": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...j, pipeline: { ...j.pipeline, dirty: true, stages: j.pipeline.stages.map((st) => st.id === ac.id ? { ...st, ...ac.patch, updatedAt: Date.now() } : st) } }, "pipeline", "Steg ändrat", who) : j) }; }
+    case "STAGE_MOVE": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const p = jj.pipeline; const flow = p.stages.filter((st) => !STAGE_TYPES[st.type].final).sort((a, b) => a.order - b.order);
+      const i = flow.findIndex((st) => st.id === ac.id); const k = i + ac.dir;
+      if (i < 0 || k < 0 || k >= flow.length) return state;
+      const arr = [...flow]; const [m] = arr.splice(i, 1); arr.splice(k, 0, m);
+      const orders = {}; arr.forEach((st, n) => { orders[st.id] = n; });
+      const stages = p.stages.map((st) => orders[st.id] != null ? { ...st, order: orders[st.id] } : st);
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...j, pipeline: { ...p, stages, dirty: true } }, "pipeline", "Stegordning ändrad", who) : j) }; }
+    case "STAGE_DUP": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const p = jj.pipeline; const src = stageById(p, ac.id); if (!src) return state;
+      const c = { ...JSON.parse(JSON.stringify(src)), id: "s" + uid(), key: "k" + uid(), name: src.name + " (kopia)", system: false, locked: false, order: src.order + 0.5 };
+      const stages = [...p.stages, c].sort((a, b) => a.order - b.order).map((st, i) => ({ ...st, order: i }));
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...j, pipeline: { ...p, stages, dirty: true } }, "pipeline", "Steg duplicerat", who) : j) }; }
+    case "STAGE_ARCHIVE": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const p = jj.pipeline; const st = stageById(p, ac.id); if (!st || st.system) return state;
+      /* Kandidater i steget MÅSTE flyttas — annars vägrar systemet. */
+      const stuck = state.candidates.filter((c) => c.jobId === ac.jobId && c.stageId === ac.id);
+      if (stuck.length && !ac.moveTo) return state;
+      let s2 = { ...state };
+      if (stuck.length) { const to = stageById(p, ac.moveTo); if (!to) return state;
+        s2 = { ...s2, candidates: s2.candidates.map((c) => c.stageId === ac.id && c.jobId === ac.jobId
+          ? { ...c, stageId: to.id, status: legacyOf(to), rev: (c.rev || 0) + 1,
+              visits: [{ id: "v" + uid(), stageId: to.id, stageKey: to.key, stageName: to.name, enteredAt: Date.now(), exitedAt: null, movedBy: who, reason: "Steget arkiverades", comment: "", pauses: [], exception: null, pipeVersion: p.version },
+                ...(c.visits || []).map((v) => v.exitedAt ? v : { ...v, exitedAt: Date.now() })] }
+          : c) }; }
+      const stages = p.stages.map((x) => x.id === ac.id ? { ...x, archived: !x.archived, archivedAt: Date.now() } : x);
+      return { ...s2, jobs: s2.jobs.map((j) => j.id === ac.jobId ? jlog({ ...j, pipeline: { ...p, stages, dirty: true } }, "pipeline", (st.archived ? "Steg återställt: " : "Steg arkiverat: ") + st.name + (stuck.length ? " · " + stuck.length + " kandidater flyttades" : ""), who) : j) }; }
+    case "PIPE_PUBLISH": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const p = jj.pipeline; const v = p.version + 1;
+      const snap = { v, at: Date.now(), by: (_TEAM.find((m) => m.id === who) || {}).name || "System", note: ac.note || "", stages: JSON.parse(JSON.stringify(p.stages)) };
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...j, pipeline: { ...p, version: v, dirty: false, versions: [snap, ...(p.versions || [])].slice(0, 30) } }, "pipeline", "Pipeline publicerad · v" + v, who) : j) }; }
+    case "PIPE_RESTORE": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const p = jj.pipeline; const snap = (p.versions || []).find((x) => x.v === ac.v); if (!snap) return state;
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...j, pipeline: { ...p, stages: JSON.parse(JSON.stringify(snap.stages)), dirty: true } }, "pipeline", "Återställd till v" + ac.v, who) : j) }; }
+
+    case "MOVE_CANDIDATE": {
+      if (ac.reqId && (state.moveIds || []).includes(ac.reqId)) return state; /* idempotens */
+      const cand = state.candidates.find((c) => c.id === ac.id); if (!cand) return state;
+      const job = state.jobs.find((j) => j.id === cand.jobId); if (!job || !job.pipeline) return state;
+      const to = stageById(job.pipeline, ac.stageId); if (!to) return state;
+      const me2 = _TEAM.find((m) => m.id === who) || { role: "admin" };
+      const blockers = moveBlockers(state, cand, job, to, me2, ac);
+      if (blockers.length) return state; /* motorn vägrar — aldrig delvis genomförd flytt */
+      const from = stageById(job.pipeline, cand.stageId);
+      const now = Date.now();
+      const owner = ownerFor(to, job, cand, ac);
+      const visits = [{ id: "v" + uid(), stageId: to.id, stageKey: to.key, stageName: to.name, enteredAt: now, exitedAt: null, movedBy: who, reason: ac.reason || "", comment: ac.comment || "", pauses: [], exception: null, pipeVersion: job.pipeline.version },
+        ...(cand.visits || []).map((v) => v.exitedAt ? v : { ...v, exitedAt: now })];
+      const legacy = legacyOf(to);
+      let c2 = { ...cand, stageId: to.id, status: legacy, ownerId: owner, rev: (cand.rev || 0) + 1, visits,
+        reason: to.type === "rejected" ? (ac.reason || cand.reason) : cand.reason,
+        ...(to.type === "hired" ? { hiredAt: now } : {}) };
+      c2 = addTL(c2, "status_change", to.name + (ac.reason ? " · " + ac.reason : "") + (ac.comment ? " · " + ac.comment : ""), who);
+      /* Meddelande enligt gamla mallmotorn — endast när målsteget har en legacy-trigger. */
+      const trig = TRIGGER_FOR[legacy];
+      let msg = null;
+      if (trig && ac.notify !== false && from && legacyOf(from) !== legacy) { msg = buildMessage(state, c2, job, trig, who); c2 = addTL(c2, "message_sent", msg.subject + (msg.status === "failed" ? " · FEL: saknar e-post" : " · köad för utskick"), who); }
+      const ev = { id: "m" + uid(), reqId: ac.reqId || ("r" + uid()), candId: cand.id, candName: cand.name, jobId: job.id, at: now,
+        fromId: from ? from.id : null, fromName: from ? from.name : "—", toId: to.id, toName: to.name,
+        by: who, byName: (_TEAM.find((m) => m.id === who) || {}).name || "System", source: ac.source || "manual",
+        reason: ac.reason || "", comment: ac.comment || "", bulkId: ac.bulkId || null, undoOf: ac.undoOf || null,
+        pipeVersion: job.pipeline.version, msgId: msg ? msg.id : null };
+      const s2 = { ...state, candidates: state.candidates.map((c) => c.id === cand.id ? c2 : c),
+        moves: [ev, ...(state.moves || [])].slice(0, 2000),
+        moveIds: [ac.reqId, ...(state.moveIds || [])].filter(Boolean).slice(0, 300),
+        messages: msg ? [msg, ...state.messages] : state.messages,
+        jobs: state.jobs.map((j) => j.id === job.id ? jlog(j, "status", "Kandidat flyttad: " + cand.name + " → " + to.name, who) : j) };
+      return { ...s2, log: withLog(s2, "Kandidat flyttad", cand.name + " → " + to.name) };
+    }
+    case "SLA_PAUSE": { const c = state.candidates.find((x) => x.id === ac.id); if (!c) return state;
+      return { ...state, candidates: state.candidates.map((x) => x.id !== ac.id ? x : { ...x, rev: (x.rev || 0) + 1, visits: (x.visits || []).map((v) => v.exitedAt ? v : { ...v, pauses: ac.end
+        ? (v.pauses || []).map((p) => p.to ? p : { ...p, to: Date.now() })
+        : [...(v.pauses || []), { from: Date.now(), to: null, reason: ac.reason || "", by: who }] }) }) }; }
+    case "SLA_EXCEPT": { const c = state.candidates.find((x) => x.id === ac.id); if (!c) return state;
+      return { ...state, candidates: state.candidates.map((x) => x.id !== ac.id ? x : { ...x, rev: (x.rev || 0) + 1, visits: (x.visits || []).map((v) => v.exitedAt ? v : { ...v, exception: ac.clear ? null : { dueAt: ac.dueAt || null, exempt: !!ac.exempt, reason: ac.reason || "", by: who, at: Date.now() } }) }) }; }
+    case "SET_CAND_OWNER": return { ...state, candidates: state.candidates.map((c) => c.id === ac.id ? addTL({ ...c, ownerId: ac.ownerId || null, rev: (c.rev || 0) + 1 }, "note", "Ansvarig: " + ((_TEAM.find((m) => m.id === ac.ownerId) || {}).name || "ingen"), who) : c) };
     case "MSG_STATUS": {
       const prev = state.messages.find((m) => m.id === ac.id); if (!prev) return state;
       const messages = state.messages.map((m) => m.id === ac.id ? { ...m, status: ac.status, error: ac.error || null, sentAt: ac.status === "sent" ? Date.now() : (m.sentAt || null), providerId: ac.providerId || m.providerId || null } : m);
@@ -570,15 +663,16 @@ function reducer(state, ac) {
     case "UPDATE_TEMPLATE": return { ...state, templates: state.templates.map((t) => t.id === ac.id ? { ...t, ...ac.patch } : t) };
     case "REMOVE_TEMPLATE": return { ...state, templates: state.templates.filter((t) => t.id !== ac.id) };
     case "SET_ORG": return { ...state, org: { ...state.org, ...ac.patch } };
-    case "LOAD_STATE": { const d = ac.data || {}; const tpl = d.templates ? [...d.templates, ...DEFAULT_TEMPLATES.filter((t) => !d.templates.some((x) => x.trigger === t.trigger))] : state.templates; return { ...state, career: d.career || null, tags: d.tags || [], jobViews: d.jobViews || [], jobs: (d.jobs || []).map(migrateJob), candidates: d.candidates || [], org: d.org || state.org, templates: tpl, messages: d.messages || [], log: d.log || state.log, team: d.team || state.team, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
-    case "SYNC_APPLICATIONS": { const job = state.jobs.find((j) => j.slug === ac.slug); if (!job) return state; const existing = new Set(state.candidates.map((c) => c.id)); const add = (ac.rows || []).filter((r) => !existing.has("sb_" + r.id)).map((r) => ({ id: "sb_" + r.id, jobId: job.id, name: r.name || "Namnlös", email: r.email || null, phone: r.phone || null, answers: r.answers || {}, source: r.source || "Länk", status: "new", managerStatus: null, starred: false, rating: 0, comments: [], reviews: {}, reason: null, interviewTime: null, consentAt: r.consent_at ? new Date(r.consent_at).getTime() : null, formVersion: job.version, appliedAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(), timeline: [{ id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + (r.source || "länk"), at: Date.now(), actor: "System" }] })); if (!add.length) return state; return { ...state, candidates: [...add, ...state.candidates], jobs: state.jobs.map((j) => j.id === job.id ? { ...j, stats: { started: j.stats.started + add.length, submitted: j.stats.submitted + add.length } } : j) }; }
+    case "LOAD_STATE": { const d = ac.data || {}; const tpl = d.templates ? [...d.templates, ...DEFAULT_TEMPLATES.filter((t) => !d.templates.some((x) => x.trigger === t.trigger))] : state.templates; const jobs2 = (d.jobs || []).map(migrateJob).map(ensurePipeline); const pipeOf = {}; jobs2.forEach((j) => { pipeOf[j.id] = j.pipeline; });
+      return { ...state, career: d.career || null, tags: d.tags || [], jobViews: d.jobViews || [], moves: d.moves || [], moveIds: d.moveIds || [], jobs: jobs2, candidates: (d.candidates || []).map((c) => pipeOf[c.jobId] ? migrateCandidate(c, pipeOf[c.jobId]) : c), org: d.org || state.org, templates: tpl, messages: d.messages || [], log: d.log || state.log, team: d.team || state.team, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
+    case "SYNC_APPLICATIONS": { const job = ensurePipeline(state.jobs.find((j) => j.slug === ac.slug) || {}); if (!job.id) return state; const existing = new Set(state.candidates.map((c) => c.id)); const add = (ac.rows || []).filter((r) => !existing.has("sb_" + r.id)).map((r) => migrateCandidate(({ id: "sb_" + r.id, jobId: job.id, name: r.name || "Namnlös", email: r.email || null, phone: r.phone || null, answers: r.answers || {}, source: r.source || "Länk", status: "new", managerStatus: null, starred: false, rating: 0, comments: [], reviews: {}, reason: null, interviewTime: null, consentAt: r.consent_at ? new Date(r.consent_at).getTime() : null, formVersion: job.version, appliedAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(), timeline: [{ id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + (r.source || "länk"), at: Date.now(), actor: "System" }] }), job.pipeline)); if (!add.length) return state; return { ...state, candidates: [...add, ...state.candidates], jobs: state.jobs.map((j) => j.id === job.id ? { ...j, stats: { started: j.stats.started + add.length, submitted: j.stats.submitted + add.length } } : j) }; }
     default: return state;
   }
 }
 const INITIAL = {
   jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: null, candidates: CANDIDATES0, team: [], currentUserId: null,
   history: [], templates: DEFAULT_TEMPLATES, messages: [],
-  career: null, tags: [], jobViews: [],
+  career: null, tags: [], jobViews: [], moves: [], moveIds: [],
   org: { companyName: "Nordpuls AB", hrName: "Mona Berg", hrEmail: "mona.berg@nordpuls.se", fromEmail: "noreply@nordpuls.se", appUrl: "https://rekyl.app", defaultInterviewTime: "onsdag 14:00" },
   log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjänst öppnad", detail: "Account Manager · B2B" }],
 };
@@ -599,6 +693,7 @@ const NAV = [
   { id: "dashboard", label: "Översikt", icon: LayoutDashboard },
   { id: "jobs", label: "Tjänster", icon: Briefcase },
   { id: "queue", label: "Kö", icon: Layers },
+  { id: "pipeline", label: "Pipeline", icon: Workflow },
   { id: "candidates", label: "Kandidater", icon: ClipboardList },
   { id: "calendar", label: "Kalender", icon: CalendarClock },
   { id: "form", label: "Formulär", icon: Blocks },
@@ -1162,8 +1257,20 @@ export default function App() {
   const cloudRetry = async () => { if (!session) return; const rows = await sbGet("members?user_id=eq." + session.userId + "&select=org_id,role"); if (rows === null) { setCloudOk(false); setCloudErr(sbLastError()); return; } let o; if (rows.length) { o = { id: rows[0].org_id, role: rows[0].role }; sbSetOrg(o.id); setOrgState(o); store.set("rekyl_org", o); } else { store.set("rekyl_org", null); setOrgState(null); setOrgChecked(true); setCloudOk(false); setCloudErr({ status: 0, msg: "Ingen f\u00f6retagskoppling (members saknas)" }); return; } const okW = await sbUpsert("org_state", { org_id: o.id, data: state, updated_at: new Date().toISOString() }); setCloudOk(okW); setCloudErr(okW ? null : sbLastError()); if (okW) { const st = await sbGet("org_state?org_id=eq." + o.id + "&select=data"); if (st && st.length && st[0].data) dispatch({ type: "LOAD_STATE", data: st[0].data }); dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: o.role }); } };
   useEffect(() => { if (!sbEnabled || !session || !session.refresh) return; let alive = true; const doRefresh = async () => { const d = await sbRefresh(session.refresh); if (d && alive) { const ns = { ...session, token: d.access_token, refresh: d.refresh_token, exp: Date.now() + (d.expires_in || 3600) * 1000 }; store.set("rekyl_session", ns); sbSetAuth(ns.token, ns.refresh, ns.exp); setSession(ns); } }; if (session.exp && session.exp < Date.now() + 5 * 60000) doRefresh(); const t = setInterval(doRefresh, 45 * 60000); return () => { alive = false; clearInterval(t); }; }, [session && session.userId]);
   useEffect(() => { if (!sbEnabled || !session) { setOrgChecked(true); return; } let alive = true; (async () => { const rows = await sbGet("members?user_id=eq." + session.userId + "&select=org_id,role"); if (!alive) return; if (rows === null) { setCloudOk(false); if (org) sbSetOrg(org.id); setOrgChecked(true); return; } setCloudOk(true); if (rows.length) { const o = { id: rows[0].org_id, role: rows[0].role }; sbSetOrg(o.id); setOrgState(o); store.set("rekyl_org", o); } else { store.set("rekyl_org", null); setOrgState(null); sbSetOrg(null); } setOrgChecked(true); })(); return () => { alive = false; }; }, [session && session.userId]);
-  useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } if (!org) return; let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data"); if (!alive) return; if (rows === null) setCloudOk(false); else { setCloudOk(true); if (rows.length && rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); } dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: org.role }); setLoaded(true); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
-  useEffect(() => { if (!sbEnabled || !session || !org || !loaded) return; const t = setTimeout(async () => { const ok = await sbUpsert("org_state", { org_id: org.id, data: state, updated_at: new Date().toISOString() }); setCloudOk(ok); setCloudErr(ok ? null : sbLastError()); }, 1600); return () => clearTimeout(t); }, [state, loaded, org && org.id]);
+  useEffect(() => { if (!sbEnabled || !session) { setLoaded(true); return; } if (!org) return; let alive = true; (async () => { const rows = await sbGet("org_state?org_id=eq." + org.id + "&select=data,rev"); if (!alive) return; if (rows === null) setCloudOk(false); else { setCloudOk(true); if (rows.length) { sbSetRev(rows[0].rev || 0); if (rows[0].data) dispatch({ type: "LOAD_STATE", data: rows[0].data }); } } dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: org.role }); setLoaded(true); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
+  useEffect(() => { if (!sbEnabled || !session || !org || !loaded) return; const t = setTimeout(async () => {
+      /* Optimistisk låsning: skrivningen går bara igenom om rev fortfarande stämmer.
+       * Har någon annan sparat under tiden får vi 0 rader tillbaka -> konflikt. */
+      const next = SB_REV + 1;
+      const r = await sbFetch(SB_URL + "/rest/v1/org_state?org_id=eq." + org.id + "&rev=eq." + SB_REV, "PATCH", () => ({ ...sbHead(), Prefer: "return=representation" }), JSON.stringify({ data: state, rev: next, updated_at: new Date().toISOString() }));
+      if (r.ok) { const rows = await r.json().catch(() => []); if (rows && rows.length) { sbSetRev(next); setCloudOk(true); setCloudErr(null); return; }
+        /* Ingen rad matchade: antingen konflikt eller första sparningen. */
+        const ok2 = await sbUpsert("org_state", { org_id: org.id, data: state, rev: next, updated_at: new Date().toISOString() });
+        if (ok2) { sbSetRev(next); setCloudOk(true); setCloudErr(null); } else { setCloudOk(false); setCloudErr({ status: 409, msg: "conflict" }); }
+        return; }
+      const ok3 = await sbUpsert("org_state", { org_id: org.id, data: state, updated_at: new Date().toISOString() });
+      setCloudOk(ok3); setCloudErr(ok3 ? null : sbLastError());
+    }, 1600); return () => clearTimeout(t); }, [state, loaded, org && org.id]);
   useEffect(() => { if (!session || !org) { setIsSuper(false); return; } let alive = true; (async () => { const r = await adminCall("whoami"); if (alive) setIsSuper(!!(r.ok && r.superadmin)); const rows = await sbGet("orgs?id=eq." + org.id + "&select=plan,suspended,max_jobs"); if (alive && rows && rows[0]) setPlan({ plan: rows[0].plan || "start", suspended: !!rows[0].suspended, maxJobs: rows[0].max_jobs == null ? 999 : rows[0].max_jobs }); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
   useEffect(() => { if (!session) return; let alive = true; (async () => { const c = await mailConfig(); if (alive) setMail({ configured: !!c.configured, provider: c.provider || null, from: c.from || null, reason: c.reason || null, notify: !!c.notify, reminders: !!c.reminders, checked: true }); })(); return () => { alive = false; }; }, [session && session.userId]);
   const sendMailNow = useCallback(async (m) => { if (!m || MAIL_INFLIGHT.has(m.id) || !validEmail(m.to)) return { ok: false }; MAIL_INFLIGHT.add(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: "sending" }); const _c = state.candidates.find((c) => c.id === m.candidateId); const _j = _c && state.jobs.find((j) => j.id === _c.jobId); const attachment = _c && _j ? icsForMessage(m, _c, _j, state.org) : null; const res = await sendMail({ to: m.to, subject: m.subject, body: m.body, fromName: state.org.companyName, replyTo: state.org.hrEmail, ...(attachment ? { attachment } : {}) }); MAIL_INFLIGHT.delete(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: res.ok ? "sent" : "failed", error: res.error || null, providerId: res.id || null }); if (!res.ok) showToast({ kind: "warn", msg: "Mejlet till " + m.to + " kunde inte skickas: " + (res.error || "okänt fel") }); return res; }, [state.org, state.candidates, state.jobs]);
@@ -1230,6 +1337,7 @@ export default function App() {
             {view === "jobs" && <JobsView {...shared} />}
             {view === "calendar" && <CalendarView {...shared} />}
             {view === "career" && <CareerView {...shared} />}
+            {view === "pipeline" && <PipelineView {...shared} />}
             {view === "superadmin" && isSuper && <SuperadminView {...shared} />}
             {view === "queue" && <QueueView {...shared} />}
             {view === "candidates" && <CandidatesView {...shared} />}
@@ -1279,6 +1387,144 @@ function publishBlockers(job) {
   if (!a.contact || !validEmail(a.contact.email || "")) out.push("Kontaktperson med giltig e-post saknas");
   if (!a.deadline) out.push("Sista ansökningsdag saknas");
   return out;
+}
+/* ===================== PIPELINE, SLA OCH FÖRFLYTTNINGSMOTOR ===================== */
+/* Stegtyper. `legacy` håller den gamla statusmodellen synkad så att kö, statistik,
+ * kalender och rapporter fortsätter fungera oförändrat. */
+const STAGE_TYPES = {
+  incoming:   { label: "Inkommande",  legacy: "new",       final: false },
+  review:     { label: "Granskning",  legacy: "new",       final: false },
+  screening:  { label: "Screening",   legacy: "new",       final: false },
+  shortlist:  { label: "Shortlist",   legacy: "shortlist", final: false },
+  interview:  { label: "Intervju",    legacy: "interview", final: false },
+  assessment: { label: "Bedömning",   legacy: "interview", final: false },
+  references: { label: "Referenser",  legacy: "interview", final: false },
+  offer:      { label: "Erbjudande",  legacy: "interview", final: false },
+  reserve:    { label: "Reserv",      legacy: "reserve",   final: true },
+  hired:      { label: "Anställd",    legacy: "hired",     final: true },
+  rejected:   { label: "Avslag",      legacy: "reject",    final: true },
+  withdrawn:  { label: "Återkallad",  legacy: "reject",    final: true },
+  custom:     { label: "Eget steg",   legacy: "new",       final: false },
+};
+const STAGE_COLORS = ["#5E655F", "#2C5F86", "#0B5C52", "#B8763A", "#7A3E8C", "#C2513A", "#8A6516"];
+const SLA_LABEL = { none: "Ingen SLA", ontime: "Inom tid", warning: "Närmar sig deadline", late: "Försenad", critical: "Kritiskt försenad", paused: "Pausad", exempt: "Undantagen", done: "Avslutad" };
+const REJECT_REASONS = ["Saknar obligatoriskt krav", "Otillräcklig erfarenhet", "Annan kandidat gick vidare", "Lön eller villkor", "Tillgänglighet", "Plats eller arbetsform", "Ansökan återkallad", "Tjänsten avbruten", "Annan orsak"];
+
+const mkStage = (o) => ({
+  id: "s" + uid(), key: o.key, name: o.name, desc: o.desc || "", type: o.type, color: o.color || STAGE_COLORS[0],
+  active: true, hidden: false, system: !!o.system, locked: !!o.system, archived: false,
+  ownerId: null, ownerRole: "", assign: "keep",
+  sla: { mode: o.sla ? "soft" : "none", days: o.sla || 0, calendar: "business", warnDays: 1, escalate: "owner" },
+  req: { reason: !!o.reqReason, comment: false, assessment: false, interview: false, cv: false, contact: false, owner: false, roles: [] },
+  allowBulk: true, allowBack: true, allowAuto: true, confirm: !!o.confirm,
+  createdAt: Date.now(), updatedAt: Date.now(),
+});
+function defaultPipeline() {
+  const stages = [
+    mkStage({ key: "new", name: "Nya ansökningar", type: "incoming", system: true, color: STAGE_COLORS[0], sla: 2 }),
+    mkStage({ key: "review", name: "Första granskning", type: "review", color: STAGE_COLORS[1], sla: 2 }),
+    mkStage({ key: "shortlist", name: "Shortlist", type: "shortlist", color: STAGE_COLORS[2], sla: 3 }),
+    mkStage({ key: "interview", name: "Intervju", type: "interview", color: STAGE_COLORS[2], sla: 3 }),
+    mkStage({ key: "final", name: "Slutbedömning", type: "assessment", color: STAGE_COLORS[3], sla: 1 }),
+    mkStage({ key: "offer", name: "Erbjudande", type: "offer", color: STAGE_COLORS[6], sla: 2, confirm: true }),
+    mkStage({ key: "hired", name: "Anställd", type: "hired", system: true, color: STAGE_COLORS[6], confirm: true }),
+    mkStage({ key: "reserve", name: "Reserv", type: "reserve", system: true, color: STAGE_COLORS[3] }),
+    mkStage({ key: "reject", name: "Avslag", type: "rejected", system: true, color: STAGE_COLORS[5], reqReason: true, confirm: true }),
+    mkStage({ key: "withdrawn", name: "Återkallad", type: "withdrawn", system: true, color: STAGE_COLORS[0], reqReason: true }),
+  ].map((st, i) => ({ ...st, order: i }));
+  return { id: "p" + uid(), name: "Standardpipeline", desc: "", version: 1, stages, versions: [], updatedAt: Date.now(), dirty: false };
+}
+const OLD_STAGE_KEY = { new: "new", shortlist: "shortlist", interview: "interview", reserve: "reserve", reject: "reject", hired: "hired" };
+const stageByKey = (p, k) => p.stages.find((st) => st.key === k);
+const stageById = (p, id) => p.stages.find((st) => st.id === id);
+const startStage = (p) => p.stages.filter((st) => !st.archived && st.type === "incoming").sort((a, b) => a.order - b.order)[0] || p.stages[0];
+const liveStages = (p) => p.stages.filter((st) => !st.archived && !st.hidden).sort((a, b) => a.order - b.order);
+const legacyOf = (st) => (STAGE_TYPES[st.type] || {}).legacy || "new";
+
+/* Deterministisk och idempotent migrering: körs om utan att skapa dubbletter. */
+function ensurePipeline(job) {
+  if (job.pipeline && job.pipeline.stages && job.pipeline.stages.length) return job;
+  return { ...job, pipeline: defaultPipeline() };
+}
+function migrateCandidate(c, pipe) {
+  if (c._p >= 1 && c.stageId && stageById(pipe, c.stageId)) return c;
+  const key = OLD_STAGE_KEY[c.status] || "new";
+  const st = stageByKey(pipe, key) || startStage(pipe);
+  const enteredAt = c.at || Date.now();
+  const visits = (Array.isArray(c.visits) && c.visits.length) ? c.visits : [{
+    id: "v" + uid(), stageId: st.id, stageKey: st.key, stageName: st.name, enteredAt, exitedAt: null,
+    movedBy: null, reason: c.reason || "", comment: "", pauses: [], exception: null, pipeVersion: pipe.version,
+  }];
+  return { ...c, _p: 1, stageId: st.id, rev: c.rev || 0, ownerId: c.ownerId || null, visits };
+}
+
+/* ---- Kalender och arbetsdagar (organisationens tidszon, deterministiskt) ---- */
+const dayKey = (t) => { const d = new Date(t); return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()); };
+const isWorkday = (t, hol) => { const w = new Date(t).getDay(); return w !== 0 && w !== 6 && !hol.includes(dayKey(t)); };
+function addDaysCal(from, n, calendar, hol) {
+  if (calendar !== "business") return from + n * 864e5;
+  let t = from, left = n;
+  while (left > 0) { t += 864e5; if (isWorkday(t, hol)) left--; }
+  return t;
+}
+function subDaysCal(from, n, calendar, hol) {
+  if (calendar !== "business") return from - n * 864e5;
+  let t = from, left = n;
+  while (left > 0) { t -= 864e5; if (isWorkday(t, hol)) left--; }
+  return t;
+}
+function pausedMs(v, now) {
+  return (v.pauses || []).reduce((ms, p) => ms + ((p.to || now) - p.from), 0);
+}
+/* SLA-status räknas alltid fram från stegets konfiguration + faktisk stegvistelse. */
+function slaState(cand, pipe, org, now) {
+  const v = (cand.visits || []).find((x) => !x.exitedAt);
+  if (!v) return { status: "done", inStage: 0 };
+  const st = stageById(pipe, v.stageId);
+  const hol = (org && org.holidays) || [];
+  const paused = (v.pauses || []).some((p) => !p.to);
+  const inStage = now - v.enteredAt - pausedMs(v, now);
+  if (v.exception && v.exception.exempt) return { status: "exempt", inStage, note: v.exception.reason };
+  if (!st || !st.sla || st.sla.mode === "none" || !st.sla.days) return { status: "none", inStage };
+  if (paused) return { status: "paused", inStage, note: (v.pauses.find((p) => !p.to) || {}).reason };
+  const base = v.enteredAt + pausedMs(v, now);
+  const due = (v.exception && v.exception.dueAt) || addDaysCal(base, st.sla.days, st.sla.calendar, hol);
+  /* Varningen räknas alltid bakåt från den FAKTISKA deadlinen — även när ett undantag flyttat den. */
+  const warn = subDaysCal(due, Math.min(st.sla.days, st.sla.warnDays || 1), st.sla.calendar, hol);
+  const crit = addDaysCal(due, Math.max(1, st.sla.days), st.sla.calendar, hol);
+  const status = now >= crit ? "critical" : now >= due ? "late" : now >= warn ? "warning" : "ontime";
+  return { status, inStage, dueAt: due, remaining: due - now, hard: st.sla.mode === "hard" };
+}
+
+/* ---- Förflyttningsmotor: en enda väg in för ALLA förflyttningar ---- */
+/* Returnerar blockerare med kod, förklaring och hur de löses. Ingen "något gick fel". */
+function moveBlockers(state, cand, job, to, me, opts = {}) {
+  const b = [];
+  const pipe = job.pipeline;
+  if (isReadonly(job)) b.push({ code: "job_archived", msg: "Tjänsten är arkiverad", fix: "Återställ tjänsten under Tjänster." });
+  if (!to || to.archived) b.push({ code: "stage_gone", msg: "Målsteget finns inte längre", fix: "Välj ett aktivt steg." });
+  if (!can(me.role, "decide")) b.push({ code: "perm", msg: "Du saknar behörighet att flytta kandidater", fix: "Be en admin ändra din roll." });
+  if (to && to.req && to.req.roles && to.req.roles.length && !to.req.roles.includes(me.role)) b.push({ code: "stage_role", msg: "Bara " + to.req.roles.map((r) => ROLE_LABEL[r]).join(", ") + " får flytta till " + to.name, fix: "Be någon med rätt roll göra flytten." });
+  if (to && cand.stageId === to.id) b.push({ code: "same", msg: "Kandidaten är redan i " + to.name, fix: "Välj ett annat steg." });
+  if (opts.rev != null && cand.rev !== opts.rev) b.push({ code: "conflict", msg: "Kandidaten har ändrats av någon annan under tiden", fix: "Ladda om och försök igen." });
+  const from = pipe && stageById(pipe, cand.stageId);
+  if (from && to && !from.allowBack && to.order < from.order) b.push({ code: "no_back", msg: from.name + " tillåter inte att kandidater flyttas tillbaka", fix: "Ändra steget i pipelinebyggaren." });
+  const r = (to && to.req) || {};
+  if (r.reason && !String(opts.reason || "").trim()) b.push({ code: "reason", msg: to.name + " kräver en anledning", fix: "Ange en anledning i formuläret." });
+  if (r.comment && !String(opts.comment || "").trim()) b.push({ code: "comment", msg: to.name + " kräver en intern kommentar", fix: "Skriv en kommentar." });
+  if (r.owner && !(opts.ownerId || cand.ownerId)) b.push({ code: "owner", msg: to.name + " kräver en ansvarig", fix: "Välj ansvarig i formuläret." });
+  if (r.contact && !validEmail(cand.email)) b.push({ code: "contact", msg: "Kandidaten saknar giltig e-postadress", fix: "Begär komplettering från kandidaten." });
+  if (r.cv && !Object.values(cand.answers || {}).some((v) => v && typeof v === "object" && v.url)) b.push({ code: "cv", msg: "Kandidaten har inte laddat upp CV", fix: "Begär komplettering." });
+  if (r.interview && !ivActive(cand)) b.push({ code: "interview", msg: "Ingen intervju är bokad", fix: "Boka en intervju från kandidatpanelen." });
+  if (r.assessment && !(cand.rating > 0)) b.push({ code: "assessment", msg: "Bedömning saknas", fix: "Sätt betyg på kandidaten." });
+  return b;
+}
+function ownerFor(to, job, cand, opts) {
+  if (opts.ownerId !== undefined && opts.ownerId !== null) return opts.ownerId || null;
+  if (to.assign === "job") return job.ownerId || null;
+  if (to.assign === "stage") return to.ownerId || null;
+  if (to.assign === "none") return null;
+  return cand.ownerId || null;
 }
 /* ===================== JOBBLIVSCYKEL ===================== */
 /* Varje status har: innebörd, om jobbet syns publikt, om det tar emot ansökningar,
@@ -2487,6 +2733,419 @@ function SuperadminView({ showToast, session }) {
       </div></Modal>}
     </div>
   );
+}
+/* ---- Gemensam förflyttningspanel: används av kanban, kandidatpanel, tabell, mobil, bulk ---- */
+function MovePanel({ cand, job, state, me, D, showToast, onClose, preset }) {
+  const pipe = job.pipeline;
+  const [to, setTo] = useState(preset || "");
+  const [reason, setReason] = useState("");
+  const [comment, setComment] = useState("");
+  const [ownerId, setOwnerId] = useState(cand.ownerId || "");
+  const [notify, setNotify] = useState(true);
+  const [q, setQ] = useState("");
+  const [busy, setBusy] = useState(false);
+  const target = to ? stageById(pipe, to) : null;
+  const opts = { reason, comment, ownerId: ownerId || null, notify, rev: cand.rev || 0 };
+  const blockers = target ? moveBlockers(state, cand, job, target, me, opts) : [];
+  const stages = liveStages(pipe).filter((st) => st.id !== cand.stageId).filter((st) => !q.trim() || st.name.toLowerCase().includes(q.toLowerCase()));
+  const isSensitive = target && ["rejected", "hired", "offer", "withdrawn"].includes(target.type);
+  const go = () => {
+    if (!target || blockers.length || busy) return;
+    setBusy(true);
+    D({ type: "MOVE_CANDIDATE", id: cand.id, stageId: target.id, reqId: "r" + uid(), source: "manual", ...opts });
+    showToast({ kind: "ok", msg: cand.name + " → " + target.name });
+    onClose();
+  };
+  return <div className="ats-mv">
+    <div className="ats-mv-cand"><span className="ats-avatar">{cand.name[0]}</span><div><b>{cand.name}</b><span>{(stageById(pipe, cand.stageId) || {}).name || "—"}</span></div></div>
+    <label className="ats-field"><span className="ats-field-l">Flytta till</span>
+      <input className="ats-inp" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sök steg…" />
+    </label>
+    <div className="ats-mv-stages">{stages.map((st) => {
+      const bl = moveBlockers(state, cand, job, st, me, { ...opts, reason: st.req.reason ? "x" : reason, comment: st.req.comment ? "x" : comment });
+      const hard = bl.filter((b) => !["reason", "comment", "owner"].includes(b.code));
+      return <button key={st.id} className={"ats-mv-stage" + (to === st.id ? " is-on" : "") + (hard.length ? " is-blocked" : "")} onClick={() => !hard.length && setTo(st.id)} disabled={hard.length > 0}>
+        <span className="ats-mv-dot" style={{ background: st.color }} />
+        <div><b>{st.name}</b><span>{STAGE_TYPES[st.type].label}{hard.length ? " · " + hard[0].msg : ""}</span></div>
+        {hard.length ? <Lock size={14} /> : to === st.id ? <Check size={16} /> : null}
+      </button>;
+    })}</div>
+    {stages.length === 0 && <div className="ats-col-empty" style={{ padding: 20 }}>Inget steg matchar.</div>}
+    {target && <>
+      {(target.req.reason || target.type === "rejected") && <label className="ats-field"><span className="ats-field-l">Anledning {target.req.reason && <i style={{ color: "var(--brick)" }}>*</i>}</span>
+        <select className="ats-inp" value={reason} onChange={(e) => setReason(e.target.value)}><option value="">Välj anledning…</option>{REJECT_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>}
+      {target.req.comment && <label className="ats-field"><span className="ats-field-l">Intern kommentar <i style={{ color: "var(--brick)" }}>*</i></span><textarea className="ats-inp" value={comment} onChange={(e) => setComment(e.target.value)} rows={2} /></label>}
+      <label className="ats-field"><span className="ats-field-l">Ansvarig</span><select className="ats-inp" value={ownerId} onChange={(e) => setOwnerId(e.target.value)}><option value="">Ingen</option>{state.team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+      {TRIGGER_FOR[legacyOf(target)] && <label className="ats-cb-check"><input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} /> Skicka mejl till kandidaten ({(state.templates.find((t) => t.trigger === TRIGGER_FOR[legacyOf(target)]) || {}).name || "mall"})</label>}
+      {blockers.length > 0 && <div className="ats-mv-block">{blockers.map((b) => <div key={b.code}><CircleAlert size={14} /><div><b>{b.msg}</b><span>{b.fix}</span></div></div>)}</div>}
+      {isSensitive && blockers.length === 0 && <div className="ats-mv-warn"><AlertTriangle size={14} /><div>
+        <b>Detta är ett beslut som inte går att ta tillbaka automatiskt.</b>
+        <span>Kandidatens status blir <b>{STAGE_TYPES[target.type].label}</b>{TRIGGER_FOR[legacyOf(target)] && notify ? ", ett mejl skickas" : ", inget mejl skickas"}, och SLA för nuvarande steg avslutas.</span>
+      </div></div>}
+    </>}
+    <div className="ats-erase-actions"><button className="ats-ghost" onClick={onClose}>Avbryt</button>
+      <button className="ats-btn-primary" disabled={!target || blockers.length > 0 || busy} onClick={go}><ArrowRight size={15} /> Flytta kandidat</button></div>
+  </div>;
+}
+
+/* ---- Kandidatkort i kanban ---- */
+function PipeCard({ c, pipe, org, sel, onSel, onOpen, onMove, dense, dragProps, me }) {
+  const sla = slaState(c, pipe, org, Date.now());
+  const iv = ivActive(c) ? c.interview : null;
+  const days = Math.floor(sla.inStage / 864e5);
+  const tone = { critical: "brick", late: "brick", warning: "amber", paused: "blue", exempt: "muted", ontime: "petrol", none: "muted", done: "muted" }[sla.status];
+  return <div className={"ats-pc" + (sel ? " is-sel" : "") + (dense ? " is-dense" : "")} {...dragProps} tabIndex={0} role="listitem"
+    onKeyDown={(e) => { if (e.key === "Enter") onOpen(c.id); if (e.key === "m" || e.key === "M") { e.preventDefault(); onMove(c); } }}
+    aria-label={c.name + ", " + SLA_LABEL[sla.status]}>
+    <div className="ats-pc-h">
+      {can(me.role, "decide") && <input type="checkbox" checked={sel} onChange={() => onSel(c.id)} onClick={(e) => e.stopPropagation()} aria-label={"Välj " + c.name} />}
+      <button className="ats-pc-name" onClick={() => onOpen(c.id)}>{c.name}</button>
+      <span className="ats-pc-score">{c.knockout ? <span className="ats-pc-ko">KO</span> : (c.total != null ? c.total + "%" : "—")}</span>
+    </div>
+    {!dense && <div className="ats-pc-meta">{c.source || "direkt"} · {days === 0 ? "idag" : days + " d i steget"}</div>}
+    <div className="ats-pc-tags">
+      <span className={"ats-pc-sla is-" + tone}><span className="ats-pc-dot" />{SLA_LABEL[sla.status]}{sla.status === "late" || sla.status === "critical" ? "" : sla.remaining > 0 ? " · " + Math.ceil(sla.remaining / 864e5) + " d kvar" : ""}</span>
+      {!c.ownerId && <span className="ats-pc-warn"><UserCheck size={11} /> Ingen ansvarig</span>}
+      {iv && <span className="ats-pc-iv"><CalendarCheck size={11} /> {fmtInterview(iv.at)}</span>}
+      {c.rating > 0 && <span className="ats-pc-rate"><Star size={11} /> {c.rating}</span>}
+    </div>
+    <button className="ats-pc-move" onClick={() => onMove(c)} aria-label={"Flytta " + c.name}><ArrowRight size={14} /></button>
+  </div>;
+}
+
+/* ---- Pipelinevyn: kanban, lista, tabell, stegvy, åtgärder, byggare ---- */
+function PipelineView({ state, D, me, job, cands, showToast, setDetailId }) {
+  const [view, setView] = useState(() => store.get("rekyl_pipeview", "kanban"));
+  const [dense, setDense] = useState(false);
+  const [sel, setSel] = useState([]);
+  const [moveFor, setMoveFor] = useState(null);
+  const [bulkTo, setBulkTo] = useState(null);
+  const [bulkRes, setBulkRes] = useState(null);
+  const [drag, setDrag] = useState(null);
+  const [over, setOver] = useState(null);
+  const [focus, setFocus] = useState(null);
+  const [q, setQ] = useState("");
+  const [fSla, setFSla] = useState("");
+  const [fOwner, setFOwner] = useState("");
+  const [collapsed, setCollapsed] = useState([]);
+  const [pauseFor, setPauseFor] = useState(null);
+  const [exceptFor, setExceptFor] = useState(null);
+  const [pReason, setPReason] = useState("");
+  const [eDays, setEDays] = useState(3);
+  useEffect(() => { store.set("rekyl_pipeview", view); }, [view]);
+
+  if (!job || !job.pipeline) { D({ type: "PIPE_INIT", jobId: job && job.id }); return <div className="ats-view"><PageHeader title="Pipeline" /><div className="ats-col-empty" style={{ padding: 40 }}>Förbereder pipelinen…</div></div>; }
+  const pipe = job.pipeline;
+  const canDecide = can(me.role, "decide");
+  const canEdit = can(me.role, "edit") && !isReadonly(job);
+  const now = Date.now();
+  const stages = liveStages(pipe);
+  const enriched = cands.map((c) => ({ ...c, _sla: slaState(c, pipe, state.org, now) }));
+  const filtered = enriched
+    .filter((c) => !q.trim() || (c.name + " " + c.email + " " + (c.source || "")).toLowerCase().includes(q.toLowerCase()))
+    .filter((c) => !fSla || c._sla.status === fSla)
+    .filter((c) => !fOwner || (fOwner === "none" ? !c.ownerId : c.ownerId === fOwner));
+  const inStage = (st) => filtered.filter((c) => c.stageId === st.id);
+  const nameOf = (id) => (state.team.find((m) => m.id === id) || {}).name || null;
+
+  const doMove = (c, stId, extra) => {
+    const to = stageById(pipe, stId);
+    const bl = moveBlockers(state, c, job, to, me, { rev: c.rev || 0, ...(extra || {}) });
+    if (bl.length) { setMoveFor({ c, preset: stId }); return; }
+    D({ type: "MOVE_CANDIDATE", id: c.id, stageId: stId, reqId: "r" + uid(), source: "kanban", rev: c.rev || 0, ...(extra || {}) });
+    showToast({ kind: "ok", msg: c.name + " → " + to.name });
+  };
+  const runBulk = (stId) => {
+    const to = stageById(pipe, stId);
+    const chosen = enriched.filter((c) => sel.includes(c.id));
+    const bulkId = "b" + uid();
+    const res = { total: chosen.length, ok: 0, blocked: [] };
+    chosen.forEach((c) => {
+      const bl = moveBlockers(state, c, job, to, me, { rev: c.rev || 0 });
+      if (bl.length || !to.allowBulk) { res.blocked.push({ name: c.name, why: !to.allowBulk ? "Steget tillåter inte bulkflytt" : bl[0].msg }); return; }
+      D({ type: "MOVE_CANDIDATE", id: c.id, stageId: stId, reqId: "r" + uid(), source: "bulk", bulkId, rev: c.rev || 0 });
+      res.ok++;
+    });
+    setBulkTo(null); setSel([]); setBulkRes(res);
+  };
+  const undo = (ev) => {
+    const c = state.candidates.find((x) => x.id === ev.candId);
+    if (!c) return;
+    D({ type: "MOVE_CANDIDATE", id: c.id, stageId: ev.fromId, reqId: "r" + uid(), source: "undo", undoOf: ev.id, notify: false, reason: "Återställd förflyttning", rev: c.rev || 0 });
+    showToast({ kind: "ok", msg: "Förflyttningen återställdes" });
+  };
+
+  const dragProps = (c) => canDecide ? {
+    draggable: true,
+    onDragStart: (e) => { setDrag(c.id); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", c.id); } catch (err) { /* Safari */ } },
+    onDragEnd: () => { setDrag(null); setOver(null); },
+  } : {};
+  const dropProps = (st) => canDecide ? {
+    onDragOver: (e) => { e.preventDefault(); setOver(st.id); },
+    onDragLeave: () => setOver((o) => o === st.id ? null : o),
+    onDrop: (e) => { e.preventDefault(); setOver(null); const id = drag || e.dataTransfer.getData("text/plain"); const c = enriched.find((x) => x.id === id); setDrag(null); if (c && c.stageId !== st.id) doMove(c, st.id); },
+  } : {};
+
+  const VIEWS = [["kanban", "Kanban", Layers], ["list", "Lista", ListChecks], ["table", "Tabell", BarChart3], ["stage", "Steg", Blocks], ["action", "Åtgärder", AlertTriangle], ["build", "Bygg", SlidersHorizontal]];
+  const attention = enriched.filter((c) => ["late", "critical", "warning"].includes(c._sla.status) || !c.ownerId || c._sla.status === "paused");
+
+  return <div className="ats-view">
+    <PageHeader title="Pipeline" meta={<><span>{job.title}</span><Dot /><span className="ats-mono">v{pipe.version}</span>{pipe.dirty && <><Dot /><span className="ats-pipe-dirty">Opublicerade ändringar</span></>}</>}
+      right={<div className="ats-pipe-views">{VIEWS.filter((v) => v[0] !== "build" || canEdit).map(([id, l, I]) => <button key={id} className={view === id ? "is-on" : ""} onClick={() => setView(id)} aria-label={l}><I size={14} /> <span>{l}</span>{id === "action" && attention.length > 0 && <em>{attention.length}</em>}</button>)}</div>} />
+
+    {view !== "build" && <div className="ats-jfilters">
+      <div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sök kandidat…" /></div>
+      <select className="ats-select is-sm" value={fSla} onChange={(e) => setFSla(e.target.value)} aria-label="SLA-status"><option value="">Alla SLA-lägen</option>{Object.entries(SLA_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+      <select className="ats-select is-sm" value={fOwner} onChange={(e) => setFOwner(e.target.value)} aria-label="Ansvarig"><option value="">Alla ansvariga</option><option value="none">Utan ansvarig</option>{state.team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+      {view === "kanban" && <button className="ats-ghost is-sm" onClick={() => setDense(!dense)}>{dense ? "Bekväm" : "Kompakt"}</button>}
+    </div>}
+
+    {sel.length > 0 && canDecide && <div className="ats-bulkbar">
+      <b>{sel.length} valda</b>
+      <button className="ats-ghost is-sm" onClick={() => setBulkTo(true)}><ArrowRight size={13} /> Flytta</button>
+      <button className="ats-ghost is-sm" onClick={() => setSel([])}>Avmarkera</button>
+    </div>}
+
+    {view === "kanban" && (stages.length === 0
+      ? <div className="ats-col-empty" style={{ padding: 44 }}>Pipelinen saknar steg. Lägg till steg under <b>Bygg</b>.</div>
+      : <div className="ats-kb" role="list">{stages.map((st) => {
+        const list = inStage(st);
+        const late = list.filter((c) => ["late", "critical"].includes(c._sla.status)).length;
+        const warn = list.filter((c) => c._sla.status === "warning").length;
+        const col = collapsed.includes(st.id);
+        return <section key={st.id} className={"ats-kb-col" + (over === st.id ? " is-over" : "") + (col ? " is-col" : "")} {...dropProps(st)} aria-label={st.name}>
+          <header className="ats-kb-h" style={{ borderTopColor: st.color }}>
+            <button className="ats-kb-collapse" onClick={() => setCollapsed(col ? collapsed.filter((x) => x !== st.id) : [...collapsed, st.id])} aria-label={col ? "Visa" : "Kollapsa"}>{col ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</button>
+            <div className="ats-kb-t"><b>{st.name}</b><span>{STAGE_TYPES[st.type].label}{st.sla.mode !== "none" ? " · " + st.sla.days + (st.sla.calendar === "business" ? " arbetsdagar" : " dagar") : ""}</span></div>
+            <span className="ats-kb-n">{list.length}</span>
+            {late > 0 && <span className="ats-kb-late" title="Försenade"><AlertTriangle size={11} /> {late}</span>}
+            {warn > 0 && <span className="ats-kb-warn" title="Nära deadline">{warn}</span>}
+          </header>
+          {!col && <div className="ats-kb-body">
+            {list.length === 0 ? <div className="ats-kb-empty">Inga kandidater</div>
+              : list.slice(0, 80).map((c) => <PipeCard key={c.id} c={c} pipe={pipe} org={state.org} me={me} dense={dense}
+                sel={sel.includes(c.id)} onSel={(id) => setSel((x) => x.includes(id) ? x.filter((y) => y !== id) : [...x, id])}
+                onOpen={setDetailId} onMove={(cc) => setMoveFor({ c: cc })} dragProps={dragProps(c)} />)}
+            {list.length > 80 && <div className="ats-kb-more">+{list.length - 80} till — använd filter eller tabellvyn</div>}
+          </div>}
+        </section>;
+      })}</div>)}
+
+    {(view === "list" || view === "table") && <div className="ats-jtablewrap"><table className="ats-jtable">
+      <thead><tr>{canDecide && <th><input type="checkbox" checked={filtered.length > 0 && filtered.every((c) => sel.includes(c.id))} onChange={(e) => setSel(e.target.checked ? filtered.map((c) => c.id) : [])} aria-label="Välj alla" /></th>}
+        <th>Kandidat</th><th>Steg</th><th>SLA</th><th>Tid i steg</th><th>Ansvarig</th><th>Matchning</th><th>Källa</th><th /></tr></thead>
+      <tbody>{filtered.map((c) => { const st = stageById(pipe, c.stageId) || {}; return <tr key={c.id} className={sel.includes(c.id) ? "is-sel" : ""}>
+        {canDecide && <td><input type="checkbox" checked={sel.includes(c.id)} onChange={() => setSel((x) => x.includes(c.id) ? x.filter((y) => y !== c.id) : [...x, c.id])} aria-label={"Välj " + c.name} /></td>}
+        <td><button className="ats-jobcard-title" onClick={() => setDetailId(c.id)}>{c.name}</button></td>
+        <td><span className="ats-jtag" style={{ background: (st.color || "#888") + "1f", color: st.color }}>{st.name || "—"}</span></td>
+        <td><span className={"ats-pc-sla is-" + ({ critical: "brick", late: "brick", warning: "amber", paused: "blue", exempt: "muted", ontime: "petrol", none: "muted", done: "muted" }[c._sla.status])}><span className="ats-pc-dot" />{SLA_LABEL[c._sla.status]}</span></td>
+        <td>{Math.floor(c._sla.inStage / 864e5)} d</td>
+        <td>{nameOf(c.ownerId) || <span className="ats-muted">Ingen</span>}</td>
+        <td>{c.knockout ? "KO" : (c.total != null ? c.total + "%" : "—")}</td>
+        <td>{c.source || "direkt"}</td>
+        <td>{canDecide && <button className="ats-ghost is-sm" onClick={() => setMoveFor({ c })}><ArrowRight size={13} /></button>}</td>
+      </tr>; })}</tbody>
+    </table>{filtered.length === 0 && <div className="ats-col-empty" style={{ padding: 30 }}>Ingen kandidat matchar.</div>}</div>}
+
+    {view === "stage" && <div className="ats-stagev">
+      <div className="ats-stagev-tabs">{stages.map((st) => <button key={st.id} className={(focus || stages[0].id) === st.id ? "is-on" : ""} onClick={() => setFocus(st.id)} style={{ borderBottomColor: (focus || stages[0].id) === st.id ? st.color : "transparent" }}>{st.name} <em>{inStage(st).length}</em></button>)}</div>
+      <div className="ats-stagev-list">{inStage(stageById(pipe, focus || stages[0].id) || stages[0]).map((c) => <PipeCard key={c.id} c={c} pipe={pipe} org={state.org} me={me}
+        sel={sel.includes(c.id)} onSel={(id) => setSel((x) => x.includes(id) ? x.filter((y) => y !== id) : [...x, id])} onOpen={setDetailId} onMove={(cc) => setMoveFor({ c: cc })} dragProps={{}} />)}
+        {inStage(stageById(pipe, focus || stages[0].id) || stages[0]).length === 0 && <div className="ats-col-empty" style={{ padding: 30 }}>Inga kandidater i steget.</div>}</div>
+    </div>}
+
+    {view === "action" && <div className="ats-act">
+      {attention.length === 0 ? <div className="ats-col-empty" style={{ padding: 44 }}>Inget kräver åtgärd just nu. Alla kandidater är inom tid och har ansvarig.</div>
+        : <div className="ats-sa-rows">{[...attention].sort((a, b) => ({ critical: 0, late: 1, warning: 2, paused: 3 }[a._sla.status] ?? 4) - ({ critical: 0, late: 1, warning: 2, paused: 3 }[b._sla.status] ?? 4)).map((c) => {
+          const st = stageById(pipe, c.stageId) || {};
+          return <div key={c.id} className="ats-sa-row is-card">
+            <div className="ats-sa-main">
+              <div className="ats-sa-top"><button className="ats-jobcard-title" onClick={() => setDetailId(c.id)}>{c.name}</button>
+                <span className={"ats-pc-sla is-" + ({ critical: "brick", late: "brick", warning: "amber", paused: "blue" }[c._sla.status] || "muted")}><span className="ats-pc-dot" />{SLA_LABEL[c._sla.status]}</span>
+                {!c.ownerId && <span className="ats-pc-warn"><UserCheck size={11} /> Ingen ansvarig</span>}</div>
+              <span>{st.name} · {Math.floor(c._sla.inStage / 864e5)} dagar i steget{c._sla.dueAt ? " · deadline " + new Date(c._sla.dueAt).toLocaleDateString("sv-SE") : ""}</span>
+            </div>
+            {canDecide && <div className="ats-sa-acts">
+              <button className="ats-ghost is-sm" onClick={() => setMoveFor({ c })}><ArrowRight size={13} /> Flytta</button>
+              <Menu align="right" trigger={<button className="ats-ghost is-sm"><Settings2 size={14} /></button>}>
+                <div className="ats-menu-label">Ansvarig</div>
+                {state.team.map((m) => <button key={m.id} className="ats-menu-item" onClick={() => D({ type: "SET_CAND_OWNER", id: c.id, ownerId: m.id })}>{m.name}</button>)}
+                <div className="ats-menu-sep" />
+                {c._sla.status === "paused"
+                  ? <button className="ats-menu-item" onClick={() => D({ type: "SLA_PAUSE", id: c.id, end: true })}><RotateCw size={14} /> Avsluta paus</button>
+                  : <button className="ats-menu-item" onClick={() => { setPauseFor(c); setPReason(""); }}><PauseCircle size={14} /> Pausa SLA</button>}
+                <button className="ats-menu-item" onClick={() => { setExceptFor(c); setEDays(3); }}><CalendarClock size={14} /> SLA-undantag</button>
+              </Menu>
+            </div>}
+          </div>;
+        })}</div>}
+    </div>}
+
+    {view === "build" && canEdit && <PipeBuilder job={job} state={state} D={D} showToast={showToast} />}
+
+    {moveFor && <Modal title="Flytta kandidat" onClose={() => setMoveFor(null)}>
+      <MovePanel cand={state.candidates.find((c) => c.id === moveFor.c.id) || moveFor.c} job={job} state={state} me={me} D={D} showToast={showToast} preset={moveFor.preset} onClose={() => setMoveFor(null)} />
+    </Modal>}
+    {bulkTo && <Modal title={"Flytta " + sel.length + " kandidater"} onClose={() => setBulkTo(null)}><div className="ats-erase">
+      <p>Kandidater som blockeras av stegkrav flyttas inte — övriga genomförs ändå. Du får en fullständig rapport efteråt.</p>
+      <div className="ats-mv-stages">{stages.map((st) => <button key={st.id} className="ats-mv-stage" onClick={() => runBulk(st.id)} disabled={!st.allowBulk}>
+        <span className="ats-mv-dot" style={{ background: st.color }} /><div><b>{st.name}</b><span>{st.allowBulk ? STAGE_TYPES[st.type].label : "Bulkflytt är avstängd för steget"}</span></div>
+      </button>)}</div>
+    </div></Modal>}
+    {bulkRes && <Modal title="Resultat" onClose={() => setBulkRes(null)}><div className="ats-erase">
+      <p><b>{bulkRes.ok}</b> av {bulkRes.total} kandidater flyttades.</p>
+      {bulkRes.blocked.length > 0 && <><div className="ats-erase-note"><AlertTriangle size={14} /> {bulkRes.blocked.length} blockerades:</div>
+        <ul className="ats-blocked">{bulkRes.blocked.map((b, i) => <li key={i}><b>{b.name}</b><span>{b.why}</span></li>)}</ul></>}
+      <div className="ats-erase-actions"><button className="ats-btn-primary" onClick={() => setBulkRes(null)}>Stäng</button></div>
+    </div></Modal>}
+    {pauseFor && <Modal title="Pausa SLA" onClose={() => setPauseFor(null)}><div className="ats-erase">
+      <p>SLA-klockan stannar för <b>{pauseFor.name}</b> tills pausen avslutas. Tiden i steget räknas inte upp under pausen.</p>
+      <label className="ats-field"><span className="ats-field-l">Anledning</span><input className="ats-inp" value={pReason} onChange={(e) => setPReason(e.target.value)} placeholder="Väntar på referens" /></label>
+      <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setPauseFor(null)}>Avbryt</button>
+        <button className="ats-btn-primary" disabled={!pReason.trim()} onClick={() => { D({ type: "SLA_PAUSE", id: pauseFor.id, reason: pReason }); setPauseFor(null); showToast({ kind: "ok", msg: "SLA pausad" }); }}><PauseCircle size={15} /> Pausa</button></div>
+    </div></Modal>}
+    {exceptFor && <Modal title="SLA-undantag" onClose={() => setExceptFor(null)}><div className="ats-erase">
+      <p>Ge <b>{exceptFor.name}</b> extra tid eller undanta kandidaten helt. Den ursprungliga deadlinen skrivs aldrig över — undantaget loggas separat.</p>
+      <label className="ats-field"><span className="ats-field-l">Förläng med (dagar)</span><input className="ats-inp" type="number" min="1" max="60" value={eDays} onChange={(e) => setEDays(Number(e.target.value))} /></label>
+      <label className="ats-field"><span className="ats-field-l">Anledning</span><input className="ats-inp" value={pReason} onChange={(e) => setPReason(e.target.value)} /></label>
+      <div className="ats-erase-actions">
+        <button className="ats-ghost" onClick={() => { D({ type: "SLA_EXCEPT", id: exceptFor.id, clear: true }); setExceptFor(null); }}>Ta bort undantag</button>
+        <button className="ats-ghost" onClick={() => { D({ type: "SLA_EXCEPT", id: exceptFor.id, exempt: true, reason: pReason }); setExceptFor(null); showToast({ kind: "ok", msg: "Undantagen från SLA" }); }}>Undanta helt</button>
+        <button className="ats-btn-primary" onClick={() => { D({ type: "SLA_EXCEPT", id: exceptFor.id, dueAt: Date.now() + eDays * 864e5, reason: pReason }); setExceptFor(null); showToast({ kind: "ok", msg: "Deadline förlängd" }); }}>Förläng</button>
+      </div>
+    </div></Modal>}
+
+    {/* Senaste förflyttningar med återställning */}
+    {view !== "build" && (state.moves || []).filter((m) => m.jobId === job.id).length > 0 && <div className="ats-moves">
+      <h3>Senaste förflyttningar</h3>
+      <div className="ats-moves-list">{(state.moves || []).filter((m) => m.jobId === job.id).slice(0, 8).map((m) => <div key={m.id} className="ats-move">
+        <div><b>{m.candName}</b><span>{m.fromName} → {m.toName}{m.reason ? " · " + m.reason : ""}</span></div>
+        <span className="ats-sa-when">{m.byName} · {timeAgo(m.at)}{m.undoOf ? " · återställning" : ""}{m.bulkId ? " · bulk" : ""}</span>
+        {canDecide && !m.undoOf && <button className="ats-ghost is-sm" onClick={() => undo(m)}><RotateCcw size={13} /> Ångra</button>}
+      </div>)}</div>
+    </div>}
+  </div>;
+}
+
+/* ---- Pipelinebyggare ---- */
+function PipeBuilder({ job, state, D, showToast }) {
+  const pipe = job.pipeline;
+  const [selId, setSelId] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newType, setNewType] = useState("custom");
+  const [archFor, setArchFor] = useState(null);
+  const [moveTo, setMoveTo] = useState("");
+  const [showVers, setShowVers] = useState(false);
+  const [note, setNote] = useState("");
+  const flow = pipe.stages.filter((st) => !STAGE_TYPES[st.type].final).sort((a, b) => a.order - b.order);
+  const finals = pipe.stages.filter((st) => STAGE_TYPES[st.type].final).sort((a, b) => a.order - b.order);
+  const st = selId ? stageById(pipe, selId) : null;
+  const countIn = (id) => state.candidates.filter((c) => c.jobId === job.id && c.stageId === id).length;
+  const setSt = (patch) => D({ type: "STAGE_SET", jobId: job.id, id: st.id, patch });
+
+  const Row = ({ x, i, arr }) => <div className={"ats-pb-row" + (selId === x.id ? " is-on" : "") + (x.archived ? " is-arch" : "")}>
+    <span className="ats-pb-dot" style={{ background: x.color }} />
+    <button className="ats-pb-name" onClick={() => setSelId(x.id === selId ? null : x.id)}>
+      <b>{x.name}</b><span>{STAGE_TYPES[x.type].label}{x.system ? " · systemsteg" : ""}{x.sla.mode !== "none" ? " · SLA " + x.sla.days + (x.sla.calendar === "business" ? " arbetsd." : " d") : ""}{x.hidden ? " · dold" : ""}</span>
+    </button>
+    <span className="ats-pb-n">{countIn(x.id)}</span>
+    <div className="ats-pb-acts">
+      {!x.system && arr && <>
+        <button className="ats-ghost is-sm" disabled={i === 0} onClick={() => D({ type: "STAGE_MOVE", jobId: job.id, id: x.id, dir: -1 })} aria-label="Flytta upp"><ArrowUp size={13} /></button>
+        <button className="ats-ghost is-sm" disabled={i === arr.length - 1} onClick={() => D({ type: "STAGE_MOVE", jobId: job.id, id: x.id, dir: 1 })} aria-label="Flytta ner"><ArrowDown size={13} /></button>
+        <button className="ats-ghost is-sm" onClick={() => D({ type: "STAGE_DUP", jobId: job.id, id: x.id })} aria-label="Duplicera"><Copy size={13} /></button>
+        <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => { const n = countIn(x.id); if (n && !x.archived) { setArchFor(x); setMoveTo(""); } else D({ type: "STAGE_ARCHIVE", jobId: job.id, id: x.id }); }} aria-label={x.archived ? "Återställ" : "Arkivera"}>{x.archived ? <RotateCcw size={13} /> : <Trash2 size={13} />}</button>
+      </>}
+      {x.system && <span className="ats-pb-lock"><Lock size={12} /> Låst</span>}
+    </div>
+  </div>;
+
+  return <div className="ats-pb">
+    <div className="ats-pb-main">
+      <div className="ats-panel">
+        <div className="ats-panel-h"><h2>Steg i processen</h2><button className="ats-ghost is-sm" onClick={() => setAdding(true)}><Plus size={14} /> Lägg till steg</button></div>
+        <div className="ats-pb-list">{flow.map((x, i) => <Row key={x.id} x={x} i={i} arr={flow} />)}</div>
+        <div className="ats-panel-h" style={{ marginTop: 18 }}><h2>Slutlägen</h2></div>
+        <div className="ats-erase-note"><Lock size={14} /> Systemsteg kan inte raderas — de behövs för statistik, rapporter och historik.</div>
+        <div className="ats-pb-list">{finals.map((x) => <Row key={x.id} x={x} />)}</div>
+      </div>
+      <div className="ats-pb-publish">
+        <div><b>{pipe.dirty ? "Opublicerade ändringar" : "Allt publicerat"}</b><span>Version {pipe.version}{pipe.dirty ? " · ändringarna gäller redan för nya förflyttningar, publicera för att spara en version" : ""}</span></div>
+        <div className="ats-pb-pacts">
+          <button className="ats-ghost is-sm" onClick={() => setShowVers(true)}><History size={14} /> Versioner ({(pipe.versions || []).length})</button>
+          <button className="ats-btn-primary is-sm" disabled={!pipe.dirty} onClick={() => { D({ type: "PIPE_PUBLISH", jobId: job.id, note }); setNote(""); showToast({ kind: "ok", msg: "Pipeline publicerad · v" + (pipe.version + 1) }); }}><Rocket size={14} /> Publicera version</button>
+        </div>
+      </div>
+    </div>
+
+    {st && <aside className="ats-pb-side">
+      <div className="ats-panel">
+        <div className="ats-panel-h"><h2>{st.name}</h2><button className="ats-ghost is-sm" onClick={() => setSelId(null)}><X size={15} /></button></div>
+        <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={st.name} onChange={(e) => setSt({ name: e.target.value })} /></label>
+        <label className="ats-field"><span className="ats-field-l">Beskrivning</span><textarea className="ats-inp" rows={2} value={st.desc} onChange={(e) => setSt({ desc: e.target.value })} /></label>
+        <label className="ats-field"><span className="ats-field-l">Stegtyp</span><select className="ats-inp" value={st.type} disabled={st.system} onChange={(e) => setSt({ type: e.target.value })}>{Object.entries(STAGE_TYPES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>
+        <label className="ats-field"><span className="ats-field-l">Färg</span><div className="ats-tagcolors">{STAGE_COLORS.map((c) => <button key={c} className={"ats-tagcolor" + (st.color === c ? " is-on" : "")} style={{ background: c }} onClick={() => setSt({ color: c })} aria-label={"Färg " + c} />)}</div></label>
+        <label className="ats-cb-check"><input type="checkbox" checked={!st.hidden} onChange={(e) => setSt({ hidden: !e.target.checked })} /> Aktivt (syns i pipelinen)</label>
+
+        <h3 className="ats-pb-h">Ansvar</h3>
+        <label className="ats-field"><span className="ats-field-l">Tilldelning vid inträde</span><select className="ats-inp" value={st.assign} onChange={(e) => setSt({ assign: e.target.value })}>
+          <option value="keep">Behåll nuvarande ansvarig</option><option value="job">Tilldela jobbets rekryterare</option><option value="stage">Tilldela stegets ansvariga</option><option value="none">Lämna otilldelad</option></select></label>
+        <label className="ats-field"><span className="ats-field-l">Stegets ansvariga</span><select className="ats-inp" value={st.ownerId || ""} onChange={(e) => setSt({ ownerId: e.target.value || null })}><option value="">Ingen</option>{state.team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+
+        <h3 className="ats-pb-h">SLA</h3>
+        <label className="ats-field"><span className="ats-field-l">Läge</span><select className="ats-inp" value={st.sla.mode} onChange={(e) => setSt({ sla: { ...st.sla, mode: e.target.value } })}>
+          <option value="none">Ingen SLA</option><option value="soft">Rekommenderad tid</option><option value="hard">Hård deadline</option></select></label>
+        {st.sla.mode !== "none" && <>
+          <div className="ats-tpl-two">
+            <label className="ats-field"><span className="ats-field-l">Antal dagar</span><input className="ats-inp" type="number" min="0" max="90" value={st.sla.days} onChange={(e) => setSt({ sla: { ...st.sla, days: Number(e.target.value) } })} /></label>
+            <label className="ats-field"><span className="ats-field-l">Kalender</span><select className="ats-inp" value={st.sla.calendar} onChange={(e) => setSt({ sla: { ...st.sla, calendar: e.target.value } })}><option value="business">Arbetsdagar</option><option value="calendar">Kalenderdagar</option></select></label>
+          </div>
+          <div className="ats-tpl-two">
+            <label className="ats-field"><span className="ats-field-l">Varna X dagar innan</span><input className="ats-inp" type="number" min="0" max="30" value={st.sla.warnDays} onChange={(e) => setSt({ sla: { ...st.sla, warnDays: Number(e.target.value) } })} /></label>
+            <label className="ats-field"><span className="ats-field-l">Eskalera till</span><select className="ats-inp" value={st.sla.escalate} onChange={(e) => setSt({ sla: { ...st.sla, escalate: e.target.value } })}><option value="owner">Ansvarig</option><option value="manager">Rekryterande chef</option><option value="admin">Admin</option><option value="none">Ingen</option></select></label>
+          </div>
+        </>}
+
+        <h3 className="ats-pb-h">Stegkrav</h3>
+        {[["reason", "Anledning krävs"], ["comment", "Intern kommentar krävs"], ["assessment", "Bedömning (betyg) krävs"], ["interview", "Bokad intervju krävs"], ["cv", "CV måste finnas"], ["contact", "Giltig e-post måste finnas"], ["owner", "Ansvarig måste vara vald"]].map(([k, l]) =>
+          <label key={k} className="ats-cb-check"><input type="checkbox" checked={!!st.req[k]} onChange={(e) => setSt({ req: { ...st.req, [k]: e.target.checked } })} /> {l}</label>)}
+        <label className="ats-field"><span className="ats-field-l">Endast dessa roller får flytta hit</span><div className="ats-chipset">{Object.keys(ROLE_LABEL).map((r) => {
+          const on = (st.req.roles || []).includes(r);
+          return <button key={r} className={"ats-selchip" + (on ? " is-on" : "")} onClick={() => setSt({ req: { ...st.req, roles: on ? st.req.roles.filter((x) => x !== r) : [...(st.req.roles || []), r] } })}>{ROLE_LABEL[r]}</button>;
+        })}</div>{(st.req.roles || []).length === 0 && <span className="ats-af-help">Tomt = alla med behörighet att fatta beslut.</span>}</label>
+
+        <h3 className="ats-pb-h">Beteende</h3>
+        <label className="ats-cb-check"><input type="checkbox" checked={st.allowBack} onChange={(e) => setSt({ allowBack: e.target.checked })} /> Kandidater får flyttas tillbaka härifrån</label>
+        <label className="ats-cb-check"><input type="checkbox" checked={st.allowBulk} onChange={(e) => setSt({ allowBulk: e.target.checked })} /> Bulkflytt tillåten hit</label>
+        <label className="ats-cb-check"><input type="checkbox" checked={st.confirm} onChange={(e) => setSt({ confirm: e.target.checked })} /> Kräv extra bekräftelse</label>
+      </div>
+    </aside>}
+
+    {adding && <Modal title="Lägg till steg" onClose={() => setAdding(false)}><div className="ats-erase">
+      <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Teknisk intervju" autoFocus /></label>
+      <label className="ats-field"><span className="ats-field-l">Stegtyp</span><select className="ats-inp" value={newType} onChange={(e) => setNewType(e.target.value)}>{Object.entries(STAGE_TYPES).filter(([, v]) => !v.final).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>
+      <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setAdding(false)}>Avbryt</button>
+        <button className="ats-btn-primary" disabled={!newName.trim()} onClick={() => { D({ type: "STAGE_ADD", jobId: job.id, name: newName.trim(), type: newType }); setNewName(""); setAdding(false); }}><Plus size={15} /> Lägg till</button></div>
+    </div></Modal>}
+
+    {archFor && <Modal title="Steget innehåller kandidater" onClose={() => setArchFor(null)}><div className="ats-erase">
+      <p><b>{archFor.name}</b> innehåller <b>{countIn(archFor.id)} kandidater</b>. Du måste bestämma vart de ska flyttas — systemet lämnar aldrig kandidater i ett steg som inte går att tolka.</p>
+      <label className="ats-field"><span className="ats-field-l">Flytta kandidaterna till</span><select className="ats-inp" value={moveTo} onChange={(e) => setMoveTo(e.target.value)}><option value="">Välj steg…</option>{liveStages(pipe).filter((x) => x.id !== archFor.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></label>
+      <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setArchFor(null)}>Avbryt ändringen</button>
+        <button className="ats-btn-primary" disabled={!moveTo} onClick={() => { D({ type: "STAGE_ARCHIVE", jobId: job.id, id: archFor.id, moveTo }); setArchFor(null); showToast({ kind: "ok", msg: "Steget arkiverades och kandidaterna flyttades" }); }}>Flytta och arkivera</button></div>
+    </div></Modal>}
+
+    {showVers && <Modal title="Pipelineversioner" onClose={() => setShowVers(false)} wide><div className="ats-erase">
+      {(pipe.versions || []).length === 0 ? <div className="ats-col-empty" style={{ padding: 24 }}>Ingen version publicerad än.</div>
+        : <div className="ats-sa-rows">{pipe.versions.map((v) => <div key={v.v} className="ats-sa-row is-card">
+          <div className="ats-sa-main"><b>Version {v.v}</b><span>{v.stages.filter((x) => !x.archived).length} steg · {v.by}{v.note ? " · " + v.note : ""}</span></div>
+          <span className="ats-sa-when">{new Date(v.at).toLocaleString("sv-SE").slice(0, 16)}</span>
+          <button className="ats-ghost is-sm" onClick={() => { D({ type: "PIPE_RESTORE", jobId: job.id, v: v.v }); setShowVers(false); showToast({ kind: "ok", msg: "Återställd till v" + v.v + " — publicera för att spara" }); }}><RotateCcw size={13} /> Återställ</button>
+        </div>)}</div>}
+      <div className="ats-erase-note"><Info size={14} /> Historiska händelser behåller alltid det stegnamn som gällde när de inträffade — även om steget byter namn senare.</div>
+    </div></Modal>}
+  </div>;
 }
 /* ===================== KALENDER ===================== */
 function CalendarView({ state, D, me, showToast, setDetailId }) {
@@ -5531,6 +6190,121 @@ section.ats-cs-cta p{font-size:17px;opacity:.9;margin-bottom:28px}
   .ats-jmode{margin-left:0}
   .ats-dupgrid{grid-template-columns:1fr}
   .ats-bulkbar{position:static}
+}
+
+/* ---- Pipeline / kanban ---- */
+.ats-pipe-views{display:flex;gap:2px;background:var(--paper2);border-radius:10px;padding:3px}
+.ats-pipe-views button{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:7px;font-size:12.5px;font-weight:600;color:var(--muted);min-height:38px}
+.ats-pipe-views button.is-on{background:var(--surface);color:var(--petrol);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.ats-pipe-views em{font-style:normal;background:var(--brick);color:#fff;font-size:10px;padding:1px 6px;border-radius:9px}
+.ats-pipe-dirty{color:var(--amber);font-weight:600}
+.ats-kb{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px;scroll-snap-type:x proximity}
+.ats-kb-col{flex:0 0 292px;background:var(--paper2);border-radius:14px;display:flex;flex-direction:column;max-height:calc(100vh - 260px);scroll-snap-align:start;transition:background .15s,box-shadow .15s}
+.ats-kb-col.is-over{background:var(--petrol-soft);box-shadow:inset 0 0 0 2px var(--petrol)}
+.ats-kb-col.is-col{flex:0 0 56px}
+.ats-kb-col.is-col .ats-kb-t,.ats-kb-col.is-col .ats-kb-late,.ats-kb-col.is-col .ats-kb-warn{display:none}
+.ats-kb-h{display:flex;align-items:center;gap:8px;padding:12px 12px 10px;border-top:3px solid var(--line);border-radius:14px 14px 0 0}
+.ats-kb-collapse{color:var(--muted);padding:4px;border-radius:6px;flex-shrink:0}
+.ats-kb-t{flex:1;min-width:0}
+.ats-kb-t b{display:block;font-family:'Bricolage Grotesque';font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ats-kb-t span{font-size:11px;color:var(--muted)}
+.ats-kb-n{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--sub);background:var(--surface);padding:3px 8px;border-radius:9px;flex-shrink:0}
+.ats-kb-late{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#fff;background:var(--brick);padding:3px 7px;border-radius:9px}
+.ats-kb-warn{font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-soft);padding:3px 7px;border-radius:9px}
+.ats-kb-body{flex:1;overflow-y:auto;padding:0 10px 12px;display:flex;flex-direction:column;gap:8px}
+.ats-kb-empty{padding:20px;text-align:center;font-size:12.5px;color:var(--muted);border:1.5px dashed var(--line);border-radius:10px}
+.ats-kb-more{padding:10px;text-align:center;font-size:12px;color:var(--muted)}
+.ats-pc{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:11px 12px;cursor:grab;transition:box-shadow .14s,border-color .14s,transform .14s}
+.ats-pc:hover{border-color:var(--petrol-soft);box-shadow:0 6px 16px -10px rgba(0,0,0,.24)}
+.ats-pc:focus-visible{outline:2px solid var(--petrol);outline-offset:2px}
+.ats-pc:active{cursor:grabbing}
+.ats-pc.is-sel{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-pc.is-dense{padding:8px 10px}
+.ats-pc.is-dense .ats-pc-tags{display:none}
+.ats-pc-h{display:flex;align-items:center;gap:8px}
+.ats-pc-h input{width:15px;height:15px;accent-color:var(--petrol);flex-shrink:0}
+.ats-pc-name{flex:1;min-width:0;text-align:left;font-family:'Bricolage Grotesque';font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ats-pc-name:hover{color:var(--petrol)}
+.ats-pc-score{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--petrol);flex-shrink:0}
+.ats-pc-ko{background:var(--brick);color:#fff;padding:1px 5px;border-radius:5px;font-size:10px;font-weight:700}
+.ats-pc-meta{font-size:11px;color:var(--muted);margin-top:4px;font-family:'IBM Plex Mono',monospace}
+.ats-pc-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.ats-pc-sla,.ats-pc-warn,.ats-pc-iv,.ats-pc-rate{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;padding:3px 7px;border-radius:9px;white-space:nowrap}
+.ats-pc-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+.ats-pc-sla.is-petrol{background:var(--petrol-soft);color:var(--petrol-deep)}
+.ats-pc-sla.is-amber{background:var(--amber-soft);color:var(--amber)}
+.ats-pc-sla.is-brick{background:var(--brick-soft);color:var(--brick)}
+.ats-pc-sla.is-blue{background:var(--blue-soft);color:var(--blue)}
+.ats-pc-sla.is-muted{background:var(--paper2);color:var(--muted)}
+.ats-pc-warn{background:var(--brick-soft);color:var(--brick)}
+.ats-pc-iv{background:var(--petrol-soft);color:var(--petrol)}
+.ats-pc-rate{background:var(--gold-soft);color:var(--gold)}
+.ats-pc-move{position:absolute;top:9px;right:9px;opacity:0;padding:5px;border-radius:7px;color:var(--muted);transition:.14s}
+.ats-pc:hover .ats-pc-move,.ats-pc:focus-within .ats-pc-move{opacity:1}
+.ats-pc-move:hover{background:var(--petrol);color:#fff}
+/* Flyttpanel */
+.ats-mv{display:flex;flex-direction:column;gap:12px}
+.ats-mv-cand{display:flex;align-items:center;gap:11px;padding:12px;background:var(--paper2);border-radius:10px}
+.ats-mv-cand b{display:block;font-size:14px}
+.ats-mv-cand span{font-size:12px;color:var(--muted)}
+.ats-mv-stages{display:flex;flex-direction:column;gap:6px;max-height:250px;overflow-y:auto}
+.ats-mv-stage{display:flex;align-items:center;gap:10px;padding:12px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-align:left;transition:.14s;min-height:54px}
+.ats-mv-stage:hover:not(:disabled){border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-mv-stage.is-on{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-mv-stage.is-blocked{opacity:.55;cursor:not-allowed}
+.ats-mv-stage>div{flex:1;min-width:0}
+.ats-mv-stage b{display:block;font-size:13.5px}
+.ats-mv-stage span{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.ats-mv-dot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.ats-mv-block{display:flex;flex-direction:column;gap:8px}
+.ats-mv-block>div{display:flex;gap:10px;padding:11px 13px;background:var(--brick-soft);border-radius:10px}
+.ats-mv-block svg{color:var(--brick);flex-shrink:0;margin-top:2px}
+.ats-mv-block b{display:block;font-size:13px;color:var(--brick)}
+.ats-mv-block span{font-size:12px;color:var(--sub)}
+.ats-mv-warn{display:flex;gap:10px;padding:12px 13px;background:var(--amber-soft);border-radius:10px}
+.ats-mv-warn svg{color:var(--amber);flex-shrink:0;margin-top:2px}
+.ats-mv-warn b{display:block;font-size:13px;color:var(--gold);margin-bottom:3px}
+.ats-mv-warn span{font-size:12.5px;color:var(--sub);line-height:1.5}
+/* Stegvy + åtgärder + byggare */
+.ats-stagev-tabs{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line);margin-bottom:16px}
+.ats-stagev-tabs button{padding:12px 16px;font-size:13.5px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;min-height:46px}
+.ats-stagev-tabs button.is-on{color:var(--ink)}
+.ats-stagev-tabs em{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted)}
+.ats-stagev-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.ats-moves{margin-top:28px}
+.ats-moves h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;margin-bottom:12px}
+.ats-moves-list{display:flex;flex-direction:column;gap:6px}
+.ats-move{display:flex;align-items:center;gap:14px;padding:11px 14px;background:var(--paper2);border-radius:10px}
+.ats-move>div{flex:1;min-width:0}
+.ats-move b{font-size:13.5px}
+.ats-move span{display:block;font-size:12px;color:var(--sub)}
+.ats-pb{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:16px;align-items:start}
+.ats-pb-main{display:flex;flex-direction:column;gap:14px}
+.ats-pb-list{display:flex;flex-direction:column;gap:6px}
+.ats-pb-row{display:flex;align-items:center;gap:11px;padding:12px 14px;border:1px solid var(--line);border-radius:11px;background:var(--surface);transition:.14s}
+.ats-pb-row.is-on{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-pb-row.is-arch{opacity:.5;border-style:dashed}
+.ats-pb-dot{width:12px;height:12px;border-radius:4px;flex-shrink:0}
+.ats-pb-name{flex:1;min-width:0;text-align:left}
+.ats-pb-name b{display:block;font-size:14px}
+.ats-pb-name span{font-size:11.5px;color:var(--muted)}
+.ats-pb-n{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--sub);background:var(--paper2);padding:3px 9px;border-radius:9px}
+.ats-pb-acts{display:flex;gap:2px;flex-shrink:0}
+.ats-pb-lock{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);padding:0 8px}
+.ats-pb-publish{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:16px 18px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.ats-pb-publish b{display:block;font-size:14px}
+.ats-pb-publish span{font-size:12.5px;color:var(--muted)}
+.ats-pb-pacts{display:flex;gap:8px}
+.ats-pb-side .ats-panel{max-height:calc(100vh - 200px);overflow-y:auto}
+.ats-pb-h{font-family:'Bricolage Grotesque';font-weight:600;font-size:14px;margin-top:14px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+@media (max-width:1024px){ .ats-pb{grid-template-columns:1fr} .ats-pb-side .ats-panel{max-height:none} }
+@media (max-width:640px){
+  .ats-kb-col{flex:0 0 84vw;max-height:none}
+  .ats-pipe-views span{display:none}
+  .ats-pipe-views button{padding:9px 11px}
+  .ats-stagev-list{grid-template-columns:1fr}
+  .ats-pc-move{opacity:1}
+  .ats-move{flex-wrap:wrap}
 }
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
