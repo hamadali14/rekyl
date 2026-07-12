@@ -12,7 +12,7 @@ import {
   Video, CalendarX
 } from "lucide-react";
 
-// ---- Supabase (via REST, inget paket kravs) ----
+// ---- Supabase (via REST, inget paket krävs) ----
 const SB_URL = import.meta.env.VITE_SUPABASE_URL || "https://eaditrzamfhylmlrmkca.supabase.co";
 const SB_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhZGl0cnphbWZoeWxtbHJta2NhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODA4NjgsImV4cCI6MjA5OTE1Njg2OH0.jFzfeVow0P-46Vj7G-yTVjA1IHp8UN-Ts8Us719rYmE";
 const sbEnabled = !!(SB_URL && SB_KEY);
@@ -166,7 +166,7 @@ const TEMPLATES = [
       FIELD.skills(18, ["Omvårdnad", "Dokumentation", "Hantering av utåtagerande", "Handledning", "Körkort"]),
       mk({ id: "license", label: "Har B-körkort", block: "yesno", type: "boolean", icon: "ShieldCheck", knockout: true, koValue: false, required: true, scored: false, step: 4 }),
       FIELD.avail(16), FIELD.salary(12, 31000), FIELD.motivation(), FIELD.cv()] },
-  { id: "sköterska", name: "Sjuksköterska", icon: "ShieldCheck", desc: "Legitimation kravs",
+  { id: "sköterska", name: "Sjuksköterska", icon: "ShieldCheck", desc: "Legitimation krävs",
     build: () => [FIELD.years(20, 3), FIELD.cert("legitimation", "Legitimerad sjuksköterska"), FIELD.skills(24, ["Akutsjukvård", "Journalsystem", "Läkemedelshantering", "Handledning", "Engelska"]), FIELD.weekend(), FIELD.avail(16), FIELD.salary(14, 38000), FIELD.motivation(), FIELD.cv()] },
   { id: "utvecklare", name: "Utvecklare (Frontend)", icon: "Code2", desc: "React, TypeScript, distans",
     build: () => [FIELD.years(26, 5), FIELD.skills(30, ["React", "TypeScript", "Node.js", "CSS/Tailwind", "Testning", "Git"]), FIELD.edu(7), FIELD.avail(11), FIELD.salary(14, 52000), FIELD.mode(6, "Distans"), FIELD.motivation(), FIELD.cv()] },
@@ -311,15 +311,15 @@ const MSG_LABEL = { queued: "Köad", sending: "Skickar…", sent: "Skickad", fai
 /* ---------- Meddelandemallar (variabler enligt spec) ---------- */
 const DEFAULT_TEMPLATES = [
   { id: "t_received", name: "Tack för ansökan", trigger: "received", active: true, subject: "Tack för din ansökan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}} hos {{companyName}}. Vi har tagit emot den och går igenom alla ansökningar löpande. Du hör från oss.\n\nVänliga hälsningar,\n{{hrName}}\n{{companyName}}" },
-  { id: "t_shortlist", name: "Intressant profil", trigger: "shortlist", active: true, subject: "Din ansökan till {{jobTitle}} går vidare", body: "Hej {{candidateName}},\n\nVi tycker din profil verkar intressant för {{jobTitle}} hos {{companyName}} och vill garna ta det vidare. Vi återkommer inom kort med nästa steg.\n\nVänliga hälsningar,\n{{hrName}}" },
-  { id: "t_interview", name: "Boka intervju", trigger: "interview", active: true, subject: "Vi vill träffa dig - {{jobTitle}}", body: "Hej {{candidateName}},\n\nVi vill garna träffa dig för {{jobTitle}} hos {{companyName}}. Förslag på tid: {{interviewTime}}. Passar det, eller föreslår du en annan tid?\n\nSvara på detta mejl så bokar vi.\n\nVänliga hälsningar,\n{{hrName}}\n{{hrEmail}}" },
+  { id: "t_shortlist", name: "Intressant profil", trigger: "shortlist", active: true, subject: "Din ansökan till {{jobTitle}} går vidare", body: "Hej {{candidateName}},\n\nVi tycker din profil verkar intressant för {{jobTitle}} hos {{companyName}} och vill gärna ta det vidare. Vi återkommer inom kort med nästa steg.\n\nVänliga hälsningar,\n{{hrName}}" },
+  { id: "t_interview", name: "Boka intervju", trigger: "interview", active: true, subject: "Vi vill träffa dig - {{jobTitle}}", body: "Hej {{candidateName}},\n\nVi vill gärna träffa dig för {{jobTitle}} hos {{companyName}}. Förslag på tid: {{interviewTime}}. Passar det, eller föreslår du en annan tid?\n\nSvara på detta mejl så bokar vi.\n\nVänliga hälsningar,\n{{hrName}}\n{{hrEmail}}" },
   { id: "t_reserve", name: "Reservlista", trigger: "reserve", active: true, subject: "Din ansökan - {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}}. Vi har lagt din profil på var reservlista och hör av oss om en passande roll blir aktuell.\n\nVänliga hälsningar,\n{{hrName}}" },
   { id: "t_reject", name: "Avslag", trigger: "reject", active: true, subject: "Besked om din ansökan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}} hos {{companyName}}. Den har gången går vi vidare med andra kandidater ({{rejectionReason}}). Vi önskar dig lycka till framöver.\n\nVänliga hälsningar,\n{{hrName}}" },
   { id: "t_completion", name: "Begär komplettering", trigger: "completion", active: true, subject: "Komplettering behövs - {{jobTitle}}", body: "Hej {{candidateName}},\n\nDin ansökan ser bra ut, men vi saknar: {{missingField}}. Kan du komplettera genom att svara på detta mejl?\n\nTack,\n{{hrName}}" },
-  { id: "t_offer", name: "Erbjudande", trigger: "offer", active: true, subject: "Erbjudande - {{jobTitle}} hos {{companyName}}", body: "Hej {{candidateName}},\n\nVi är glada att erbjuda dig rollen som {{jobTitle}} hos {{companyName}}. Vi mejlar detaljerna separat. Hör garna av dig till {{hrName}} på {{hrEmail}} vid frågor.\n\nVarmt välkommen!\n{{hrName}}" },
+  { id: "t_offer", name: "Erbjudande", trigger: "offer", active: true, subject: "Erbjudande - {{jobTitle}} hos {{companyName}}", body: "Hej {{candidateName}},\n\nVi är glada att erbjuda dig rollen som {{jobTitle}} hos {{companyName}}. Vi mejlar detaljerna separat. Hör gärna av dig till {{hrName}} på {{hrEmail}} vid frågor.\n\nVarmt välkommen!\n{{hrName}}" },
   { id: "t_interview_reminder", name: "Påminnelse intervju", trigger: "interview_reminder", active: true, subject: "Påminnelse: intervju imorgon - {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn vänlig påminnelse om din intervju för {{jobTitle}} hos {{companyName}}.\n\nTid: {{interviewTime}}\n\nHör av dig om något har kommit emellan.\n\nVänliga hälsningar,\n{{hrName}}\n{{companyName}}" },
   { id: "t_interview_cancelled", name: "Avbokad intervju", trigger: "interview_cancelled", active: true, subject: "Ändrad tid - {{jobTitle}}", body: "Hej {{candidateName}},\n\nTyvärr måste vi avboka den inplanerade intervjun för {{jobTitle}} hos {{companyName}}. Kalenderinbjudan tas bort automatiskt.\n\nVi återkommer med ett nytt tidsförslag så snart vi kan.\n\nVänliga hälsningar,\n{{hrName}}\n{{companyName}}" },
-  { id: "t_reminder", name: "Paminnelse", trigger: "reminder", active: true, subject: "Paminnelse - {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn liten paminnelse angående din ansökan till {{jobTitle}}. Hör av dig till {{hrName}} ({{hrEmail}}) om du har frågor.\n\nVänliga hälsningar,\n{{hrName}}" },
+  { id: "t_reminder", name: "Påminnelse", trigger: "reminder", active: true, subject: "Påminnelse — {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn liten paminnelse angående din ansökan till {{jobTitle}}. Hör av dig till {{hrName}} ({{hrEmail}}) om du har frågor.\n\nVänliga hälsningar,\n{{hrName}}" },
 ];
 function renderTpl(str, vars) { return (str || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k) => (vars[k] == null || vars[k] === "" ? `{{${k}}}` : vars[k])); }
 function tplVars(state, cand, job) { return { candidateName: cand.name, jobTitle: job.title, companyName: state.org.companyName, hrName: state.org.hrName, hrEmail: state.org.hrEmail, missingField: (missingInfo(job, cand)[0] || "efterfrågad uppgift"), interviewTime: cand.interviewTime || state.org.defaultInterviewTime, rejectionReason: cand.reason ? cand.reason.toLowerCase() : "andra kandidater gick vidare" }; }
@@ -562,37 +562,245 @@ function CookieBanner() {
   if (dismissed) return null;
   return <div className="ats-cookie"><div className="ats-cookie-in"><span><Info size={15} /> Vi använder endast nödvändiga cookies och lokal lagring för att appen ska fungera — inga spårningscookies.</span><button className="ats-btn-primary" onClick={() => { store.set("rekyl_cookie", true); setDismissed(true); }}>Okej</button></div></div>;
 }
-function LandingPage({ onGetStarted }) {
-  const features = [
-    { icon: "Blocks", title: "WYSIWYG-formulärbyggare", desc: "Dra och släpp fält, bygg flerstegsformulär och se förhandsvisningen live. Formuläret ÄR scoringmotorn." },
-    { icon: "Gauge", title: "Deterministisk scoring", desc: "Viktade kriterier, knockout-regler och villkor. Helt regelbaserat och transparent — ingen AI, inga svarta lådor." },
-    { icon: "Layers", title: "Swipe-kandidatkort", desc: "Gå igenom kandidater som ett kortlek. Matchning, styrkor, risker och rekommenderad åtgärd på varje kort." },
-    { icon: "TrendingUp", title: "Källkvalitet", desc: "Se kvalitet per kanal — inte bara antal. Vilken kanal ger dina bästa kandidater?" },
-    { icon: "Share2", title: "Spårbara länkar", desc: "En egen ansökningssida per jobb. Publicera på LinkedIn, Indeed och Platsbanken med source-tracking." },
-    { icon: "Users", title: "Team och roller", desc: "Bjud in kollegor med roller. Beslut, kommentarer och team-röster — allt loggat och spårbart." },
+function LandingPage({ onLogin, onSignup }) {
+  const [open, setOpen] = useState(false);
+  const [faq, setFaq] = useState(0);
+  const go = (id) => { setOpen(false); const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+
+  const PLANS = [
+    { n: "Start", p: "0 kr", per: "för din första tjänst", d: "Kom igång och rekrytera en roll hela vägen.", f: ["1 aktiv tjänst", "Formulärbyggare och poängsättning", "Publik jobbannons", "Automatiska mejl"], cta: "Skapa konto" },
+    { n: "Pro", p: "790 kr", per: "per månad", d: "För dig som rekryterar löpande.", f: ["25 aktiva tjänster", "Team och roller", "Kalender med intervjubokning", "Källkvalitet och rapporter", "Påminnelser till kandidater"], cta: "Börja med Pro", hot: true },
+    { n: "Enterprise", p: "Offert", per: "efter behov", d: "För större organisationer med egna krav.", f: ["Obegränsat antal tjänster", "Revisionslogg och behörighetsstyrning", "Egna mallar och processer", "Support med namngiven kontakt"], cta: "Kontakta oss" },
   ];
-  const compliance = ["GDPR-ready", "ISO/IEC 27001-aligned", "ISO 27701-aligned", "SOC 2-aligned", "WCAG / EN 301 549-aligned", "EU AI Act-aware", "ePrivacy / cookie-compliant", "DPA / SCC-stöd", "Revisionsloggar", "Rollbaserad åtkomst", "Kryptering", "EU-hosting"];
-  const pricing = [
-    { name: "Start", price: "0 kr", per: "för alltid", features: ["1 aktivt jobb", "Formulärbyggare", "Spårbara länkar", "Deterministisk scoring"], cta: "Kom igång gratis" },
-    { name: "Pro", price: "790 kr", per: "/mån", features: ["Obegränsat med jobb", "Team och roller", "Källkvalitet och rapporter", "Egen branding", "CV-lagring"], cta: "Kom igång", featured: true },
-    { name: "Enterprise", price: "Kontakt", per: "", features: ["White-label", "SSO och SCIM", "Anpassad datahantering", "Prioriterad support", "SLA"], cta: "Kontakta oss" },
+  const FAQS = [
+    ["Använder Rekyl AI för att välja bort kandidater?", "Nej. Poängsättningen är helt deterministisk: du bestämmer själv vilka frågor som väger tungt, vad som är ett absolut krav och var tröskeln går. Samma svar ger alltid samma poäng, och varje poäng kan brytas ned och förklaras. Ingen modell gissar åt dig."],
+    ["Var lagras kandidaternas uppgifter?", "Inom EU. Kandidaten samtycker vid ansökan, samtycket tidsstämplas, och du kan radera all data för en kandidat eller en hel tjänst permanent — inklusive uppladdade filer."],
+    ["Kan jag börja utan att prata med en säljare?", "Ja. Du skapar konto, väljer en branschmall och har en publicerad annons med fungerande ansökningslänk på några minuter."],
+    ["Skickas mejlen till kandidaterna på riktigt?", "Ja. När du fattar ett beslut går rätt mejl iväg direkt, och du ser den verkliga leveransstatusen — inte ett påstående om att något är \"köat\"."],
+    ["Vad händer med kandidater vi inte går vidare med?", "De får besked. Det är hela poängen med att ha mallar kopplade till varje beslut: ingen blir kvar i tystnad."],
   ];
-  const faq = [
-    { q: "Använder ni AI för att sortera kandidater?", a: "Nej. All scoring är deterministisk och regelbaserad — viktade kriterier, knockout och villkor som du själv styr. Helt transparent och förklarbart." },
-    { q: "Var lagras kandidaternas data?", a: "Inom EU. Varje företags data är strikt isolerad, skyddad av rollbaserad åtkomst och kryptering." },
-    { q: "Kan flera personer jobba i samma arbetsyta?", a: "Ja. Bjud in kollegor med roller (admin, rekryterare, chef, insyn). Allt loggas och blir spårbart." },
-    { q: "Fungerar det med LinkedIn och Platsbanken?", a: "Ja. Varje jobb får en egen ansökningssida med spårbar länk. Plattformarna länkar dit — du ser exakt varifrån varje kandidat kom." },
-  ];
+
   return <div className="ats-root"><Style /><div className="ats-lp">
-    <header className="ats-lp-nav"><div className="ats-lp-nav-in"><div className="ats-lp-logo"><span className="ats-logo">R</span> Rekyl</div><div className="ats-lp-nav-r"><button className="ats-lp-link" onClick={onGetStarted}>Logga in</button><button className="ats-btn-primary" onClick={onGetStarted}>Kom igång</button></div></div></header>
-    <section className="ats-lp-hero"><div className="ats-lp-hero-in"><span className="ats-lp-badge"><Sparkles size={13} /> Regelbaserad ATS — ingen AI, full transparens</span><h1>Rekrytera smartare med formulär som <span className="ats-lp-hl">är</span> scoringmotorn.</h1><p>Bygg smarta ansökningsformulär, poängsätt kandidater deterministiskt och gå igenom dem som ett kortlek. Byggt för svenska HR-team som vill ha kontroll, spårbarhet och fart.</p><div className="ats-lp-hero-cta"><button className="ats-btn-primary ats-lp-cta-lg" onClick={onGetStarted}>Kom igång gratis <ArrowRight size={16} /></button><span className="ats-lp-cta-note">Inget kort krävs</span></div><div className="ats-lp-metrics"><div><b>0%</b><span>AI-gissningar</span></div><div><b>100%</b><span>Förklarbara beslut</span></div><div><b>EU</b><span>Datahosting</span></div></div></div></section>
-    <section className="ats-lp-sec ats-lp-prob"><div className="ats-lp-sec-in ats-lp-prob-grid"><div className="ats-lp-prob-col"><div className="ats-lp-prob-h is-bad"><X size={14} /> Utan Rekyl</div><ul>{["Manuell sållning i mejl och kalkylark", "Svårt att motivera varför en kandidat valdes", "Ingen koll på vilken kanal som funkar", "Svarta AI-lådor du inte kan förklara"].map((t, i) => <li key={i}><X size={14} /> {t}</li>)}</ul></div><div className="ats-lp-prob-col is-good"><div className="ats-lp-prob-h is-ok"><Check size={14} /> Med Rekyl</div><ul>{["Automatisk, viktad poängsättning från formuläret", "Varje beslut spårbart med tydlig motivering", "Källkvalitet per kanal — inte bara antal", "Regelbaserat och transparent, helt utan AI"].map((t, i) => <li key={i}><Check size={14} /> {t}</li>)}</ul></div></div></section>
-    <section className="ats-lp-sec"><div className="ats-lp-sec-in"><div className="ats-lp-sec-head"><h2>Allt du behöver för modern rekrytering</h2><p>Från ansökan till anställning — i ett verktyg.</p></div><div className="ats-lp-features">{features.map((f, i) => { const Ic = ICONS[f.icon] || Sparkles; return <div key={i} className="ats-lp-feat"><span className="ats-lp-feat-ic"><Ic size={20} /></span><b>{f.title}</b><p>{f.desc}</p></div>; })}</div></div></section>
-    <section className="ats-lp-sec ats-lp-trust"><div className="ats-lp-sec-in"><div className="ats-lp-sec-head"><h2>Byggt för förtroende och efterlevnad</h2><p>Säkerhet och dataskydd i grunden. Vi visar var vi står — hederligt.</p></div><div className="ats-lp-badges">{compliance.map((c, i) => <span key={i} className="ats-lp-cbadge"><ShieldCheck size={13} /> {c}</span>)}</div><p className="ats-lp-trust-note">Neutrala "aligned/ready"-märkningar visar att produkten är byggd enligt respektive ramverk. Officiella certifieringslogotyper visas endast vid faktisk certifiering.</p></div></section>
-    <section className="ats-lp-sec ats-lp-pricing"><div className="ats-lp-sec-in"><div className="ats-lp-sec-head"><h2>Enkel prissättning</h2><p>Börja gratis. Väx när du är redo.</p></div><div className="ats-lp-plans">{pricing.map((p, i) => <div key={i} className={"ats-lp-plan" + (p.featured ? " is-featured" : "")}>{p.featured && <span className="ats-lp-plan-tag">Populärast</span>}<div className="ats-lp-plan-name">{p.name}</div><div className="ats-lp-plan-price"><b>{p.price}</b><span>{p.per}</span></div><ul>{p.features.map((f, j) => <li key={j}><Check size={14} /> {f}</li>)}</ul><button className={p.featured ? "ats-btn-primary" : "ats-ghost"} onClick={onGetStarted}>{p.cta}</button></div>)}</div></div></section>
-    <section className="ats-lp-sec"><div className="ats-lp-sec-in ats-lp-faq"><div className="ats-lp-sec-head"><h2>Vanliga frågor</h2></div>{faq.map((f, i) => <details key={i} className="ats-jp-faq-item"><summary>{f.q}</summary><p>{f.a}</p></details>)}</div></section>
-    <section className="ats-lp-final"><div className="ats-lp-final-in"><h2>Redo att rekrytera smartare?</h2><p>Skapa ditt konto på under en minut.</p><button className="ats-btn-primary ats-lp-cta-lg" onClick={onGetStarted}>Kom igång gratis <ArrowRight size={16} /></button></div></section>
-    <footer className="ats-lp-foot"><div className="ats-lp-foot-in"><div className="ats-lp-logo"><span className="ats-logo">R</span> Rekyl</div><span>Regelbaserad ATS för svenska HR-team · EU-hosting · Ingen AI</span></div></footer><CookieBanner />
+    <header className="ats-lp-nav">
+      <div className="ats-lp-nav-in">
+        <div className="ats-lp-brand"><span className="ats-logo">R</span> Rekyl</div>
+        <nav className="ats-lp-links">
+          <button onClick={() => go("produkt")}>Produkt</button>
+          <button onClick={() => go("sa-funkar")}>Så funkar det</button>
+          <button onClick={() => go("priser")}>Priser</button>
+          <button onClick={() => go("fragor")}>Vanliga frågor</button>
+        </nav>
+        <div className="ats-lp-nav-r">
+          <button className="ats-lp-login" onClick={onLogin}>Logga in</button>
+          <button className="ats-lp-cta" onClick={onSignup}>Kom igång</button>
+        </div>
+        <button className="ats-lp-burger" onClick={() => setOpen(!open)}>{open ? <X size={20} /> : <MenuIcon size={20} />}</button>
+      </div>
+      {open && <div className="ats-lp-mob">
+        <button onClick={() => go("produkt")}>Produkt</button>
+        <button onClick={() => go("sa-funkar")}>Så funkar det</button>
+        <button onClick={() => go("priser")}>Priser</button>
+        <button onClick={() => go("fragor")}>Vanliga frågor</button>
+        <button className="ats-lp-login" onClick={onLogin}>Logga in</button>
+        <button className="ats-lp-cta" onClick={onSignup}>Kom igång</button>
+      </div>}
+    </header>
+
+    <section className="ats-lp-hero">
+      <div className="ats-lp-hero-in">
+        <span className="ats-lp-eyebrow">Rekryteringsverktyg för svenska arbetsgivare</span>
+        <h1>Sluta läsa CV:n i blindo.<br /><em>Låt kraven göra jobbet.</em></h1>
+        <p className="ats-lp-sub">Du bestämmer vad som faktiskt spelar roll för rollen. Rekyl poängsätter varje ansökan efter det — transparent, deterministiskt och utan AI som gissar. Kvar blir en kö du kan beta av på en kafferast.</p>
+        <div className="ats-lp-hero-acts">
+          <button className="ats-lp-cta is-lg" onClick={onSignup}>Skapa konto gratis <ArrowRight size={18} /></button>
+          <button className="ats-lp-ghost" onClick={() => go("sa-funkar")}>Se hur det fungerar</button>
+        </div>
+        <div className="ats-lp-trust">
+          <span><Check size={14} /> Ingen AI som sållar</span>
+          <span><Check size={14} /> Data inom EU</span>
+          <span><Check size={14} /> Igång på minuter</span>
+        </div>
+      </div>
+      <div className="ats-lp-shot">
+        <div className="ats-lp-shot-bar"><span /><span /><span /><b>rekyl.app/queue</b></div>
+        <div className="ats-lp-shot-body">
+          <div className="ats-lp-card">
+            <div className="ats-lp-card-top">
+              <div><b>Amina Karlsson</b><span>Säljare · via LinkedIn</span></div>
+              <ScoreDial value={92} knockout={false} size={58} />
+            </div>
+            <div className="ats-lp-bars">
+              <div className="ats-lp-bar"><span>Nyckelkompetenser</span><i style={{ width: "100%" }} /><b>+30</b></div>
+              <div className="ats-lp-bar"><span>Års erfarenhet</span><i style={{ width: "82%" }} /><b>+24</b></div>
+              <div className="ats-lp-bar is-weak"><span>Löneanspråk</span><i style={{ width: "46%" }} /><b>+8</b></div>
+            </div>
+            <div className="ats-lp-rec"><Sparkles size={14} /> Rekommenderad åtgärd: <b>Boka intervju</b></div>
+          </div>
+          <div className="ats-lp-deck">
+            <div className="ats-lp-deck-c" /><div className="ats-lp-deck-c" />
+          </div>
+          <div className="ats-lp-swipe"><span><X size={13} /> Avslag</span><span className="is-mid"><PauseCircle size={13} /> Reserv</span><span className="is-ok"><Check size={13} /> Shortlist</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section className="ats-lp-problem">
+      <div className="ats-lp-wrap">
+        <div className="ats-lp-prob-l">
+          <span className="ats-lp-eyebrow is-dark">Problemet</span>
+          <h2>Trettio ansökningar. Ingen struktur. Magkänsla får avgöra.</h2>
+        </div>
+        <div className="ats-lp-prob-r">
+          <p>De flesta mindre arbetsgivare rekryterar i mejlkorgen. Ansökningar blandas med fakturor, någon får aldrig svar, och beslutet fattas på den som råkade skriva bäst personligt brev.</p>
+          <p>Det är inte slarv. Det är att verktygen antingen kostar som en heltidstjänst eller kräver en HR-avdelning för att sättas upp.</p>
+        </div>
+      </div>
+    </section>
+
+    <section className="ats-lp-sec" id="sa-funkar">
+      <div className="ats-lp-wrap">
+        <span className="ats-lp-eyebrow is-dark">Så funkar det</span>
+        <h2 className="ats-lp-h2">Fyra steg från annons till anställd</h2>
+        <div className="ats-lp-flow">
+          {[["Bestäm kraven", "Välj en branschmall och justera vad som väger tungt. Sätt absoluta krav — de sållar bort automatiskt."],
+            ["Publicera annonsen", "Du får en publik jobbsida och en delningslänk per kanal, så du ser var de bästa kandidaterna kommer ifrån."],
+            ["Beta av kön", "Varje ansökan poängsätts direkt. Du ser styrkor, risker och en rekommendation — och swipar dig igenom."],
+            ["Boka och besked", "Beslut skickar rätt mejl automatiskt. Intervjun landar i kandidatens kalender."]].map(([t, d], i) =>
+            <div key={t} className="ats-lp-flow-i"><span className="ats-lp-flow-n">{String(i + 1).padStart(2, "0")}</span><h3>{t}</h3><p>{d}</p></div>)}
+        </div>
+      </div>
+    </section>
+
+    <section className="ats-lp-split" id="produkt">
+      <div className="ats-lp-wrap ats-lp-split-in">
+        <div className="ats-lp-split-t">
+          <span className="ats-lp-eyebrow is-dark">Formuläret</span>
+          <h2>Formuläret är också din urvalsmotor</h2>
+          <p>Dra in fälten du bryr dig om: års erfarenhet, körkort, tillgänglighet, kompetenser. Sätt vikt på det som väger tungt och markera vad som är ett absolut krav.</p>
+          <ul className="ats-lp-checks">
+            <li><Check size={15} /> Dra och släpp, ingen kod</li>
+            <li><Check size={15} /> Följdfrågor som bara visas när de behövs</li>
+            <li><Check size={15} /> Absoluta krav sållar automatiskt</li>
+          </ul>
+        </div>
+        <div className="ats-lp-split-v">
+          <div className="ats-lp-mini">
+            <div className="ats-lp-mini-h"><Blocks size={14} /> Formulärbyggare</div>
+            <div className="ats-lp-fields">
+              <div className="ats-lp-field"><GripVertical size={13} /><span>Års erfarenhet</span><em>vikt 24</em></div>
+              <div className="ats-lp-field is-sel"><GripVertical size={13} /><span>Nyckelkompetenser</span><em>vikt 28</em></div>
+              <div className="ats-lp-field"><GripVertical size={13} /><span>Har B-körkort</span><em className="is-ko">krav</em></div>
+              <div className="ats-lp-field"><GripVertical size={13} /><span>Kan börja</span><em>vikt 12</em></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section className="ats-lp-split is-flip">
+      <div className="ats-lp-wrap ats-lp-split-in">
+        <div className="ats-lp-split-v">
+          <div className="ats-lp-mini">
+            <div className="ats-lp-mini-h"><Globe size={14} /> Publik jobbannons</div>
+            <div className="ats-lp-jobmini">
+              <div className="ats-lp-jm-title">Säljare till Nordpuls</div>
+              <div className="ats-lp-jm-chips"><span>Växjö</span><span>Hybrid</span><span>Heltid</span></div>
+              <div className="ats-lp-jm-line" /><div className="ats-lp-jm-line is-s" />
+              <div className="ats-lp-jm-btn">Ansök till tjänsten</div>
+            </div>
+          </div>
+        </div>
+        <div className="ats-lp-split-t">
+          <span className="ats-lp-eyebrow is-dark">Kandidatupplevelsen</span>
+          <h2>En annons kandidaten faktiskt vill söka på</h2>
+          <p>Egen jobbsida med er profil, tydlig process och ett ansökningsflöde som fungerar lika bra i mobilen. Kandidaten ser aldrig poäng, krav eller interna bedömningar — bara en trygg och tydlig ansökan.</p>
+          <ul className="ats-lp-checks">
+            <li><Check size={15} /> Ett steg i taget, inget krångel</li>
+            <li><Check size={15} /> CV-uppladdning som bara fungerar</li>
+            <li><Check size={15} /> Alla får besked — ingen lämnas i tystnad</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section className="ats-lp-strip">
+      <div className="ats-lp-wrap ats-lp-strip-in">
+        {[[CalendarClock, "Kalender och bokning", "Boka intervju, skicka kalenderinbjudan och påminn kandidaten dagen innan — automatiskt."],
+          [TrendingUp, "Källkvalitet", "Se vilken kanal som ger bäst kandidater, inte bara flest."],
+          [Users, "Team och roller", "Bjud in kollegor med rätt behörighet. Allt som händer loggas."]].map(([I, t, d]) =>
+          <div key={t} className="ats-lp-strip-i"><I size={18} /><h3>{t}</h3><p>{d}</p></div>)}
+      </div>
+    </section>
+
+    <section className="ats-lp-safe">
+      <div className="ats-lp-wrap ats-lp-safe-in">
+        <div>
+          <span className="ats-lp-eyebrow">Trygghet</span>
+          <h2>Ansvarsfullt med kandidaters uppgifter</h2>
+          <p>Rekrytering handlar om människor. Därför är Rekyl byggt för att du ska kunna förklara varje beslut — och radera allt när det är dags.</p>
+        </div>
+        <div className="ats-lp-safe-list">
+          {[["Deterministisk poängsättning", "Varje poäng går att bryta ned och förklara. Ingen modell gissar."],
+            ["Data inom EU", "Kandidatuppgifter och filer lagras inom EU."],
+            ["Samtycke och radering", "Samtycket tidsstämplas. Radering tar bort allt, även uppladdade filer."],
+            ["Rollstyrd åtkomst", "Admin, rekryterare, chef eller insyn — var och en ser bara det de ska."],
+            ["Revisionslogg", "Beslut, mejl och ändringar loggas med vem och när."]].map(([t, d]) =>
+            <div key={t} className="ats-lp-safe-i"><ShieldCheck size={15} /><div><b>{t}</b><span>{d}</span></div></div>)}
+        </div>
+      </div>
+    </section>
+
+    <section className="ats-lp-sec" id="priser">
+      <div className="ats-lp-wrap">
+        <span className="ats-lp-eyebrow is-dark">Priser</span>
+        <h2 className="ats-lp-h2">Börja gratis. Betala när du växer.</h2>
+        <div className="ats-lp-plans">{PLANS.map((p) => <div key={p.n} className={"ats-lp-plan" + (p.hot ? " is-hot" : "")}>
+          {p.hot && <span className="ats-lp-plan-tag">Populärast</span>}
+          <h3>{p.n}</h3>
+          <div className="ats-lp-price"><b>{p.p}</b><span>{p.per}</span></div>
+          <p className="ats-lp-plan-d">{p.d}</p>
+          <ul>{p.f.map((f) => <li key={f}><Check size={14} /> {f}</li>)}</ul>
+          <button className={p.hot ? "ats-lp-cta is-block" : "ats-lp-ghost is-block"} onClick={onSignup}>{p.cta}</button>
+        </div>)}</div>
+        <p className="ats-lp-plans-note">Alla priser exklusive moms. Inga bindningstider.</p>
+      </div>
+    </section>
+
+    <section className="ats-lp-sec is-tight" id="fragor">
+      <div className="ats-lp-wrap ats-lp-faqwrap">
+        <span className="ats-lp-eyebrow is-dark">Vanliga frågor</span>
+        <h2 className="ats-lp-h2">Det du undrar över</h2>
+        <div className="ats-lp-faq">{FAQS.map(([q, a], i) => <div key={q} className={"ats-lp-faq-i" + (faq === i ? " is-on" : "")}>
+          <button onClick={() => setFaq(faq === i ? -1 : i)}>{q}<ChevronDown size={17} /></button>
+          {faq === i && <p>{a}</p>}
+        </div>)}</div>
+      </div>
+    </section>
+
+    <section className="ats-lp-final">
+      <div className="ats-lp-wrap ats-lp-final-in">
+        <h2>Nästa rekrytering behöver inte kännas som en gissningslek.</h2>
+        <p>Skapa konto, välj en mall och publicera din första tjänst idag.</p>
+        <button className="ats-lp-cta is-lg" onClick={onSignup}>Skapa konto gratis <ArrowRight size={18} /></button>
+        <span className="ats-lp-final-note">Inget kreditkort. Ingen demo att boka.</span>
+      </div>
+    </section>
+
+    <footer className="ats-lp-foot">
+      <div className="ats-lp-wrap ats-lp-foot-in">
+        <div className="ats-lp-foot-brand">
+          <div className="ats-lp-brand"><span className="ats-logo">R</span> Rekyl</div>
+          <p>Rekryteringsverktyget för svenska arbetsgivare som vill fatta beslut de kan förklara.</p>
+        </div>
+        <div className="ats-lp-foot-cols">
+          <div><h4>Produkt</h4><button onClick={() => go("produkt")}>Funktioner</button><button onClick={() => go("sa-funkar")}>Så funkar det</button><button onClick={() => go("priser")}>Priser</button></div>
+          <div><h4>Kom igång</h4><button onClick={onSignup}>Skapa konto</button><button onClick={onLogin}>Logga in</button><button onClick={() => go("fragor")}>Vanliga frågor</button></div>
+          <div><h4>Ansvar</h4><span>Data inom EU</span><span>GDPR-anpassad</span><span>Deterministisk poängsättning</span></div>
+        </div>
+      </div>
+      <div className="ats-lp-foot-bot"><span>© {new Date().getFullYear()} Rekyl</span><span>Byggt i Sverige</span></div>
+    </footer>
+    <CookieBanner />
   </div></div>;
 }
 function SpinnerScreen({ text }) { return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>{text || "Laddar…"}</span></div></div></div>; }
@@ -613,8 +821,8 @@ function OrgSetupScreen({ session, onReady, onLogout }) {
     <button className="ats-login-switch" onClick={onLogout}>Logga ut{session && session.email ? " (" + session.email + ")" : ""}</button>
   </div></div></div>;
 }
-function LoginScreen({ onAuthed, onBack }) {
-  const [mode, setMode] = useState("login");
+function LoginScreen({ onAuthed, onBack, start }) {
+  const [mode, setMode] = useState(start === "signup" ? "signup" : "login");
   const [email, setEmail] = useState(""); const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const submit = async () => { setErr(""); if (!email || !pw) { setErr("Fyll i e-post och lösenord."); return; } if (pw.length < 6) { setErr("Lösenordet måste vara minst 6 tecken."); return; } setBusy(true); try { if (mode === "signup") await sbSignup(email, pw); const d = await sbLogin(email, pw); onAuthed({ token: d.access_token, refresh: d.refresh_token, userId: d.user && d.user.id, email, exp: Date.now() + (d.expires_in || 3600) * 1000 }); } catch (e) { const m = (e.message || "").toLowerCase(); setErr(m.includes("invalid") && m.includes("email") ? "Supabase avvisade e-postadressen. Använd en riktig domän (din jobbmejl eller t.ex. gmail) — påhittade domäner utan mejlserver godkänns inte." : m.includes("already") || m.includes("registered") ? "Ett konto med den e-posten finns redan. Logga in i stället." : m.includes("invalid login") ? "Fel e-post eller lösenord." : (e.message || "Något gick fel.")); setBusy(false); } };
@@ -632,6 +840,7 @@ function LoginScreen({ onAuthed, onBack }) {
 }
 function PublicApply({ slug, localJobs, localOrg }) {
   const [remote, setRemote] = useState(undefined);
+  const [copied, setCopied] = useState(false);
   const source = typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("source") || null) : null;
   useEffect(() => { let alive = true; (async () => { if (sbEnabled) { const rows = await sbGet("jobs?slug=eq." + encodeURIComponent(slug) + "&published=eq.true&select=*"); if (alive) { const rr = rows && rows.length ? rows[0] : null; setRemote(rr); if (rr) sbSetUploadOrg(rr.org_id); } } else setRemote(null); })(); return () => { alive = false; }; }, [slug]);
   const localJob = localJobs.find((j) => j.slug === slug);
@@ -642,43 +851,106 @@ function PublicApply({ slug, localJobs, localOrg }) {
   if (remote === undefined) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>Laddar…</span></div></div></div>;
   if (!job) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><h2>Tjänsten hittades inte</h2><p>Länken kan vara felaktig eller så är annonsen inte publicerad än.</p></div></div></div>;
   const a = job.annons || {};
+  const meta = [a.location && ["MapPin", "Plats", a.location], a.workmode && ["Building2", "Arbetsform", a.workmode], a.employment && ["Briefcase", "Anställning", a.employment], a.salary && ["Wallet", "Lön", a.salary], a.start && ["CalendarClock", "Start", a.start], a.deadline && ["Bell", "Sista ansökningsdag", a.deadline]].filter(Boolean);
   const IC = { MapPin, Building2, Briefcase, Wallet, CalendarClock, Bell };
-  const chips = [a.location && ["MapPin", a.location], a.workmode && ["Building2", a.workmode], a.employment && ["Briefcase", a.employment], a.salary && ["Wallet", a.salary], a.start && ["CalendarClock", "Start: " + a.start], a.deadline && ["Bell", "Sök senast: " + a.deadline]].filter(Boolean);
   const scrollForm = () => { const el = document.getElementById("apply"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
-  return <div className="ats-root"><Style /><div className="ats-jobpage">
-    <header className="ats-jp-top"><div className="ats-jp-top-in"><div className="ats-jp-brand"><span className="ats-logo">{(company || "R")[0]}</span> {company}</div><button className="ats-btn-primary" onClick={scrollForm}>Ansök nu</button></div></header>
-    <div className="ats-jp-main">
-      <div className="ats-jp-hero"><span className="ats-jp-eyebrow">Ledig tjänst{source && <span className="ats-jp-src">via {source}</span>}</span><h1>{job.title}</h1><div className="ats-jp-company"><Building2 size={15} /> {company}</div>{chips.length > 0 && <div className="ats-jp-chips">{chips.map(([ic, txt], i) => { const I = IC[ic]; return <span key={i} className="ats-jp-chip"><I size={14} /> {txt}</span>; })}</div>}{a.pitch && <p className="ats-jp-pitch">{a.pitch}</p>}<button className="ats-btn-primary ats-jp-cta" onClick={scrollForm}>Ansök nu <ArrowRight size={15} /></button></div>
-      <div className="ats-jp-grid">
-        <div className="ats-jp-content">
-          {a.description && <section className="ats-jp-sec"><h2>Om rollen</h2><p className="ats-jp-prose">{a.description}</p></section>}
-          {a.requirements && a.requirements.length > 0 && <section className="ats-jp-sec"><h2>Vi söker dig som</h2><ul className="ats-jp-list">{a.requirements.map((r, i) => <li key={i}><Check size={15} /> {r}</li>)}</ul></section>}
-          {a.meriter && a.meriter.length > 0 && <section className="ats-jp-sec"><h2>Meriterande</h2><ul className="ats-jp-list is-plus">{a.meriter.map((r, i) => <li key={i}><Plus size={15} /> {r}</li>)}</ul></section>}
-          {a.benefits && a.benefits.length > 0 && <section className="ats-jp-sec"><h2>Vi erbjuder</h2><div className="ats-jp-benefits">{a.benefits.map((b, i) => <span key={i} className="ats-jp-benefit"><Sparkles size={13} /> {b}</span>)}</div></section>}
-          {a.process && a.process.length > 0 && <section className="ats-jp-sec"><h2>Rekryteringsprocessen</h2><ol className="ats-jp-steps">{a.process.map((p, i) => <li key={i}><span className="ats-jp-stepn">{i + 1}</span><span>{p}</span></li>)}</ol></section>}
-          {a.faq && a.faq.length > 0 && <section className="ats-jp-sec"><h2>Vanliga frågor</h2><div className="ats-jp-faq">{a.faq.map((f, i) => <details key={i} className="ats-jp-faq-item"><summary>{f.q}</summary><p>{f.a}</p></details>)}</div></section>}
+  const share = async () => {
+    const url = typeof window !== "undefined" ? window.location.href : "";
+    try { if (navigator.share) { await navigator.share({ title: job.title + " · " + company, url }); return; } } catch (e) { /* avbruten delning */ }
+    copyText(url); setCopied(true); setTimeout(() => setCopied(false), 2200);
+  };
+  const Section = ({ id, title, children }) => <section className="ats-jp-sec" id={id}><h2>{title}</h2>{children}</section>;
+  const initial = (company || "R").trim()[0].toUpperCase();
+
+  return <div className="ats-root"><Style /><div className="ats-jp">
+    <header className="ats-jp-nav">
+      <div className="ats-jp-nav-in">
+        <div className="ats-jp-brand"><span className="ats-jp-mark">{initial}</span><span className="ats-jp-co">{company}</span></div>
+        <div className="ats-jp-nav-r">
+          <button className="ats-jp-share" onClick={share} title="Dela annonsen">{copied ? <><Check size={15} /> Kopierad</> : <><Share2 size={15} /> Dela</>}</button>
+          <button className="ats-jp-cta is-sm" onClick={scrollForm}>Ansök</button>
         </div>
-        <aside className="ats-jp-side">
-          <div className="ats-jp-form" id="apply"><h2>Ansök nu</h2><p className="ats-jp-form-sub">Fyll i formuläret – tar bara någon minut.</p><ApplyForm job={job} D={() => {}} org={org} showToast={() => {}} onSubmit={sbEnabled ? submitFn : undefined} source={source} /></div>
-          {(a.contact && (a.contact.name || a.contact.email)) && <div className="ats-jp-contact"><div className="ats-jp-contact-h"><UserCheck size={14} /> Frågor om tjänsten?</div>{a.contact.name && <div className="ats-jp-contact-n">{a.contact.name}</div>}{a.contact.email && <a href={"mailto:" + a.contact.email}>{a.contact.email}</a>}</div>}
-        </aside>
       </div>
+    </header>
+
+    <section className="ats-jp-hero">
+      <div className="ats-jp-hero-in">
+        <div className="ats-jp-hero-txt">
+          <div className="ats-jp-kicker">{[job.team, a.location].filter(Boolean).join(" · ") || company}</div>
+          <h1>{job.title}</h1>
+          {a.pitch && <p className="ats-jp-pitch">{a.pitch}</p>}
+          <div className="ats-jp-hero-acts">
+            <button className="ats-jp-cta" onClick={scrollForm}>Ansök till tjänsten <ArrowRight size={17} /></button>
+            {a.deadline && <span className="ats-jp-deadline"><Bell size={14} /> Sök senast {a.deadline}</span>}
+          </div>
+        </div>
+        <div className="ats-jp-hero-card">
+          <div className="ats-jp-hc-top"><span className="ats-jp-mark is-lg">{initial}</span><div><b>{company}</b><span>{a.workmode || "Arbetsplats"}{a.location ? " · " + a.location : ""}</span></div></div>
+          <dl className="ats-jp-hc-meta">{meta.slice(0, 4).map(([ic, l, v]) => { const I = IC[ic]; return <div key={l}><dt><I size={13} /> {l}</dt><dd>{v}</dd></div>; })}</dl>
+        </div>
+      </div>
+    </section>
+
+    <div className="ats-jp-main">
+      <article className="ats-jp-article">
+        {a.description && <Section title="Om rollen"><p className="ats-jp-lead">{a.description}</p></Section>}
+        {a.requirements && a.requirements.length > 0 && <Section title="Vi söker dig som">
+          <ul className="ats-jp-list">{a.requirements.map((r, i) => <li key={i}><Check size={15} /> <span>{r}</span></li>)}</ul>
+        </Section>}
+        {a.meriter && a.meriter.length > 0 && <Section title="Meriterande">
+          <ul className="ats-jp-list is-soft">{a.meriter.map((r, i) => <li key={i}><Star size={14} /> <span>{r}</span></li>)}</ul>
+        </Section>}
+        {a.benefits && a.benefits.length > 0 && <Section title="Vi erbjuder">
+          <div className="ats-jp-benefits">{a.benefits.map((b, i) => <div key={i} className="ats-jp-benefit"><Sparkles size={14} /> {b}</div>)}</div>
+        </Section>}
+        {a.process && a.process.length > 0 && <Section title="Så går rekryteringen till">
+          <ol className="ats-jp-steps">{a.process.map((p, i) => <li key={i}><span>{i + 1}</span><div>{p}</div></li>)}</ol>
+        </Section>}
+        {a.faq && a.faq.length > 0 && <Section title="Vanliga frågor">
+          <div className="ats-jp-faq">{a.faq.map((f, i) => <details key={i}><summary>{f.q}<ChevronDown size={16} /></summary><p>{f.a}</p></details>)}</div>
+        </Section>}
+        {!a.description && (!a.requirements || !a.requirements.length) && <Section title="Om rollen"><p className="ats-jp-lead">Vi söker en {job.title.toLowerCase()} till {company}. Fyll i formuläret nedan så hör vi av oss.</p></Section>}
+      </article>
+
+      <aside className="ats-jp-side">
+        <div className="ats-jp-sidecard">
+          <h3>Om tjänsten</h3>
+          <dl className="ats-jp-facts">{meta.map(([ic, l, v]) => { const I = IC[ic]; return <div key={l}><dt><I size={13} /> {l}</dt><dd>{v}</dd></div>; })}</dl>
+          <button className="ats-jp-cta is-block" onClick={scrollForm}>Ansök nu</button>
+        </div>
+        {(a.contact && (a.contact.name || a.contact.email)) && <div className="ats-jp-sidecard">
+          <h3>Frågor om rollen?</h3>
+          <div className="ats-jp-contact">
+            <span className="ats-jp-avatar">{(a.contact.name || company)[0].toUpperCase()}</span>
+            <div><b>{a.contact.name || company}</b>{a.contact.email && <a href={"mailto:" + a.contact.email}>{a.contact.email}</a>}</div>
+          </div>
+        </div>}
+        <div className="ats-jp-sidecard is-quiet">
+          <h3>Din ansökan</h3>
+          <p>Vi läser varje ansökan och hör av oss oavsett hur det går. Dina uppgifter används bara för den här rekryteringen.</p>
+        </div>
+      </aside>
     </div>
-    <footer className="ats-jp-foot"><span>Drivs av Rekyl{!sbEnabled && " · förhandsläge"}</span><span>Dina uppgifter hanteras enligt GDPR.</span></footer>
+
+    <section className="ats-jp-apply" id="apply">
+      <div className="ats-jp-apply-in">
+        <ApplyForm job={job} org={{ ...org, companyName: company }} onSubmit={submitFn} source={source} />
+      </div>
+    </section>
+
+    <footer className="ats-jp-foot">
+      <div className="ats-jp-foot-in">
+        <div className="ats-jp-brand"><span className="ats-jp-mark">{initial}</span><span className="ats-jp-co">{company}</span></div>
+        <span className="ats-jp-foot-note">Rekryteras med Rekyl · Dina uppgifter hanteras enligt GDPR</span>
+      </div>
+    </footer>
+
+    <div className="ats-jp-mobar">
+      <div><b>{job.title}</b><span>{a.location || company}</span></div>
+      <button className="ats-jp-cta is-sm" onClick={scrollForm}>Ansök</button>
+    </div>
   </div></div>;
 }
-const TOUR_STEPS = [
-  { center: true, view: "dashboard", title: "Välkommen till Rekyl", body: "En snabb rundtur på under en minut genom de viktigaste funktionerna. Du kan hoppa över när som helst." },
-  { target: "nav-dashboard", view: "dashboard", side: "right", title: "Översikt", body: "Din startsida: kön att beta av, snittmatchning och portfölj över alla tjänster." },
-  { target: "nav-jobs", view: "jobs", side: "right", title: "Tjänster", body: "Hantera alla tjänster på ett ställe — status, publicering, kandidater per tjänst, duplicera och arkivera." },
-  { target: "nav-form", view: "form", side: "right", title: "Formulärbyggaren", body: "Dra och släpp fält för att bygga ansökningsformuläret. Formuläret är också din scoringmotor — vikter, knockout och villkor styr du här." },
-  { target: "nav-queue", view: "queue", side: "right", title: "Kön", body: "Gå igenom kandidater som ett kortlek och swipa för beslut. Rätt mejl köas automatiskt och allt loggas." },
-  { target: "nav-calendar", view: "calendar", side: "right", title: "Kalender", body: "Alla bokade intervjuer på ett ställe — med krockvarning, ombokning och avbokning. Kandidaten får en riktig kalenderinbjudan." },
-  { target: "nav-sources", view: "sources", side: "right", title: "Källkvalitet", body: "Se vilken kanal som ger dina bästa kandidater — snittmatchning, inte bara antal ansökningar." },
-  { target: "nav-team", view: "team", side: "right", title: "Team och roller", body: "Bjud in kollegor med roller (admin, rekryterare, chef, insyn). All aktivitet blir spårbar i revisionsloggen." },
-  { target: "new-job", side: "left", title: "Skapa en tjänst", body: "Här skapar du en ny tjänst från en färdig branschmall — scoring och kandidatkort förladdas automatiskt." },
-  { center: true, view: "dashboard", title: "Klart!", body: "Nu är du redo. Skapa din första riktiga tjänst eller utforska fritt — du hittar rundturen igen via hjälpknappen uppe till vänster." },
-];
 function ProductTour({ steps, onClose, setView }) {
   const [i, setI] = useState(0);
   const [rect, setRect] = useState(null);
@@ -802,7 +1074,7 @@ export default function App() {
 
   const pubMatch = typeof window !== "undefined" ? window.location.pathname.match(/^\/j\/([^/]+)/) : null;
   if (pubMatch) return <PublicApply slug={decodeURIComponent(pubMatch[1])} localJobs={state.jobs} localOrg={state.org} />;
-  if (sbEnabled && !session) return authView === "login" ? <LoginScreen onAuthed={login} onBack={() => setAuthView("landing")} /> : <LandingPage onGetStarted={() => setAuthView("login")} />;
+  if (sbEnabled && !session) return authView === "landing" ? <LandingPage onLogin={() => setAuthView("login")} onSignup={() => setAuthView("signup")} /> : <LoginScreen onAuthed={login} start={authView} onBack={() => setAuthView("landing")} />;
   if (sbEnabled && session && !orgChecked) return <SpinnerScreen text="Laddar…" />;
   if (sbEnabled && session && orgChecked && !org) return <OrgSetupScreen session={session} onReady={(o) => { setOrg(o); dispatch({ type: "SET_ME", id: session.userId, email: session.email, role: o.role }); }} onLogout={logout} />;
   if (sbEnabled && session && org && !loaded) return <SpinnerScreen text="Synkar din data…" />;
@@ -813,7 +1085,7 @@ export default function App() {
       <Style />
       <div className={"ats-app" + (pinned ? " is-pinned" : "")}>
         <aside className="ats-side">
-          <div className="ats-side-top"><div className="ats-brand"><span className="ats-logo">R</span><span className="ats-lbl ats-brandtxt">Rekyl</span></div><div className="ats-side-top-btns"><button className="ats-help" onClick={() => setTourOpen(true)} title="Rundtur"><HelpCircle size={15} /></button><button className="ats-pin" onClick={togglePin} title={pinned ? "Las upp meny" : "Las fast meny"}>{pinned ? <Pin size={15} /> : <PinOff size={15} />}</button></div></div>
+          <div className="ats-side-top"><div className="ats-brand"><span className="ats-logo">R</span><span className="ats-lbl ats-brandtxt">Rekyl</span></div><div className="ats-side-top-btns"><button className="ats-help" onClick={() => setTourOpen(true)} title="Rundtur"><HelpCircle size={15} /></button><button className="ats-pin" onClick={togglePin} title={pinned ? "Lås upp menyn" : "Lås fast menyn"}>{pinned ? <Pin size={15} /> : <PinOff size={15} />}</button></div></div>
           <nav className="ats-nav">{navList.map((n) => <button key={n.id} data-tour={"nav-" + n.id} className={"ats-side-item" + (view === n.id ? " is-active" : "")} onClick={() => go(n.id)}><n.icon size={18} strokeWidth={2} /><span className="ats-lbl">{n.label}</span></button>)}</nav>
           <div className="ats-side-foot"><Menu trigger={<button className="ats-side-user"><span className="ats-avatar is-sm">{me.initials}</span><span className="ats-lbl ats-side-userinfo"><b>{me.name}</b><small>{ROLE_LABEL[me.role]}</small></span></button>}><div className="ats-menu-label">{me.name}</div>{me.email && <div style={{ padding: "0 12px 7px", fontSize: 11, color: "var(--muted)" }}>{me.email} · {ROLE_LABEL[me.role]}</div>}{sbEnabled && session && <><div className="ats-menu-sep" /><button className="ats-menu-item is-danger" onClick={logout}><LogOut size={14} /> Logga ut</button></>}</Menu></div>
         </aside>
@@ -856,8 +1128,8 @@ export default function App() {
 }
 
 function NewJobModal({ onClose, onCreate }) { const [title, setTitle] = useState(""); const [tmpl, setTmpl] = useState(TEMPLATES[0].id); return <Modal title="Ny tjänst" onClose={onClose} wide><div className="ats-nj"><label className="ats-field"><span className="ats-field-l">Titel</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="t.ex. Innesäljare Göteborg" /></label><div className="ats-field-l" style={{ marginTop: 4 }}>Starta från mall — scoring, knockout och kandidatkort forladdas automatiskt</div><div className="ats-tmplgrid">{TEMPLATES.map((t) => { const Ic = ICONS[t.icon] || Briefcase; return <button key={t.id} className={"ats-tmpl" + (tmpl === t.id ? " is-on" : "")} onClick={() => setTmpl(t.id)}><span className="ats-tmpl-ic"><Ic size={16} /></span><b>{t.name}</b><span>{t.desc}</span></button>; })}</div><button className={"ats-send" + (title.trim().length > 1 ? "" : " is-off")} onClick={() => title.trim().length > 1 && onCreate(title.trim(), tmpl)}>Skapa tjänst <ArrowRight size={16} /></button></div></Modal>; }
-function ReasonModal({ onClose, onPick }) { return <Modal title="Anledning till avslag" onClose={onClose}><div className="ats-reasons">{REASONS.map((r) => <button key={r} className="ats-reason" onClick={() => onPick(r)}>{r}</button>)}</div><p className="ats-reason-note">Anledningen sparas i kandidatens timeline och i statistiken, och anvands i avslagsmejlet ({"{{rejectionReason}}"}).</p></Modal>; }
-function PrintModal({ doc, onClose }) { return <div className="ats-printwrap"><div className="ats-print-toolbar"><span>{doc.title}</span><div><button className="ats-ghost" onClick={() => window.print()}><Download size={15} /> Skriv ut / PDF</button><button className="ats-ghost" onClick={onClose}><X size={15} /> Stang</button></div></div><div className="ats-printdoc">{doc.node}</div></div>; }
+function ReasonModal({ onClose, onPick }) { return <Modal title="Anledning till avslag" onClose={onClose}><div className="ats-reasons">{REASONS.map((r) => <button key={r} className="ats-reason" onClick={() => onPick(r)}>{r}</button>)}</div><p className="ats-reason-note">Anledningen sparas i kandidatens timeline och i statistiken, och används i avslagsmejlet ({"{{rejectionReason}}"}).</p></Modal>; }
+function PrintModal({ doc, onClose }) { return <div className="ats-printwrap"><div className="ats-print-toolbar"><span>{doc.title}</span><div><button className="ats-ghost" onClick={() => window.print()}><Download size={15} /> Skriv ut / PDF</button><button className="ats-ghost" onClick={onClose}><X size={15} /> Stäng</button></div></div><div className="ats-printdoc">{doc.node}</div></div>; }
 
 /* ===================== SUPERADMIN ===================== */
 function SuperadminView({ showToast, session }) {
@@ -1172,7 +1444,7 @@ function DashboardView({ allScored, state, D, cands, job, setView, setDetailId }
         <div className="ats-quickgrid">
           <div className="ats-quick"><span className="ats-quick-v">{job.stats.submitted}/{job.stats.started}</span><span className="ats-quick-l">Skickade / pabörjade</span></div>
           <div className="ats-quick"><span className="ats-quick-v">{Math.round((job.stats.submitted / Math.max(1, job.stats.started)) * 100)}%</span><span className="ats-quick-l">Completion rate</span></div>
-          <div className="ats-quick"><span className="ats-quick-v">{cands.filter((c) => c.missing.length).length}</span><span className="ats-quick-l">Ofullstandiga</span></div>
+          <div className="ats-quick"><span className="ats-quick-v">{cands.filter((c) => c.missing.length).length}</span><span className="ats-quick-l">Ofullständiga</span></div>
           <div className="ats-quick"><span className="ats-quick-v">{cands.filter((c) => c.status === "hired").length}</span><span className="ats-quick-l">Anställda</span></div>
         </div>
       </div>
@@ -1389,7 +1661,7 @@ function CandidateDrawer({ cand, state, D, me, job, onClose, showToast, setPrint
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><Star size={12} /> Betyg</div><Stars value={c.rating} readOnly={!canComment} onSet={(n) => D({ type: "RATE", id: c.id, rating: n })} /></div>
         <div className="ats-drawer-sec"><div className="ats-drawer-sec-h"><FileText size={12} /> Kommentarer</div>{c.comments.map((m) => { const a = state.team.find((r) => r.id === m.by); return <div key={m.id} className="ats-cmt"><span className="ats-avatar is-xs">{a?.initials || "?"}</span><div><b>{a?.name}</b> <small>{timeAgo(m.at)}</small><p>{m.text}</p></div></div>; })}{canComment && <CommentBox onAdd={(t) => D({ type: "COMMENT", id: c.id, text: t })} />}</div>
 
-        {canMsg && <div className="ats-drawer-msgs">{c.missing.length > 0 && <button className="ats-ghost" onClick={() => sendMsg("completion")}><Bell size={14} /> Begär komplettering</button>}<button className="ats-ghost" onClick={() => sendMsg("reminder")}><Mail size={14} /> Paminnelse</button><button className="ats-ghost" onClick={() => { toggleCompare(c.id); showToast({ kind: "ok", msg: compareIds.includes(c.id) ? "Borttagen från jämförelse" : "Tillagd i jämförelse" }); }}><GitCompare size={14} /> {compareIds.includes(c.id) ? "I jämförelse" : "Jämför"}</button></div>}
+        {canMsg && <div className="ats-drawer-msgs">{c.missing.length > 0 && <button className="ats-ghost" onClick={() => sendMsg("completion")}><Bell size={14} /> Begär komplettering</button>}<button className="ats-ghost" onClick={() => sendMsg("reminder")}><Mail size={14} /> Påminnelse</button><button className="ats-ghost" onClick={() => { toggleCompare(c.id); showToast({ kind: "ok", msg: compareIds.includes(c.id) ? "Borttagen från jämförelse" : "Tillagd i jämförelse" }); }}><GitCompare size={14} /> {compareIds.includes(c.id) ? "I jämförelse" : "Jämför"}</button></div>}
       </div>
       {c.consentAt && <div className="ats-consent"><ShieldCheck size={12} /> Samtycke registrerat {new Date(c.consentAt).toLocaleDateString("sv-SE")} · rätt att bli glömd tillgänglig</div>}
       <div className="ats-drawer-foot">
@@ -1517,35 +1789,125 @@ function ApplyForm({ job, D, org, showToast, onSubmit, source }) {
   const set = (id, v) => setAnswers((a) => ({ ...a, [id]: v }));
   const visible = job.criteria.filter((c) => isVisible(c, answers));
   const pageNums = getPages(job).filter((n) => visible.some((c) => c.step === n));
-  const steps = [{ key: "base", label: "Grunduppgifter" }, ...pageNums.map((n) => ({ key: n, label: pageLabel(job, n) })), { key: "gdpr", label: "Skicka in" }];
+  const steps = [{ key: "base", label: "Om dig" }, ...pageNums.map((n) => ({ key: n, label: pageLabel(job, n) })), { key: "gdpr", label: "Skicka in" }];
   const cur = steps[step];
-  const live = useMemo(() => scoreCandidate(job, answers), [job, answers]);
   const stepFields = typeof cur.key === "number" ? visible.filter((c) => c.step === cur.key) : [];
   const nameOk = base.name.trim().length > 1; const emailOk = validEmail(base.email.trim());
-  const canNext = cur.key === "base" ? (nameOk && emailOk) : cur.key === "gdpr" ? consent : stepFields.filter((c) => c.required).every((c) => { const v = answers[c.id]; return !(v == null || v === "" || (Array.isArray(v) && v.length === 0)); });
+  const missing = stepFields.filter((c) => c.required).filter((c) => { const v = answers[c.id]; return v == null || v === "" || (Array.isArray(v) && v.length === 0); });
+  const canNext = cur.key === "base" ? (nameOk && emailOk) : cur.key === "gdpr" ? consent : missing.length === 0;
+  const pct = Math.round((step / (steps.length - 1)) * 100);
+  const topRef = useRef(null);
+  const goStep = (n) => { setStep(n); setTouched(false); if (topRef.current) topRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const next = () => { if (!canNext) { setTouched(true); return; } goStep(step + 1); };
 
-  if (sent) return <div className="ats-applied"><div className="ats-empty-badge"><CheckCircle2 size={22} /></div><h3>Tack {base.name.split(" ")[0]}!</h3><p>Din ansökan till {job.title} är mottagen. En bekräftelse har köats till {base.email}. Ansökan syns nu i kön med {live.total}% matchning.</p><button className="ats-ghost" onClick={() => { setSent(false); setAnswers({}); setBase({ name: "", email: "", phone: "" }); setConsent(false); setStep(0); setTouched(false); }}>Fyll i en till</button></div>;
+  const submit = () => {
+    if (!nameOk || !emailOk || !consent) { setTouched(true); return; }
+    const cand = { id: "c" + uid(), name: base.name.trim(), email: base.email.trim(), phone: base.phone.trim() || null, source: source || (onSubmit ? "Länk" : "Förhandsvisning"), answers, consentAt: Date.now() };
+    if (onSubmit) onSubmit(cand); else D({ type: "ADD_CANDIDATE", cand, jobId: job.id });
+    setSent(true);
+    if (showToast) showToast({ kind: "ok", msg: "Ansökan skickad" });
+  };
 
-  const submit = () => { if (!nameOk || !emailOk || !consent) { setTouched(true); return; } const cand = { id: "c" + uid(), name: base.name.trim(), email: base.email.trim(), phone: base.phone.trim() || null, source: source || (onSubmit ? "Länk" : "Förhandsvisning"), answers, rating: 0, comments: [], reviews: {}, status: "new", starred: false, appliedAt: Date.now(), reason: null, consentAt: consent ? Date.now() : null, formVersion: job.version }; if (onSubmit) onSubmit(cand); else D({ type: "APPLY", cand }); setSent(true); showToast && showToast({ kind: "ok", msg: "Ansökan inskickad · bekräftelsemejl köat" }); };
+  if (sent) return (
+    <div className="ats-af-done">
+      <div className="ats-af-done-mark"><Check size={26} /></div>
+      <h2>Tack {base.name.trim().split(" ")[0]}, vi har tagit emot din ansökan</h2>
+      <p>Din ansökan till <b>{job.title}</b> hos {org.companyName} är registrerad. Du får en bekräftelse till <b>{base.email}</b>.</p>
+      <div className="ats-af-nextup">
+        <h3>Vad händer nu?</h3>
+        <ol>
+          <li><span>1</span><div><b>Vi läser din ansökan</b><small>Alla ansökningar gås igenom av en människa.</small></div></li>
+          <li><span>2</span><div><b>Du får besked</b><small>Vi hör av oss oavsett hur det går — du behöver inte undra.</small></div></li>
+          <li><span>3</span><div><b>Nästa steg</b><small>Går du vidare bokar vi en tid som passar dig.</small></div></li>
+        </ol>
+      </div>
+      {org.hrEmail && <p className="ats-af-done-foot">Har du frågor? Hör av dig till {org.hrName ? org.hrName + ", " : ""}<a href={"mailto:" + org.hrEmail}>{org.hrEmail}</a>.</p>}
+    </div>
+  );
 
   return (
-    <div className="ats-apply">
-      <div className="ats-apply-top"><div><div className="ats-apply-co">{org.companyName}</div><div className="ats-apply-title">{job.title}</div></div><div className="ats-apply-live"><ScoreDial value={live.total} knockout={live.knockout} size={54} /><span>live-matchning</span></div></div>
-      <div className="ats-apply-steps">{steps.map((s, i) => <div key={String(s.key)} className={"ats-apply-step" + (i === step ? " is-on" : i < step ? " is-done" : "")}>{i < step ? <Check size={11} /> : i + 1}<span>{s.label}</span></div>)}</div>
-      <div className="ats-apply-body">
-        {cur.key === "base" && <div className="ats-apply-fields">
-          <label className="ats-apply-f"><span>Namn *</span><input className={"ats-inp" + (touched && !nameOk ? " is-err" : "")} value={base.name} onChange={(e) => setBase((b) => ({ ...b, name: e.target.value }))} onBlur={() => setTouched(true)} />{touched && !nameOk && <span className="ats-err-txt">Ange ditt namn.</span>}</label>
-          <label className="ats-apply-f"><span>E-post *</span><input className={"ats-inp" + (touched && !emailOk ? " is-err" : "")} value={base.email} onChange={(e) => setBase((b) => ({ ...b, email: e.target.value }))} onBlur={() => setTouched(true)} placeholder="namn@mejl.se" />{touched && !emailOk && <span className="ats-err-txt">Ange en giltig e-postadress — den anvands för all kommunikation kring ansökan.</span>}</label>
-          <label className="ats-apply-f"><span>Telefon</span><input className="ats-inp" value={base.phone} onChange={(e) => setBase((b) => ({ ...b, phone: e.target.value }))} placeholder="070-…" /></label>
-        </div>}
-        {typeof cur.key === "number" && <div className="ats-apply-fields">{stepFields.map((c) => <div key={c.id} className="ats-apply-f"><span>{c.label} {c.required && "*"} {c.knockout && <span className="ats-reqko">krav</span>}</span><FieldInput c={c} value={answers[c.id]} onChange={(v) => set(c.id, v)} />{c.help && <small className="ats-fieldhelp">{c.help}</small>}</div>)}</div>}
-        {cur.key === "gdpr" && <div className="ats-apply-gdpr"><label className={"ats-gdpr-check" + (touched && !consent ? " is-err" : "")}><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /><span>Jag samtycker till att {org.companyName} sparar mina uppgifter och kontaktar mig via e-post om min ansökan. *</span></label>{touched && !consent && <span className="ats-err-txt">Samtycke kravs för att skicka in ansökan.</span>}<p className="ats-gdpr-text">Din e-postadress och dina svar sparas för att behandla ansökan och kontakta dig kring rekryteringen: bekräftelse, statusuppdateringar, kompletteringar, intervju och besked. Uppgifterna anvands enbart för detta syfte och delas inte för marknadsforing.</p></div>}
+    <div className="ats-af" ref={topRef}>
+      <div className="ats-af-head">
+        <span className="ats-af-eyebrow">Ansökan</span>
+        <h2>Ansök till {job.title}</h2>
+        <p>Det tar ett par minuter. Du kan inte spara halvvägs, så ha gärna ditt CV till hands.</p>
       </div>
-      <div className="ats-apply-nav">{step > 0 ? <button className="ats-ghost" onClick={() => setStep((s) => s - 1)}><ChevronLeft size={15} /> Bakat</button> : <span />}{step < steps.length - 1 ? <button className={"ats-send" + (canNext ? "" : " is-off")} onClick={() => { setTouched(true); if (canNext) setStep((s) => s + 1); }}>Nästa <ArrowRight size={15} /></button> : <button className={"ats-send" + (canNext ? "" : " is-off")} onClick={submit}>Skicka ansökan <Send size={15} /></button>}</div>
+
+      <div className="ats-af-prog">
+        <div className="ats-af-bar"><div className="ats-af-bar-fill" style={{ width: pct + "%" }} /></div>
+        <div className="ats-af-steps">{steps.map((st, i) => (
+          <button key={String(st.key)} className={"ats-af-step" + (i === step ? " is-on" : i < step ? " is-done" : "")} onClick={() => i < step && goStep(i)} disabled={i > step} type="button">
+            <span className="ats-af-dot">{i < step ? <Check size={12} /> : i + 1}</span>
+            <span className="ats-af-slabel">{st.label}</span>
+          </button>
+        ))}</div>
+      </div>
+
+      <div className="ats-af-body">
+        {cur.key === "base" && <div className="ats-af-fields">
+          <label className="ats-af-f">
+            <span className="ats-af-l">Namn <i>*</i></span>
+            <input className={"ats-inp" + (touched && !nameOk ? " is-err" : "")} value={base.name} onChange={(e) => setBase((b) => ({ ...b, name: e.target.value }))} placeholder="För- och efternamn" autoComplete="name" />
+            {touched && !nameOk && <span className="ats-af-err"><CircleAlert size={13} /> Fyll i ditt namn.</span>}
+          </label>
+          <label className="ats-af-f">
+            <span className="ats-af-l">E-post <i>*</i></span>
+            <input className={"ats-inp" + (touched && !emailOk ? " is-err" : "")} type="email" value={base.email} onChange={(e) => setBase((b) => ({ ...b, email: e.target.value }))} placeholder="din@epost.se" autoComplete="email" />
+            {touched && !emailOk ? <span className="ats-af-err"><CircleAlert size={13} /> Ange en giltig e-postadress.</span> : <span className="ats-af-help">Hit skickar vi besked om din ansökan.</span>}
+          </label>
+          <label className="ats-af-f">
+            <span className="ats-af-l">Telefon</span>
+            <input className="ats-inp" type="tel" value={base.phone} onChange={(e) => setBase((b) => ({ ...b, phone: e.target.value }))} placeholder="070-123 45 67" autoComplete="tel" />
+            <span className="ats-af-help">Frivilligt, men gör det lättare att nå dig.</span>
+          </label>
+        </div>}
+
+        {typeof cur.key === "number" && <div className="ats-af-fields">
+          {stepFields.map((c) => {
+            const empty = touched && c.required && (answers[c.id] == null || answers[c.id] === "" || (Array.isArray(answers[c.id]) && answers[c.id].length === 0));
+            return <div key={c.id} className={"ats-af-f" + (empty ? " is-err" : "")}>
+              <span className="ats-af-l">{c.label} {c.required && <i>*</i>}</span>
+              {c.help && <span className="ats-af-help is-top">{c.help}</span>}
+              <FieldInput c={c} value={answers[c.id]} onChange={(v) => set(c.id, v)} />
+              {empty && <span className="ats-af-err"><CircleAlert size={13} /> Den här frågan behöver besvaras.</span>}
+            </div>;
+          })}
+          {stepFields.length === 0 && <p className="ats-af-help">Inga frågor i det här steget.</p>}
+        </div>}
+
+        {cur.key === "gdpr" && <div className="ats-af-fields">
+          <div className="ats-af-review">
+            <h3>Innan du skickar</h3>
+            <div className="ats-af-rrow"><span>Namn</span><b>{base.name || "—"}</b></div>
+            <div className="ats-af-rrow"><span>E-post</span><b>{base.email || "—"}</b></div>
+            {base.phone && <div className="ats-af-rrow"><span>Telefon</span><b>{base.phone}</b></div>}
+            <div className="ats-af-rrow"><span>Tjänst</span><b>{job.title}</b></div>
+          </div>
+          <div className="ats-af-gdpr">
+            <h3>Så hanterar vi dina uppgifter</h3>
+            <ul>
+              <li>Uppgifterna används enbart för den här rekryteringen — urval, kontakt och besked.</li>
+              <li>De delas aldrig vidare för marknadsföring och säljs inte.</li>
+              <li>Du kan när som helst be oss radera allt, så gör vi det.</li>
+            </ul>
+            <label className={"ats-af-consent" + (touched && !consent ? " is-err" : "")}>
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+              <span>Jag godkänner att {org.companyName} behandlar mina uppgifter för den här rekryteringen.</span>
+            </label>
+            {touched && !consent && <span className="ats-af-err"><CircleAlert size={13} /> Du behöver godkänna hanteringen för att kunna skicka in.</span>}
+          </div>
+        </div>}
+      </div>
+
+      <div className="ats-af-nav">
+        {step > 0 ? <button className="ats-af-back" onClick={() => goStep(step - 1)} type="button"><ChevronLeft size={17} /> Bakåt</button> : <span />}
+        {step < steps.length - 1
+          ? <button className="ats-af-next" onClick={next} type="button">Nästa <ChevronRight size={17} /></button>
+          : <button className="ats-af-submit" onClick={submit} type="button"><Send size={16} /> Skicka ansökan</button>}
+      </div>
     </div>
   );
 }
-
 function FormView({ job, D, me, state, showToast }) {
   const [tab, setTab] = useState("bygg"); const [selId, setSelId] = useState(job.criteria[0]?.id);
   const canEdit = can(me.role, "edit");
@@ -1780,7 +2142,7 @@ function StatsView({ cands, job, state, D, setPrintDoc }) {
   const koFields = job.criteria.filter((c) => c.knockout && c.type === "boolean").map((c) => ({ label: c.label, n: cands.filter((cc) => isVisible(c, cc.answers) && !!cc.answers[c.id] === !!c.koValue).length }));
   const missCount = {}; cands.forEach((c) => c.missing.forEach((m) => { missCount[m] = (missCount[m] || 0) + 1; }));
   const missList = Object.entries(missCount).sort((a, b) => b[1] - a[1]);
-  const funnel = [["Pabörjade", started, "neutral"], ["Skickade", submitted, "green"], ["Kvalificerade", cands.filter((c) => !c.knockout && c.total >= 55).length, "green"], ["Gick vidare", advanced, "amber"], ["Anställda", cands.filter((c) => c.status === "hired").length, "gold"]];
+  const funnel = [["Påbörjade", started, "neutral"], ["Skickade", submitted, "green"], ["Kvalificerade", cands.filter((c) => !c.knockout && c.total >= 55).length, "green"], ["Gick vidare", advanced, "amber"], ["Anställda", cands.filter((c) => c.status === "hired").length, "gold"]];
   const fMax = Math.max(1, ...funnel.map((f) => f[1]));
   return (
     <div className="ats-view">
@@ -2332,9 +2694,6 @@ function Style() {
 .ats-apply-top{display:flex;align-items:center;justify-content:space-between;padding:20px 22px;background:linear-gradient(135deg,var(--petrol),var(--petrol-deep));color:#fff}
 .ats-apply-co{font-size:12px;color:#a9d6cd;font-family:'IBM Plex Mono'}
 .ats-apply-title{font-family:'Bricolage Grotesque';font-weight:700;font-size:20px;margin-top:2px}
-.ats-apply-live{display:flex;flex-direction:column;align-items:center;gap:3px}
-.ats-apply-live .ats-dial-track{stroke:rgba(255,255,255,.2)}.ats-apply-live .ats-dial-num b{color:#fff;font-size:15px}.ats-apply-live .ats-dial-num small{color:#a9d6cd}
-.ats-apply-live>span{font-size:10px;color:#a9d6cd;font-family:'IBM Plex Mono'}
 .ats-apply-steps{display:flex;gap:6px;padding:14px 22px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .ats-apply-step{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);background:var(--paper2);padding:5px 10px;border-radius:20px}
 .ats-apply-step>span{font-weight:600}
@@ -2344,7 +2703,6 @@ function Style() {
 .ats-apply-fields{display:flex;flex-direction:column;gap:16px}
 .ats-apply-f{display:flex;flex-direction:column;gap:7px}
 .ats-apply-f>span{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
-.ats-reqko{font-size:10px;background:var(--brick-soft);color:var(--brick);padding:1px 6px;border-radius:8px;font-weight:600}
 .ats-inp{border:1px solid var(--line);border-radius:9px;padding:9px 12px;background:var(--surface);outline:none;width:100%}
 .ats-inp:focus{border-color:var(--petrol)}
 .ats-inp.is-err{border-color:var(--brick);background:var(--brick-soft)}
@@ -3005,6 +3363,388 @@ function Style() {
 .ats-sa-plan b{font-family:'Bricolage Grotesque';font-size:13px}
 .ats-sa-plan span{font-size:11.5px;color:var(--muted)}
 .ats-susp-meta{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin:8px 0 14px;font-family:'IBM Plex Mono'}
+
+/* ============ PUBLIKA SIDOR ============ */
+.ats-lp,.ats-jp{background:var(--paper);color:var(--ink);min-height:100vh;overflow-x:hidden}
+.ats-lp-wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+.ats-lp-eyebrow{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--petrol);margin-bottom:14px}
+.ats-lp-eyebrow.is-dark{color:var(--petrol)}
+.ats-lp-h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(26px,3.4vw,40px);line-height:1.15;letter-spacing:-.02em;margin-bottom:36px;max-width:640px}
+
+/* Nav */
+.ats-lp-nav{position:sticky;top:0;z-index:50;background:rgba(237,235,229,.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.ats-lp-nav-in{max-width:1120px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:28px}
+.ats-lp-brand{display:flex;align-items:center;gap:9px;font-family:'Bricolage Grotesque';font-weight:600;font-size:17px}
+.ats-lp-links{display:flex;gap:26px;margin-left:12px}
+.ats-lp-links button{font-size:13.5px;font-weight:500;color:var(--sub);transition:color .14s}
+.ats-lp-links button:hover{color:var(--ink)}
+.ats-lp-nav-r{margin-left:auto;display:flex;align-items:center;gap:10px}
+.ats-lp-login{font-size:13.5px;font-weight:600;color:var(--ink);padding:9px 14px;border-radius:9px}
+.ats-lp-login:hover{background:rgba(0,0,0,.05)}
+.ats-lp-cta{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--petrol);color:#fff;font-weight:600;font-size:14px;padding:11px 20px;border-radius:11px;transition:background .15s,transform .12s;min-height:44px}
+.ats-lp-cta:hover{background:var(--petrol-deep);transform:translateY(-1px)}
+.ats-lp-cta.is-lg{font-size:15.5px;padding:15px 26px;min-height:52px}
+.ats-lp-cta.is-block{width:100%}
+.ats-lp-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line2);background:var(--surface);color:var(--ink);font-weight:600;font-size:14.5px;padding:14px 22px;border-radius:11px;transition:border-color .15s;min-height:48px}
+.ats-lp-ghost:hover{border-color:var(--petrol)}
+.ats-lp-ghost.is-block{width:100%}
+.ats-lp-burger{display:none;margin-left:auto;padding:8px;border-radius:9px}
+.ats-lp-mob{display:none;flex-direction:column;gap:4px;padding:12px 24px 20px;border-top:1px solid var(--line)}
+.ats-lp-mob button{text-align:left;padding:12px 4px;font-size:15px;font-weight:600;color:var(--ink);min-height:46px}
+.ats-lp-mob .ats-lp-cta,.ats-lp-mob .ats-lp-login{text-align:center;margin-top:6px}
+
+/* Hero */
+.ats-lp-hero{max-width:1120px;margin:0 auto;padding:80px 24px 72px;display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+.ats-lp-hero h1{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(34px,4.6vw,58px);line-height:1.06;letter-spacing:-.03em;margin-bottom:20px}
+.ats-lp-hero h1 em{font-style:normal;color:var(--petrol)}
+.ats-lp-sub{font-size:17px;line-height:1.65;color:var(--sub);max-width:520px;margin-bottom:30px}
+.ats-lp-hero-acts{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:26px}
+.ats-lp-trust{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.ats-lp-trust span{display:inline-flex;align-items:center;gap:6px}
+.ats-lp-trust svg{color:var(--petrol)}
+
+/* Produktvisual */
+.ats-lp-shot{background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 70px -34px rgba(20,18,14,.34);overflow:hidden}
+.ats-lp-shot-bar{display:flex;align-items:center;gap:6px;padding:11px 15px;background:var(--paper2);border-bottom:1px solid var(--line)}
+.ats-lp-shot-bar span{width:9px;height:9px;border-radius:50%;background:var(--line2)}
+.ats-lp-shot-bar b{margin-left:12px;font-family:'IBM Plex Mono';font-size:11px;color:var(--muted);font-weight:400}
+.ats-lp-shot-body{padding:20px;position:relative}
+.ats-lp-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:17px;position:relative;z-index:3;box-shadow:0 10px 26px -18px rgba(0,0,0,.28)}
+.ats-lp-card-top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:15px}
+.ats-lp-card-top b{display:block;font-family:'Bricolage Grotesque';font-size:16px}
+.ats-lp-card-top span{font-size:12px;color:var(--muted);font-family:'IBM Plex Mono'}
+.ats-lp-bars{display:flex;flex-direction:column;gap:9px}
+.ats-lp-bar{display:grid;grid-template-columns:1fr auto;gap:3px 10px;align-items:center}
+.ats-lp-bar span{font-size:12.5px;color:var(--sub)}
+.ats-lp-bar b{font-family:'IBM Plex Mono';font-size:12px;color:var(--petrol);grid-row:span 2}
+.ats-lp-bar i{grid-column:1;height:5px;border-radius:3px;background:var(--petrol);display:block}
+.ats-lp-bar.is-weak i{background:var(--amber)}
+.ats-lp-bar.is-weak b{color:var(--amber)}
+.ats-lp-rec{display:flex;align-items:center;gap:7px;margin-top:15px;padding:10px 12px;background:var(--petrol-soft);color:var(--petrol-deep);border-radius:9px;font-size:12.5px}
+.ats-lp-deck{position:absolute;left:20px;right:20px;top:24px;z-index:1}
+.ats-lp-deck-c{position:absolute;left:8px;right:8px;height:60px;background:var(--surface);border:1px solid var(--line);border-radius:14px;top:8px;opacity:.6}
+.ats-lp-deck-c:last-child{left:16px;right:16px;top:16px;opacity:.35}
+.ats-lp-swipe{display:flex;justify-content:space-between;gap:8px;margin-top:16px}
+.ats-lp-swipe span{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:9px;border-radius:9px;font-size:11.5px;font-weight:600;background:var(--paper2);color:var(--muted)}
+.ats-lp-swipe .is-mid{background:var(--amber-soft);color:var(--gold)}
+.ats-lp-swipe .is-ok{background:var(--petrol-soft);color:var(--petrol)}
+
+/* Problem */
+.ats-lp-problem{background:var(--ink);color:#F3F0EA;padding:76px 0}
+.ats-lp-problem .ats-lp-wrap{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:start}
+.ats-lp-problem h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(25px,3vw,36px);line-height:1.18;letter-spacing:-.02em}
+.ats-lp-prob-r p{font-size:16px;line-height:1.75;color:rgba(243,240,234,.72);margin-bottom:16px}
+.ats-lp-prob-r p:last-child{margin-bottom:0}
+
+/* Sektioner */
+.ats-lp-sec{padding:84px 0}
+.ats-lp-sec.is-tight{padding:64px 0}
+.ats-lp-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.ats-lp-flow-i{background:var(--surface);padding:26px 22px}
+.ats-lp-flow-n{font-family:'IBM Plex Mono';font-size:12px;color:var(--petrol);display:block;margin-bottom:12px}
+.ats-lp-flow-i h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;margin-bottom:8px}
+.ats-lp-flow-i p{font-size:13.5px;line-height:1.62;color:var(--sub)}
+
+/* Split-sektioner */
+.ats-lp-split{padding:76px 0;border-top:1px solid var(--line)}
+.ats-lp-split-in{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center}
+.ats-lp-split.is-flip{background:var(--paper2)}
+.ats-lp-split-t h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(24px,2.8vw,34px);line-height:1.18;letter-spacing:-.02em;margin-bottom:16px}
+.ats-lp-split-t p{font-size:15.5px;line-height:1.7;color:var(--sub);margin-bottom:20px}
+.ats-lp-checks{display:flex;flex-direction:column;gap:11px}
+.ats-lp-checks li{display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--ink)}
+.ats-lp-checks svg{color:var(--petrol);flex-shrink:0}
+.ats-lp-mini{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 20px 48px -30px rgba(0,0,0,.28)}
+.ats-lp-mini-h{display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono';font-size:11.5px;color:var(--muted);padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.ats-lp-fields{display:flex;flex-direction:column;gap:8px}
+.ats-lp-field{display:flex;align-items:center;gap:9px;padding:13px 14px;border:1px solid var(--line);border-radius:10px;font-size:13.5px}
+.ats-lp-field.is-sel{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-lp-field svg{color:var(--muted);flex-shrink:0}
+.ats-lp-field span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ats-lp-field em{font-style:normal;font-family:'IBM Plex Mono';font-size:11px;color:var(--petrol);background:var(--petrol-soft);padding:3px 7px;border-radius:6px;flex-shrink:0}
+.ats-lp-field em.is-ko{color:var(--brick);background:var(--brick-soft)}
+.ats-lp-jobmini{padding:4px 2px}
+.ats-lp-jm-title{font-family:'Bricolage Grotesque';font-weight:600;font-size:19px;margin-bottom:10px}
+.ats-lp-jm-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.ats-lp-jm-chips span{font-size:11.5px;padding:4px 10px;border-radius:20px;background:var(--paper2);color:var(--sub)}
+.ats-lp-jm-line{height:8px;border-radius:4px;background:var(--line);margin-bottom:8px}
+.ats-lp-jm-line.is-s{width:62%;margin-bottom:18px}
+.ats-lp-jm-btn{background:var(--petrol);color:#fff;text-align:center;padding:12px;border-radius:10px;font-size:13.5px;font-weight:600}
+
+/* Strip */
+.ats-lp-strip{border-top:1px solid var(--line);padding:64px 0}
+.ats-lp-strip-in{display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
+.ats-lp-strip-i svg{color:var(--petrol);margin-bottom:12px}
+.ats-lp-strip-i h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;margin-bottom:7px}
+.ats-lp-strip-i p{font-size:14px;line-height:1.65;color:var(--sub)}
+
+/* Trygghet */
+.ats-lp-safe{background:var(--petrol-deep);color:#EAF2F0;padding:80px 0}
+.ats-lp-safe-in{display:grid;grid-template-columns:.9fr 1.1fr;gap:56px;align-items:start}
+.ats-lp-safe h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(24px,2.8vw,34px);line-height:1.18;margin-bottom:14px}
+.ats-lp-safe p{font-size:15.5px;line-height:1.7;color:rgba(234,242,240,.74)}
+.ats-lp-safe .ats-lp-eyebrow{color:#8FC9BE}
+.ats-lp-safe-list{display:flex;flex-direction:column;gap:2px}
+.ats-lp-safe-i{display:flex;gap:13px;padding:15px 0;border-bottom:1px solid rgba(255,255,255,.1)}
+.ats-lp-safe-i:last-child{border-bottom:0}
+.ats-lp-safe-i svg{color:#8FC9BE;flex-shrink:0;margin-top:2px}
+.ats-lp-safe-i b{display:block;font-family:'Bricolage Grotesque';font-size:15px;margin-bottom:3px}
+.ats-lp-safe-i span{font-size:13.5px;line-height:1.6;color:rgba(234,242,240,.66)}
+
+/* Priser */
+.ats-lp-plans{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:stretch}
+.ats-lp-plan{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px 24px;display:flex;flex-direction:column}
+.ats-lp-plan.is-hot{border-color:var(--petrol);box-shadow:0 20px 50px -30px rgba(12,92,82,.5)}
+.ats-lp-plan-tag{position:absolute;top:-11px;left:24px;background:var(--petrol);color:#fff;font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px}
+.ats-lp-plan h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:18px;margin-bottom:12px}
+.ats-lp-price{display:flex;align-items:baseline;gap:7px;margin-bottom:10px}
+.ats-lp-price b{font-family:'Bricolage Grotesque';font-weight:600;font-size:32px;letter-spacing:-.02em}
+.ats-lp-price span{font-size:12.5px;color:var(--muted)}
+.ats-lp-plan-d{font-size:13.5px;color:var(--sub);line-height:1.6;margin-bottom:20px}
+.ats-lp-plan ul{display:flex;flex-direction:column;gap:10px;margin-bottom:24px;flex:1}
+.ats-lp-plan li{display:flex;align-items:flex-start;gap:9px;font-size:13.5px;color:var(--ink);line-height:1.5}
+.ats-lp-plan li svg{color:var(--petrol);flex-shrink:0;margin-top:2px}
+.ats-lp-plans-note{text-align:center;font-size:12.5px;color:var(--muted);margin-top:20px}
+
+/* FAQ */
+.ats-lp-faqwrap{max-width:820px}
+.ats-lp-faq{display:flex;flex-direction:column}
+.ats-lp-faq-i{border-bottom:1px solid var(--line)}
+.ats-lp-faq-i button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;text-align:left;padding:22px 0;font-family:'Bricolage Grotesque';font-weight:600;font-size:16.5px;color:var(--ink);min-height:56px}
+.ats-lp-faq-i svg{color:var(--muted);flex-shrink:0;transition:transform .2s}
+.ats-lp-faq-i.is-on svg{transform:rotate(180deg);color:var(--petrol)}
+.ats-lp-faq-i p{font-size:15px;line-height:1.72;color:var(--sub);padding-bottom:22px;max-width:680px}
+
+/* Slut-CTA */
+.ats-lp-final{border-top:1px solid var(--line);padding:96px 0}
+.ats-lp-final-in{text-align:center;max-width:660px;margin:0 auto}
+.ats-lp-final h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(26px,3.4vw,40px);line-height:1.16;letter-spacing:-.02em;margin-bottom:14px}
+.ats-lp-final p{font-size:16px;color:var(--sub);margin-bottom:28px}
+.ats-lp-final-note{display:block;margin-top:16px;font-size:12.5px;color:var(--muted)}
+
+/* Footer */
+.ats-lp-foot{background:var(--ink);color:#E9E5DD;padding:64px 0 0}
+.ats-lp-foot-in{display:grid;grid-template-columns:1.2fr 2fr;gap:48px;padding-bottom:48px}
+.ats-lp-foot-brand p{font-size:13.5px;line-height:1.65;color:rgba(233,229,221,.6);margin-top:14px;max-width:280px}
+.ats-lp-foot .ats-lp-brand{color:#fff}
+.ats-lp-foot-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:32px}
+.ats-lp-foot-cols h4{font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:rgba(233,229,221,.45);margin-bottom:14px}
+.ats-lp-foot-cols button,.ats-lp-foot-cols span{display:block;text-align:left;font-size:13.5px;color:rgba(233,229,221,.75);padding:6px 0;transition:color .14s}
+.ats-lp-foot-cols button:hover{color:#fff}
+.ats-lp-foot-bot{max-width:1120px;margin:0 auto;padding:22px 24px;border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;font-family:'IBM Plex Mono';font-size:11.5px;color:rgba(233,229,221,.45)}
+
+/* ============ JOBBANNONS ============ */
+.ats-jp-nav{position:sticky;top:0;z-index:40;background:rgba(237,235,229,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.ats-jp-nav-in{max-width:1160px;margin:0 auto;padding:13px 24px;display:flex;align-items:center;gap:16px}
+.ats-jp-brand{display:flex;align-items:center;gap:10px;min-width:0}
+.ats-jp-mark{width:32px;height:32px;border-radius:9px;background:var(--petrol);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;flex-shrink:0}
+.ats-jp-mark.is-lg{width:44px;height:44px;border-radius:12px;font-size:19px}
+.ats-jp-co{font-family:'Bricolage Grotesque';font-weight:600;font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ats-jp-nav-r{margin-left:auto;display:flex;align-items:center;gap:9px}
+.ats-jp-share{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;color:var(--sub);padding:10px 14px;border-radius:9px;min-height:42px}
+.ats-jp-share:hover{background:rgba(0,0,0,.05);color:var(--ink)}
+.ats-jp-cta{display:inline-flex;align-items:center;justify-content:center;gap:9px;background:var(--petrol);color:#fff;font-weight:600;font-size:15px;padding:15px 26px;border-radius:12px;min-height:52px;transition:background .15s,transform .12s}
+.ats-jp-cta:hover{background:var(--petrol-deep);transform:translateY(-1px)}
+.ats-jp-cta.is-sm{font-size:13.5px;padding:10px 18px;min-height:42px;border-radius:10px}
+.ats-jp-cta.is-block{width:100%;margin-top:16px}
+
+.ats-jp-hero{border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--paper2),var(--paper))}
+.ats-jp-hero-in{max-width:1160px;margin:0 auto;padding:60px 24px 56px;display:grid;grid-template-columns:1.3fr .7fr;gap:52px;align-items:center}
+.ats-jp-kicker{font-family:'IBM Plex Mono';font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--petrol);margin-bottom:16px}
+.ats-jp-hero h1{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(30px,4.2vw,50px);line-height:1.08;letter-spacing:-.025em;margin-bottom:18px;overflow-wrap:break-word}
+.ats-jp-pitch{font-size:17px;line-height:1.65;color:var(--sub);max-width:560px;margin-bottom:28px}
+.ats-jp-hero-acts{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.ats-jp-deadline{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);font-family:'IBM Plex Mono'}
+.ats-jp-hero-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 24px 56px -34px rgba(20,18,14,.3)}
+.ats-jp-hc-top{display:flex;align-items:center;gap:13px;padding-bottom:18px;margin-bottom:18px;border-bottom:1px solid var(--line)}
+.ats-jp-hc-top b{display:block;font-family:'Bricolage Grotesque';font-size:16px}
+.ats-jp-hc-top span{font-size:12.5px;color:var(--muted)}
+.ats-jp-hc-meta{display:flex;flex-direction:column;gap:13px}
+.ats-jp-hc-meta div{display:flex;flex-direction:column;gap:3px}
+.ats-jp-hc-meta dt,.ats-jp-facts dt{display:flex;align-items:center;gap:7px;font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.ats-jp-hc-meta dd,.ats-jp-facts dd{font-size:14px;color:var(--ink);font-weight:500;padding-left:20px}
+
+.ats-jp-main{max-width:1160px;margin:0 auto;padding:64px 24px 40px;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:64px;align-items:start}
+.ats-jp-article{max-width:720px;min-width:0}
+.ats-jp-sec{margin-bottom:48px}
+.ats-jp-sec:last-child{margin-bottom:0}
+.ats-jp-sec h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:25px;letter-spacing:-.015em;margin-bottom:18px}
+.ats-jp-lead{font-size:16.5px;line-height:1.8;color:var(--sub);white-space:pre-wrap;overflow-wrap:break-word}
+.ats-jp-list{display:flex;flex-direction:column;gap:13px}
+.ats-jp-list li{display:flex;align-items:flex-start;gap:12px;font-size:16px;line-height:1.62;color:var(--ink)}
+.ats-jp-list svg{color:var(--petrol);flex-shrink:0;margin-top:4px}
+.ats-jp-list.is-soft svg{color:var(--gold)}
+.ats-jp-benefits{display:flex;flex-wrap:wrap;gap:9px}
+.ats-jp-benefit{display:inline-flex;align-items:center;gap:8px;padding:11px 15px;background:var(--surface);border:1px solid var(--line);border-radius:11px;font-size:14px}
+.ats-jp-benefit svg{color:var(--gold)}
+.ats-jp-steps{display:flex;flex-direction:column;gap:2px}
+.ats-jp-steps li{display:flex;gap:16px;padding:15px 0;border-bottom:1px solid var(--line);align-items:center}
+.ats-jp-steps li:last-child{border-bottom:0}
+.ats-jp-steps span{width:30px;height:30px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol-deep);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:12.5px;font-weight:600;flex-shrink:0}
+.ats-jp-steps div{font-size:15.5px;color:var(--ink)}
+.ats-jp-faq details{border-bottom:1px solid var(--line)}
+.ats-jp-faq summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 0;cursor:pointer;font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;list-style:none;min-height:54px}
+.ats-jp-faq summary::-webkit-details-marker{display:none}
+.ats-jp-faq summary svg{color:var(--muted);transition:transform .2s;flex-shrink:0}
+.ats-jp-faq details[open] summary svg{transform:rotate(180deg);color:var(--petrol)}
+.ats-jp-faq p{font-size:15px;line-height:1.72;color:var(--sub);padding-bottom:18px}
+
+.ats-jp-side{position:sticky;top:78px;display:flex;flex-direction:column;gap:14px}
+.ats-jp-sidecard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px}
+.ats-jp-sidecard.is-quiet{background:transparent;border-style:dashed}
+.ats-jp-sidecard h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;margin-bottom:16px}
+.ats-jp-sidecard p{font-size:13.5px;line-height:1.65;color:var(--sub)}
+.ats-jp-facts{display:flex;flex-direction:column;gap:14px}
+.ats-jp-facts div{display:flex;flex-direction:column;gap:3px}
+.ats-jp-contact{display:flex;align-items:center;gap:12px}
+.ats-jp-avatar{width:42px;height:42px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol-deep);display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;flex-shrink:0}
+.ats-jp-contact b{display:block;font-size:14.5px;font-family:'Bricolage Grotesque'}
+.ats-jp-contact a{font-size:13px;color:var(--petrol);word-break:break-all}
+.ats-jp-contact a:hover{text-decoration:underline}
+
+.ats-jp-apply{border-top:1px solid var(--line);background:var(--paper2);padding:72px 0 88px}
+.ats-jp-apply-in{max-width:820px;margin:0 auto;padding:0 24px}
+.ats-jp-foot{border-top:1px solid var(--line);background:var(--surface)}
+.ats-jp-foot-in{max-width:1160px;margin:0 auto;padding:26px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.ats-jp-foot-note{font-family:'IBM Plex Mono';font-size:11.5px;color:var(--muted)}
+.ats-jp-mobar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:45;background:var(--surface);border-top:1px solid var(--line);padding:11px 16px;align-items:center;gap:14px;box-shadow:0 -8px 26px -14px rgba(0,0,0,.22)}
+.ats-jp-mobar div{min-width:0;flex:1}
+.ats-jp-mobar b{display:block;font-family:'Bricolage Grotesque';font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ats-jp-mobar span{font-size:11.5px;color:var(--muted)}
+
+/* ============ ANSOKNINGSFORMULAR ============ */
+.ats-af{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:40px}
+.ats-af-head{margin-bottom:30px}
+.ats-af-eyebrow{font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--petrol)}
+.ats-af-head h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(24px,3vw,32px);line-height:1.15;letter-spacing:-.02em;margin:10px 0 10px}
+.ats-af-head p{font-size:15px;line-height:1.65;color:var(--sub);max-width:540px}
+.ats-af-prog{margin-bottom:32px}
+.ats-af-bar{height:4px;border-radius:3px;background:var(--line);overflow:hidden;margin-bottom:16px}
+.ats-af-bar-fill{height:100%;background:var(--petrol);border-radius:3px;transition:width .35s cubic-bezier(.4,0,.2,1)}
+.ats-af-steps{display:flex;gap:8px;flex-wrap:wrap}
+.ats-af-step{display:inline-flex;align-items:center;gap:8px;padding:7px 12px 7px 7px;border-radius:22px;background:var(--paper2);font-size:12.5px;font-weight:600;color:var(--muted);transition:.15s}
+.ats-af-step:not(:disabled){cursor:pointer}
+.ats-af-step.is-done{background:var(--petrol-soft);color:var(--petrol-deep)}
+.ats-af-step.is-on{background:var(--petrol);color:#fff}
+.ats-af-dot{width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.07);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:11px;flex-shrink:0}
+.ats-af-step.is-on .ats-af-dot{background:rgba(255,255,255,.22)}
+.ats-af-step.is-done .ats-af-dot{background:var(--petrol);color:#fff}
+.ats-af-body{min-height:220px;margin-bottom:34px;animation:affade .26s ease}
+@keyframes affade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.ats-af-fields{display:flex;flex-direction:column;gap:24px}
+.ats-af-f{display:flex;flex-direction:column;gap:8px}
+.ats-af-l{font-size:14.5px;font-weight:600;color:var(--ink)}
+.ats-af-l i{font-style:normal;color:var(--brick);margin-left:1px}
+.ats-af-help{font-size:12.5px;color:var(--muted);line-height:1.5}
+.ats-af-help.is-top{margin-top:-2px;margin-bottom:2px}
+.ats-af-err{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--brick);font-weight:500}
+.ats-af .ats-inp{width:100%;min-height:50px;padding:13px 16px;border:1px solid var(--line2);border-radius:11px;background:var(--surface);font-size:15.5px;font-family:inherit;color:var(--ink);transition:border-color .14s,box-shadow .14s}
+.ats-af .ats-inp:hover{border-color:var(--muted)}
+.ats-af .ats-inp:focus{outline:none;border-color:var(--petrol);box-shadow:0 0 0 3px var(--petrol-soft)}
+.ats-af .ats-inp.is-err{border-color:var(--brick);box-shadow:0 0 0 3px var(--brick-soft)}
+.ats-af textarea.ats-inp{min-height:120px;resize:vertical;line-height:1.6}
+.ats-af .ats-chipset{display:flex;flex-wrap:wrap;gap:9px}
+.ats-af .ats-selchip{min-height:48px;padding:13px 18px;border:1px solid var(--line2);border-radius:11px;background:var(--surface);font-size:14.5px;font-weight:500;color:var(--ink);transition:.14s}
+.ats-af .ats-selchip:hover{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-af .ats-selchip.is-on{background:var(--petrol);border-color:var(--petrol);color:#fff}
+.ats-af .ats-selchip:focus-visible{outline:2px solid var(--petrol);outline-offset:2px}
+.ats-af .ats-mustdot{display:none}
+.ats-af .ats-yn{display:flex;gap:10px}
+.ats-af .ats-yn button{flex:1;min-height:52px;border:1px solid var(--line2);border-radius:12px;background:var(--surface);font-size:15px;font-weight:600;color:var(--sub);transition:.14s}
+.ats-af .ats-yn button:hover{border-color:var(--petrol)}
+.ats-af .ats-yn button.is-on{background:var(--petrol);border-color:var(--petrol);color:#fff}
+.ats-af .ats-filedrop{min-height:110px;border:1.5px dashed var(--line2);border-radius:13px;background:var(--paper2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:22px;font-size:14px;color:var(--sub);transition:.15s;cursor:pointer;text-align:center}
+.ats-af .ats-filedrop:hover{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-af-review{background:var(--paper2);border-radius:13px;padding:20px 22px}
+.ats-af-review h3,.ats-af-gdpr h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;margin-bottom:14px}
+.ats-af-rrow{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.ats-af-rrow:last-child{border-bottom:0}
+.ats-af-rrow span{color:var(--muted)}
+.ats-af-rrow b{color:var(--ink);text-align:right;overflow-wrap:anywhere}
+.ats-af-gdpr ul{display:flex;flex-direction:column;gap:9px;margin-bottom:20px}
+.ats-af-gdpr li{position:relative;padding-left:20px;font-size:14.5px;line-height:1.6;color:var(--sub)}
+.ats-af-gdpr li:before{content:"";position:absolute;left:0;top:9px;width:6px;height:6px;border-radius:50%;background:var(--petrol)}
+.ats-af-consent{display:flex;align-items:flex-start;gap:12px;padding:16px 18px;border:1px solid var(--line2);border-radius:12px;background:var(--surface);cursor:pointer;transition:.14s;min-height:56px}
+.ats-af-consent:hover{border-color:var(--petrol)}
+.ats-af-consent.is-err{border-color:var(--brick);background:var(--brick-soft)}
+.ats-af-consent input{width:20px;height:20px;margin-top:1px;accent-color:var(--petrol);flex-shrink:0;cursor:pointer}
+.ats-af-consent span{font-size:14.5px;line-height:1.55;color:var(--ink)}
+.ats-af-nav{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:26px;border-top:1px solid var(--line)}
+.ats-af-back{display:inline-flex;align-items:center;gap:7px;min-height:50px;padding:13px 20px;border-radius:11px;font-size:14.5px;font-weight:600;color:var(--sub)}
+.ats-af-back:hover{background:var(--paper2);color:var(--ink)}
+.ats-af-next,.ats-af-submit{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:52px;padding:14px 28px;border-radius:12px;background:var(--petrol);color:#fff;font-size:15px;font-weight:600;transition:background .15s,transform .12s;margin-left:auto}
+.ats-af-next:hover,.ats-af-submit:hover{background:var(--petrol-deep);transform:translateY(-1px)}
+.ats-af-submit{background:var(--ink);padding:15px 32px}
+.ats-af-submit:hover{background:#000}
+.ats-af-done{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:48px 40px;text-align:center}
+.ats-af-done-mark{width:64px;height:64px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol);display:flex;align-items:center;justify-content:center;margin:0 auto 22px}
+.ats-af-done h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(23px,2.8vw,30px);line-height:1.2;letter-spacing:-.02em;margin-bottom:12px}
+.ats-af-done > p{font-size:15.5px;line-height:1.7;color:var(--sub);max-width:480px;margin:0 auto 32px}
+.ats-af-nextup{text-align:left;max-width:440px;margin:0 auto}
+.ats-af-nextup h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;margin-bottom:16px;text-align:left}
+.ats-af-nextup ol{display:flex;flex-direction:column;gap:14px;text-align:left;max-width:440px;margin:0 auto}
+.ats-af-nextup li{display:flex;gap:13px;align-items:flex-start}
+.ats-af-nextup li span{width:26px;height:26px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol-deep);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:12px;font-weight:600;flex-shrink:0}
+.ats-af-nextup li b{display:block;font-size:14.5px;margin-bottom:2px}
+.ats-af-nextup li small{font-size:13px;color:var(--muted);line-height:1.5}
+.ats-af-done-foot{margin-top:30px;font-size:13.5px;color:var(--muted)}
+.ats-af-done-foot a{color:var(--petrol)}
+.ats-af-done-foot a:hover{text-decoration:underline}
+
+/* ---- Responsivt: publika sidor ---- */
+@media (max-width:1024px){
+  .ats-lp-hero{grid-template-columns:1fr;gap:44px;padding:56px 24px 60px}
+  .ats-lp-problem .ats-lp-wrap,.ats-lp-split-in,.ats-lp-safe-in{grid-template-columns:1fr;gap:34px}
+  .ats-lp-split.is-flip .ats-lp-split-v{order:2}
+  .ats-lp-flow{grid-template-columns:repeat(2,1fr)}
+  .ats-lp-strip-in{grid-template-columns:1fr;gap:28px}
+  .ats-lp-plans{grid-template-columns:1fr;max-width:460px;margin:0 auto}
+  .ats-jp-hero-in{grid-template-columns:1fr;gap:34px;padding:44px 24px 44px}
+  .ats-jp-main{grid-template-columns:1fr;gap:44px;padding:48px 24px 32px}
+  .ats-jp-side{position:static;flex-direction:row;flex-wrap:wrap}
+  .ats-jp-sidecard{flex:1;min-width:240px}
+  .ats-jp-article{max-width:100%}
+}
+@media (max-width:860px){
+  .ats-lp-links,.ats-lp-nav-r{display:none}
+  .ats-lp-burger{display:flex}
+  .ats-lp-mob{display:flex}
+  .ats-lp-foot-in{grid-template-columns:1fr;gap:34px}
+  .ats-jp-mobar{display:flex}
+  .ats-jp-apply{padding-bottom:120px}
+  .ats-jp-nav .ats-jp-cta.is-sm{display:none}
+}
+@media (max-width:640px){
+  .ats-lp-wrap,.ats-lp-nav-in,.ats-lp-hero,.ats-jp-nav-in,.ats-jp-hero-in,.ats-jp-main,.ats-jp-apply-in,.ats-jp-foot-in{padding-left:18px;padding-right:18px}
+  .ats-lp-hero{padding-top:44px;padding-bottom:48px}
+  .ats-lp-sec,.ats-lp-split,.ats-lp-problem,.ats-lp-safe,.ats-lp-strip{padding-top:56px;padding-bottom:56px}
+  .ats-lp-final{padding:68px 0}
+  .ats-lp-flow{grid-template-columns:1fr}
+  .ats-lp-hero-acts,.ats-lp-hero-acts button{width:100%}
+  .ats-lp-foot-cols{grid-template-columns:1fr 1fr;gap:24px}
+  .ats-lp-foot-bot{flex-direction:column;gap:6px;text-align:center}
+  .ats-jp-side{flex-direction:column}
+  .ats-jp-sidecard{min-width:0}
+  .ats-jp-hero-acts>.ats-jp-cta{width:100%}
+  .ats-jp-apply{padding-top:48px}
+  .ats-af{padding:26px 20px;border-radius:16px}
+  .ats-af-done{padding:36px 22px}
+  .ats-af-slabel{display:none}
+  .ats-af-step{padding:7px}
+  .ats-af-nav{gap:10px}
+  .ats-af-next,.ats-af-submit{padding:14px 20px;flex:1}
+  .ats-af-back{padding:13px 14px}
+  .ats-af .ats-yn{flex-direction:column}
+  .ats-jp-sec h2{font-size:22px}
+}
+@media (max-width:400px){
+  .ats-lp-wrap,.ats-lp-nav-in,.ats-lp-hero,.ats-jp-nav-in,.ats-jp-hero-in,.ats-jp-main,.ats-jp-apply-in{padding-left:15px;padding-right:15px}
+  .ats-lp-foot-cols{grid-template-columns:1fr}
+  .ats-jp-share span{display:none}
+  .ats-af{padding:22px 16px}
+  .ats-lp-trust{gap:12px;font-size:12px}
+}
+
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
