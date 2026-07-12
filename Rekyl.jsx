@@ -908,6 +908,65 @@ function reducer(state, ac) {
     }
     case "CVIEW_ADD": return { ...state, candViews: [...(state.candViews || []), { id: "cv" + uid(), name: ac.name, f: ac.f, shared: !!ac.shared, by: who }] };
     case "CVIEW_DEL": return { ...state, candViews: (state.candViews || []).filter((v) => v.id !== ac.id) };
+    case "TPL_INIT": { if ((state.tpls || []).length) return state;
+      /* Migrera de gamla trigger-mallarna till den nya mallmotorn, utan dataförlust. */
+      const MAP = { received: "received", shortlist: "screening", interview: "interview", reserve: "reserve", reject: "reject", offer: "offer", reminder: "reminder", interview_reminder: "reminder", interview_cancelled: "interview" };
+      const tpls = (state.templates || []).map((t) => ({ ...mkTemplate(t.name, MAP[t.trigger] || "info", null), id: "tp_" + t.id, subject: t.subject, body: t.body, active: t.active !== false, version: 1, versions: [{ v: 1, at: Date.now(), by: "System", subject: t.subject, body: t.body, note: "Migrerad från tidigare mall" }] }));
+      return { ...state, tpls }; }
+    case "TPL_ADD": { const t = ac.from ? { ...JSON.parse(JSON.stringify((state.tpls || []).find((x) => x.id === ac.from))), id: "tp" + uid(), name: ac.name, version: 0, versions: [], createdAt: Date.now() } : mkTemplate(ac.name, ac.cat, ac.jobId);
+      const s2 = { ...state, tpls: [...(state.tpls || []), t] };
+      return { ...s2, log: withLog(s2, "Mall skapad", t.name) }; }
+    case "TPL_SET": return { ...state, tpls: (state.tpls || []).map((t) => t.id === ac.id ? { ...t, ...ac.patch, updatedAt: Date.now() } : t) };
+    case "TPL_DEL": return { ...state, tpls: (state.tpls || []).filter((t) => t.id !== ac.id) };
+    case "TPL_PUBLISH": { const t = (state.tpls || []).find((x) => x.id === ac.id); if (!t) return state;
+      if (tplWarnings(t, state).some((w) => w.kind === "err")) return state; /* trasig mall får aldrig publiceras */
+      const v = t.version + 1;
+      const snap = { v, at: Date.now(), by: (_TEAM.find((m) => m.id === who) || {}).name || "System", subject: t.subject, body: t.body, note: ac.note || "" };
+      const s2 = { ...state, tpls: state.tpls.map((x) => x.id === ac.id ? { ...x, version: v, versions: [snap, ...(x.versions || [])].slice(0, 20) } : x) };
+      return { ...s2, log: withLog(s2, "Mall publicerad", t.name + " · v" + v) }; }
+    case "TPL_RESTORE": { const t = (state.tpls || []).find((x) => x.id === ac.id); const snap = t && (t.versions || []).find((v) => v.v === ac.v); if (!snap) return state;
+      return { ...state, tpls: state.tpls.map((x) => x.id === ac.id ? { ...x, subject: snap.subject, body: snap.body, updatedAt: Date.now() } : x) }; }
+
+    case "OPTOUT_SET": { const p = (state.people || []).find((x) => x.id === ac.id); if (!p) return state;
+      return { ...state, people: state.people.map((x) => x.id === ac.id ? ptl({ ...x, optOut: ac.on ? { at: Date.now(), by: who, reason: ac.reason || "" } : null }, "note", ac.on ? "Avregistrerad från icke-nödvändig kommunikation" : "Åter registrerad för kommunikation", who) : x) }; }
+
+    case "SEND": {
+      const cand = state.candidates.find((c) => c.id === ac.candId); if (!cand) return state;
+      const job = state.jobs.find((j) => j.id === cand.jobId);
+      const tpl = (state.tpls || []).find((t) => t.id === ac.tplId); if (!tpl) return state;
+      if (ac.key && (state.messages || []).some((m) => m.key === ac.key)) return state; /* idempotent */
+      const person = personOf(state, cand);
+      const bl = sendBlockers(state, cand, person, tpl, { job, org: state.org, force: ac.force });
+      if (bl.some((b) => !b.soft)) return state; /* motorn vägrar hellre än skickar fel */
+      const byName = (_TEAM.find((m) => m.id === who) || {}).name || "System";
+      const msg = buildMessage2(state, cand, job, tpl, { ...ac, by: who, byName, key: ac.key });
+      let c2 = addTL(cand, "message_sent", msg.subject + (msg.status === "scheduled" ? " · schemalagt " + new Date(msg.sendAt).toLocaleString("sv-SE").slice(0, 16) : " · köat för utskick"), who);
+      const s2 = { ...state, candidates: state.candidates.map((c) => c.id === cand.id ? c2 : c), messages: [msg, ...state.messages] };
+      return { ...s2, log: withLog(s2, "Meddelande", tpl.name + " · " + cand.name) };
+    }
+    case "SEND_BULK": {
+      const tpl = (state.tpls || []).find((t) => t.id === ac.tplId); if (!tpl) return state;
+      const batchId = ac.batchId || ("b" + uid());
+      if ((state.messages || []).some((m) => m.batchId === batchId)) return state; /* idempotent batch */
+      const byName = (_TEAM.find((m) => m.id === who) || {}).name || "System";
+      const msgs = []; const blocked = [];
+      (ac.candIds || []).forEach((id, i) => {
+        const cand = state.candidates.find((c) => c.id === id); if (!cand) return;
+        const job = state.jobs.find((j) => j.id === cand.jobId);
+        const person = personOf(state, cand);
+        const bl = sendBlockers(state, cand, person, tpl, { job, org: state.org, force: ac.force });
+        const hard = bl.filter((b) => !b.soft);
+        if (hard.length) { blocked.push({ id, name: cand.name, why: hard[0].msg, fix: hard[0].fix }); return; }
+        /* Enkel takt: sprid ut schemalagda utskick så leverantören inte stryper oss. */
+        const sendAt = ac.sendAt ? ac.sendAt + i * (ac.spacingMs || 0) : (ac.spacingMs ? Date.now() + i * ac.spacingMs : null);
+        msgs.push(buildMessage2(state, cand, job, tpl, { ...ac, sendAt, batchId, by: who, byName, key: batchId + ":" + id }));
+      });
+      const candidates = state.candidates.map((c) => { const m = msgs.find((x) => x.candidateId === c.id); return m ? addTL(c, "message_sent", m.subject + " · massutskick", who) : c; });
+      const s2 = { ...state, candidates, messages: [...msgs, ...state.messages], _sendBlocked: blocked, _lastBatch: batchId };
+      return { ...s2, log: withLog(s2, "Massutskick", msgs.length + " av " + (ac.candIds || []).length + " · " + tpl.name) };
+    }
+    case "MSG_CANCEL": return { ...state, messages: state.messages.map((m) => m.id === ac.id && ["queued", "scheduled"].includes(m.status) ? { ...m, status: "cancelled" } : m) };
+    case "MSG_CANCEL_BATCH": return { ...state, messages: state.messages.map((m) => m.batchId === ac.batchId && ["queued", "scheduled"].includes(m.status) ? { ...m, status: "cancelled" } : m) };
     case "MSG_STATUS": {
       const prev = state.messages.find((m) => m.id === ac.id); if (!prev) return state;
       const messages = state.messages.map((m) => m.id === ac.id ? { ...m, status: ac.status, error: ac.error || null, sentAt: ac.status === "sent" ? Date.now() : (m.sentAt || null), providerId: ac.providerId || m.providerId || null } : m);
@@ -980,7 +1039,7 @@ const INITIAL = {
   jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: null, candidates: CANDIDATES0, team: [], currentUserId: null,
   history: [], templates: DEFAULT_TEMPLATES, messages: [],
   career: null, tags: [], jobViews: [], moves: [], moveIds: [], events: [], recalcs: [],
-  people: [], ctags: [], pools: [], candViews: [],
+  people: [], ctags: [], pools: [], candViews: [], tpls: [],
   org: { companyName: "Nordpuls AB", hrName: "Mona Berg", hrEmail: "mona.berg@nordpuls.se", fromEmail: "noreply@nordpuls.se", appUrl: "https://rekyl.app", defaultInterviewTime: "onsdag 14:00" },
   log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjänst öppnad", detail: "Account Manager · B2B" }],
 };
@@ -989,7 +1048,7 @@ const INITIAL = {
 function copyText(t) { try { navigator.clipboard.writeText(t); } catch (e) { const el = document.createElement("textarea"); el.value = t; document.body.appendChild(el); el.select(); try { document.execCommand("copy"); } catch (e2) {} el.remove(); } }
 function downloadText(name, text, mime = "text/plain") { try { const b = new Blob([text], { type: mime }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 1500); return true; } catch (e) { return false; } }
 function Menu({ trigger, children, align }) { const [open, setOpen] = useState(false); const ref = useRef(); useEffect(() => { const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []); return <div className="ats-menu" ref={ref}><div onClick={() => setOpen((o) => !o)}>{trigger}</div>{open && <div className={"ats-menu-pop" + (align === "right" ? " is-right" : "")} onClick={() => setOpen(false)}>{children}</div>}</div>; }
-function Modal({ title, onClose, children, wide }) { return <div className="ats-modal-bg" onClick={onClose}><div className={"ats-modal" + (wide ? " is-wide" : "")} onClick={(e) => e.stopPropagation()}><div className="ats-modal-h"><h3>{title}</h3><button onClick={onClose}><X size={18} /></button></div>{children}</div></div>; }
+function Modal({ title, onClose, children, wide, person }) { return <div className="ats-modal-bg" onClick={onClose}><div className={"ats-modal" + (wide ? " is-wide" : "") + (person ? " is-person" : "")} onClick={(e) => e.stopPropagation()}><div className="ats-modal-h"><h3>{title}</h3><button onClick={onClose}><X size={18} /></button></div>{children}</div></div>; }
 function ScoreDial({ value, knockout, size = 76 }) { const [shown, setShown] = useState(0); useEffect(() => { let raf; const t0 = performance.now(); const tick = (t) => { const p = Math.min(1, (t - t0) / 650); const e = 1 - Math.pow(1 - p, 3); setShown(Math.round(value * e)); if (p < 1) raf = requestAnimationFrame(tick); }; raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf); }, [value]); const R = 30, Cc = 2 * Math.PI * R; const tier = knockout ? "ko" : value >= 78 ? "high" : value >= 55 ? "mid" : "low"; return <div className={"ats-dial is-" + tier} style={{ width: size, height: size }}><svg width={size} height={size} viewBox="0 0 76 76"><circle cx="38" cy="38" r={R} className="ats-dial-track" /><circle cx="38" cy="38" r={R} className="ats-dial-arc" strokeDasharray={Cc} strokeDashoffset={Cc - (Cc * shown) / 100} transform="rotate(-90 38 38)" /></svg><div className="ats-dial-num"><b>{shown}</b><small>%</small></div></div>; }
 function Stars({ value, onSet, readOnly }) { return <div className="ats-stars">{[1, 2, 3, 4, 5].map((n) => <button key={n} disabled={readOnly} className={n <= value ? "is-on" : ""} onClick={() => onSet && onSet(n === value ? 0 : n)}><Star size={14} fill={n <= value ? "currentColor" : "none"} /></button>)}</div>; }
 function TagPills({ tags }) { return tags?.length ? <span className="ats-tags">{tags.map((t) => <span key={t} className="ats-tagpill"><Tag size={10} />{t}</span>)}</span> : null; }
@@ -1004,6 +1063,7 @@ const NAV = [
   { id: "pipeline", label: "Pipeline", icon: Workflow },
   { id: "candidates", label: "Kandidater", icon: ClipboardList },
   { id: "crm", label: "Kandidatbank", icon: Users },
+  { id: "comms", label: "Kommunikation", icon: Mail },
   { id: "calendar", label: "Kalender", icon: CalendarClock },
   { id: "form", label: "Formulär", icon: Blocks },
   { id: "scoring", label: "Scoring", icon: Gauge },
@@ -1613,7 +1673,13 @@ function AppInner() {
   useEffect(() => { if (!session || !org) { setIsSuper(false); return; } let alive = true; (async () => { const r = await adminCall("whoami"); if (alive) setIsSuper(!!(r.ok && r.superadmin)); const rows = await sbGet("orgs?id=eq." + org.id + "&select=plan,suspended,max_jobs"); if (alive && rows && rows[0]) setPlan({ plan: rows[0].plan || "start", suspended: !!rows[0].suspended, maxJobs: rows[0].max_jobs == null ? 999 : rows[0].max_jobs }); })(); return () => { alive = false; }; }, [session && session.userId, org && org.id]);
   useEffect(() => { if (!session) return; let alive = true; (async () => { const c = await mailConfig(); if (alive) setMail({ configured: !!c.configured, provider: c.provider || null, from: c.from || null, reason: c.reason || null, notify: !!c.notify, reminders: !!c.reminders, checked: true }); })(); return () => { alive = false; }; }, [session && session.userId]);
   const sendMailNow = useCallback(async (m) => { if (!m || MAIL_INFLIGHT.has(m.id) || !validEmail(m.to)) return { ok: false }; MAIL_INFLIGHT.add(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: "sending" }); const _c = state.candidates.find((c) => c.id === m.candidateId); const _j = _c && state.jobs.find((j) => j.id === _c.jobId); const attachment = _c && _j ? icsForMessage(m, _c, _j, state.org) : null; const res = await sendMail({ to: m.to, subject: m.subject, body: m.body, fromName: state.org.companyName, replyTo: state.org.hrEmail, ...(attachment ? { attachment } : {}) }); MAIL_INFLIGHT.delete(m.id); dispatch({ type: "MSG_STATUS", id: m.id, status: res.ok ? "sent" : "failed", error: res.error || null, providerId: res.id || null }); if (!res.ok) showToast({ kind: "warn", msg: "Mejlet till " + m.to + " kunde inte skickas: " + (res.error || "okänt fel") }); return res; }, [state.org, state.candidates, state.jobs]);
-  useEffect(() => { if (!mail.configured || !session || !org || !loaded) return; state.messages.filter((m) => m.status === "queued" && m.at >= bootRef.current && validEmail(m.to) && !MAIL_INFLIGHT.has(m.id)).forEach((m) => sendMailNow(m)); }, [state.messages, mail.configured, session, org, loaded, sendMailNow]);
+  useEffect(() => { if (!mail.configured || !session || !org || !loaded) return; state.messages.filter((m) => {
+      if (m.channel === "note") return false;
+      if (m.status === "scheduled") return m.sendAt && m.sendAt <= Date.now();
+      return m.status === "queued";
+    }).filter((m) => m.at >= bootRef.current && validEmail(m.to) && !MAIL_INFLIGHT.has(m.id)).forEach((m) => sendMailNow(m)); }, [state.messages, mail.configured, session, org, loaded, sendMailNow]);
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const t2 = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(t2); }, []);
   useEffect(() => { store.set("rekyl_state", state); }, [state]);
   useEffect(() => { if (!session || !org || !loaded || !state.jobs.length) return; if (store.get("rekyl_tour_done", false)) return; const t = setTimeout(() => setTourOpen(true), 700); return () => clearTimeout(t); }, [session && session.userId, org && org.id, loaded, state.jobs.length]);
 
@@ -1680,6 +1746,7 @@ function AppInner() {
             {view === "pipeline" && <PipelineView {...shared} />}
             {view === "scoring" && <ScoringView {...shared} />}
             {view === "crm" && <CrmView {...shared} />}
+            {view === "comms" && <CommsView {...shared} />}
             {view === "superadmin" && isSuper && <SuperadminView {...shared} />}
             </ErrorBoundary>
             {view === "queue" && <QueueView {...shared} />}
@@ -1745,7 +1812,7 @@ function hydrate(init, d) {
     candidates: arr(d.candidates).map((c) => (pipeOf[c.jobId] ? migrateCandidate(c, pipeOf[c.jobId]) : c)),
     team: arr(d.team), tags: arr(d.tags), jobViews: arr(d.jobViews),
     moves: arr(d.moves), moveIds: arr(d.moveIds), events: arr(d.events), recalcs: arr(d.recalcs),
-    people: arr(d.people), ctags: arr(d.ctags), pools: arr(d.pools), candViews: arr(d.candViews),
+    people: arr(d.people), ctags: arr(d.ctags), pools: arr(d.pools), candViews: arr(d.candViews), tpls: arr(d.tpls),
     messages: arr(d.messages), log: arr(d.log), history: arr(d.history),
     templates: arr(d.templates).length ? d.templates : init.templates,
     org: { ...init.org, ...(d.org || {}) },
@@ -2529,6 +2596,111 @@ function unmergePeople(state, primaryId, mergeIdx, who) {
 /* ---- Kandidattaggar och talangpooler (separata från jobbtaggar) ---- */
 const mkCTag = (name, cat, color) => ({ id: "ct" + uid(), name: String(name).trim(), cat: cat || "other", color: color || TAG_COLORS[0], archived: false });
 const mkPool = (name, ownerId) => ({ id: "pl" + uid(), name, desc: "", ownerId: ownerId || null, visibility: "org", tags: [], archived: false, createdAt: Date.now() });
+/* ===================== KOMMUNIKATION: MALLAR OCH UTSKICK ===================== */
+const TPL_CATS = {
+  received: "Bekräftelse", screening: "Screening", interview: "Intervju", assessment: "Bedömning",
+  reference: "Referens", offer: "Erbjudande", reject: "Avslag", reserve: "Reservlista",
+  completion: "Komplettering", reminder: "Påminnelse", info: "Information", followup: "Uppföljning",
+};
+/* Beslutsmejl går ALLTID ut — kandidaten har rätt till besked. Övriga respekterar avregistrering. */
+const ESSENTIAL = new Set(["received", "interview", "offer", "reject", "reserve", "completion", "assessment", "reference"]);
+const MSG_CHANNELS = { email: "E-post", note: "Endast intern notering" };
+
+/* Variabelkatalog — enda sanningen. Varje variabel har källa, beskrivning och reservvärde. */
+const VARS = [
+  { k: "candidateName", g: "Kandidat", d: "Kandidatens namn", f: (c) => c.name },
+  { k: "firstName", g: "Kandidat", d: "Förnamn", f: (c) => String(c.name || "").trim().split(" ")[0] },
+  { k: "candidateEmail", g: "Kandidat", d: "E-postadress", f: (c) => c.email },
+  { k: "jobTitle", g: "Tjänst", d: "Tjänstens titel", f: (c, j) => j && (j.publicTitle || j.title) },
+  { k: "jobRef", g: "Tjänst", d: "Referensnummer", f: (c, j) => j && j.ref },
+  { k: "department", g: "Tjänst", d: "Avdelning", f: (c, j) => j && j.team },
+  { k: "location", g: "Tjänst", d: "Plats", f: (c, j) => j && j.annons && j.annons.location },
+  { k: "companyName", g: "Företag", d: "Företagsnamn", f: (c, j, o) => o.companyName },
+  { k: "hrName", g: "Företag", d: "Kontaktperson", f: (c, j, o) => o.hrName },
+  { k: "hrEmail", g: "Företag", d: "Kontaktadress", f: (c, j, o) => o.hrEmail },
+  { k: "stageName", g: "Process", d: "Nuvarande steg", f: (c, j) => { const st = j && j.pipeline && stageById(j.pipeline, c.stageId); return st ? st.name : null; } },
+  { k: "interviewTime", g: "Process", d: "Bokad intervjutid", f: (c) => c.interviewTime },
+  { k: "interviewPlace", g: "Process", d: "Plats eller möteslänk", f: (c) => c.interview && c.interview.location },
+  { k: "rejectReason", g: "Process", d: "Avslagsorsak", f: (c) => c.reason },
+  { k: "score", g: "Bedömning", d: "Matchning i procent", f: (c) => { const s2 = currentScore(c); return s2 ? s2.percent + "%" : null; } },
+  { k: "completionText", g: "Komplettering", d: "Vad kandidaten ska komplettera", f: (c) => { const x = (c.completions || []).find((y) => y.status === "open"); return x ? x.text : null; } },
+  { k: "completionDeadline", g: "Komplettering", d: "Sista dag för komplettering", f: (c) => { const x = (c.completions || []).find((y) => y.status === "open"); return x ? new Date(x.deadline).toLocaleDateString("sv-SE") : null; } },
+];
+const VAR_MAP = {}; VARS.forEach((v) => { VAR_MAP[v.k] = v; });
+
+/* Rendering med spårning: vilka variabler saknar värde? Ingen tyst tom sträng. */
+function renderTpl2(text, cand, job, org) {
+  const missing = [];
+  const out = String(text || "").replace(/\{\{(\w+)\}\}/g, (m, k) => {
+    const v = VAR_MAP[k];
+    if (!v) { missing.push({ k, why: "Okänd variabel" }); return m; }
+    let val = null;
+    try { val = v.f(cand, job, org); } catch (e) { val = null; }
+    if (val == null || val === "") { missing.push({ k, why: v.d + " saknas för kandidaten" }); return ""; }
+    return String(val);
+  });
+  return { text: out, missing };
+}
+const mkTemplate = (name, cat, jobId) => ({
+  id: "tp" + uid(), name: name || "Ny mall", cat: cat || "info", jobId: jobId || null,
+  subject: "", body: "", active: true, archived: false,
+  channel: "email", conditions: { mode: "all", rules: [] },
+  version: 0, versions: [], createdAt: Date.now(), updatedAt: Date.now(),
+});
+/* Mallval: jobbspecifik före organisationsgemensam, alltid publicerad och aktiv. */
+function pickTemplate(state, job, cat) {
+  const all = (state.tpls || []).filter((t) => t.active && !t.archived && t.version > 0 && t.cat === cat);
+  return all.find((t) => t.jobId === (job && job.id)) || all.find((t) => !t.jobId) || null;
+}
+function tplWarnings(t, state) {
+  const w = [];
+  if (!String(t.subject || "").trim()) w.push({ kind: "err", msg: "Ämnesraden är tom." });
+  if (String(t.body || "").trim().length < 10) w.push({ kind: "err", msg: "Meddelandetexten är för kort." });
+  const used = [...String(t.subject + " " + t.body).matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]);
+  used.filter((k) => !VAR_MAP[k]).forEach((k) => w.push({ kind: "err", msg: "Okänd variabel {{" + k + "}}." }));
+  const dupes = (state.tpls || []).filter((x) => x.id !== t.id && !x.archived && x.active && x.cat === t.cat && x.jobId === t.jobId && x.version > 0);
+  if (dupes.length && t.version > 0) w.push({ kind: "warn", msg: "En annan publicerad mall i samma kategori och tjänst finns redan — den första i listan används." });
+  if (!ESSENTIAL.has(t.cat)) w.push({ kind: "warn", msg: "Kategorin räknas som icke-nödvändig — kandidater som avregistrerat sig får inte mejlet." });
+  return w;
+}
+
+/* ---- Utskicksmotorn: en väg in för allt. Aldrig tyst fel. ---- */
+const OPTOUT_LABEL = "Avregistrerad från icke-nödvändig kommunikation";
+function sendBlockers(state, cand, person, tpl, opts) {
+  const b = [];
+  if (!tpl) b.push({ code: "no_tpl", msg: "Ingen publicerad mall i kategorin", fix: "Publicera en mall under Kommunikation." });
+  if (!validEmail(cand.email)) b.push({ code: "no_email", msg: "Kandidaten saknar giltig e-postadress", fix: "Komplettera adressen i kandidatprofilen." });
+  if (person && person.optOut && tpl && !ESSENTIAL.has(tpl.cat)) b.push({ code: "optout", msg: OPTOUT_LABEL, fix: "Bara nödvändiga besked kan skickas till kandidaten." });
+  if (person && person.archived) b.push({ code: "archived", msg: "Kandidaten är arkiverad", fix: "Återställ profilen först." });
+  if (tpl) {
+    const r = renderTpl2(tpl.subject + " " + tpl.body, cand, opts.job, opts.org);
+    r.missing.forEach((m) => b.push({ code: "var:" + m.k, msg: "Variabeln {{" + m.k + "}} kan inte fyllas i: " + m.why, fix: "Komplettera uppgiften eller ta bort variabeln ur mallen.", soft: true }));
+  }
+  /* Dubblettspärr: samma mall till samma kandidat inom 24 timmar. */
+  const recent = (state.messages || []).find((m) => m.candidateId === cand.id && m.tplId === (tpl && tpl.id) && m.status !== "failed" && Date.now() - m.at < 864e5);
+  if (recent && !opts.force) b.push({ code: "duplicate", msg: "Samma mall skickades till kandidaten för " + timeAgo(recent.at), fix: "Bekräfta att du vill skicka igen." });
+  return b;
+}
+function buildMessage2(state, cand, job, tpl, opts) {
+  const org = state.org;
+  const person = personOf(state, cand);
+  const sub = renderTpl2(opts.subject != null ? opts.subject : tpl.subject, cand, job, org);
+  const bod = renderTpl2(opts.body != null ? opts.body : tpl.body, cand, job, org);
+  return {
+    id: "m" + uid(), key: opts.key || ("k" + uid()),
+    candidateId: cand.id, candidateName: cand.name, personId: cand.personId || (person && person.id) || null,
+    jobId: job ? job.id : null, to: cand.email,
+    subject: sub.text, body: bod.text,
+    tplId: tpl.id, tplName: tpl.name, tplVersion: tpl.version, cat: tpl.cat, trigger: tpl.cat,
+    channel: opts.channel || tpl.channel || "email",
+    status: opts.sendAt && opts.sendAt > Date.now() ? "scheduled" : "queued",
+    sendAt: opts.sendAt || null, batchId: opts.batchId || null,
+    at: Date.now(), by: opts.by || null, byName: opts.byName || "System",
+    missing: [...sub.missing, ...bod.missing].map((m) => m.k),
+    error: null, sentAt: null,
+  };
+}
+const MSG_LABEL2 = { queued: "Köad", scheduled: "Schemalagd", sending: "Skickar…", sent: "Skickad", failed: "Fel", cancelled: "Avbruten", note: "Intern notering" };
 /* ===================== PIPELINE, SLA OCH FÖRFLYTTNINGSMOTOR ===================== */
 /* Stegtyper. `legacy` håller den gamla statusmodellen synkad så att kö, statistik,
  * kalender och rapporter fortsätter fungera oförändrat. */
@@ -5074,6 +5246,250 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
     </div></Modal>}
   </div>;
 }
+/* ===================== KOMMUNIKATION (VY) ===================== */
+/* Gemensam utskickspanel — används från kandidatprofil, ansökan, kö och massutskick. */
+function SendPanel({ state, D, me, showToast, candIds, onClose }) {
+  const [tplId, setTplId] = useState("");
+  const [when, setWhen] = useState("now");
+  const [at, setAt] = useState(() => { const d = new Date(Date.now() + 3600e3); d.setMinutes(0, 0, 0); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:00`; });
+  const [force, setForce] = useState(false);
+  const [override, setOverride] = useState(false);
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [prev, setPrev] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const tpls = (state.tpls || []).filter((t) => t.active && !t.archived && t.version > 0);
+  const tpl = tpls.find((t) => t.id === tplId);
+  const cands = candIds.map((id) => state.candidates.find((c) => c.id === id)).filter(Boolean);
+  const bulk = cands.length > 1;
+  const sendAt = when === "later" ? new Date(at).getTime() : null;
+
+  useEffect(() => { if (tpl) { setSubject(tpl.subject); setBody(tpl.body); } }, [tplId]);
+
+  const rows = tpl ? cands.map((c) => {
+    const job = state.jobs.find((j) => j.id === c.jobId);
+    const person = personOf(state, c);
+    const bl = sendBlockers(state, c, person, tpl, { job, org: state.org, force });
+    const sub = renderTpl2(override ? subject : tpl.subject, c, job, state.org);
+    const bod = renderTpl2(override ? body : tpl.body, c, job, state.org);
+    return { c, job, bl, hard: bl.filter((b) => !b.soft), soft: bl.filter((b) => b.soft), subject: sub.text, body: bod.text };
+  }) : [];
+  const ok = rows.filter((r) => !r.hard.length);
+  const blocked = rows.filter((r) => r.hard.length);
+  const p0 = ok[Math.min(prev, Math.max(0, ok.length - 1))];
+
+  const send = () => {
+    if (!tpl || !ok.length || busy) return;
+    setBusy(true);
+    const opts = { tplId: tpl.id, sendAt, force, ...(override ? { subject, body } : {}) };
+    if (bulk) D({ type: "SEND_BULK", ...opts, candIds: ok.map((r) => r.c.id), batchId: "b" + uid(), spacingMs: ok.length > 20 ? 2000 : 0 });
+    else D({ type: "SEND", ...opts, candId: ok[0].c.id, key: "k" + uid() });
+    showToast({ kind: "ok", msg: (sendAt ? "Schemalagt till " : "Skickar till ") + ok.length + (ok.length === 1 ? " kandidat" : " kandidater") });
+    onClose();
+  };
+
+  return <div className="ats-send">
+    <label className="ats-field"><span className="ats-field-l">Mall</span>
+      <select className="ats-inp" value={tplId} onChange={(e) => setTplId(e.target.value)} autoFocus>
+        <option value="">Välj mall…</option>
+        {Object.entries(TPL_CATS).map(([cat, l]) => { const list = tpls.filter((t) => t.cat === cat); return list.length ? <optgroup key={cat} label={l}>{list.map((t) => <option key={t.id} value={t.id}>{t.name}{t.jobId ? " (jobbspecifik)" : ""}</option>)}</optgroup> : null; })}
+      </select>
+      {tpl && !ESSENTIAL.has(tpl.cat) && <span className="ats-af-help">Icke-nödvändig kategori — kandidater som avregistrerat sig får inte mejlet.</span>}
+    </label>
+
+    {tpl && <>
+      <div className="ats-send-sum">
+        <div><span>Skickas till</span><b>{ok.length}</b></div>
+        <div><span>Blockerade</span><b className={blocked.length ? "is-warn" : ""}>{blocked.length}</b></div>
+        <div><span>Saknade uppgifter</span><b className={ok.some((r) => r.soft.length) ? "is-warn" : ""}>{ok.filter((r) => r.soft.length).length}</b></div>
+      </div>
+
+      <label className="ats-field"><span className="ats-field-l">När</span>
+        <div className="ats-chipset">
+          <button className={"ats-selchip" + (when === "now" ? " is-on" : "")} onClick={() => setWhen("now")}>Skicka nu</button>
+          <button className={"ats-selchip" + (when === "later" ? " is-on" : "")} onClick={() => setWhen("later")}>Schemalägg</button>
+        </div>
+      </label>
+      {when === "later" && <label className="ats-field"><span className="ats-field-l">Tidpunkt</span><input className="ats-inp" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
+        {sendAt && sendAt < Date.now() && <span className="ats-af-err"><CircleAlert size={13} /> Tiden har passerat.</span>}</label>}
+
+      <label className="ats-cb-check"><input type="checkbox" checked={override} onChange={(e) => setOverride(e.target.checked)} /> Anpassa texten för det här utskicket (mallen ändras inte)</label>
+      {override && <>
+        <label className="ats-field"><span className="ats-field-l">Ämne</span><input className="ats-inp" value={subject} onChange={(e) => setSubject(e.target.value)} /></label>
+        <label className="ats-field"><span className="ats-field-l">Meddelande</span><textarea className="ats-inp" rows={6} value={body} onChange={(e) => setBody(e.target.value)} /></label>
+      </>}
+
+      {p0 && <div className="ats-send-prev">
+        <div className="ats-send-prev-h">
+          <b>Förhandsvisning</b>
+          {ok.length > 1 && <div className="ats-send-nav">
+            <button className="ats-ghost is-sm" disabled={prev === 0} onClick={() => setPrev(prev - 1)}><ChevronLeft size={14} /></button>
+            <span>{Math.min(prev, ok.length - 1) + 1} / {ok.length} · {p0.c.name}</span>
+            <button className="ats-ghost is-sm" disabled={prev >= ok.length - 1} onClick={() => setPrev(prev + 1)}><ChevronRight size={14} /></button>
+          </div>}
+        </div>
+        <div className="ats-send-mail">
+          <div className="ats-send-to">Till: {p0.c.email} · Från: {state.org.companyName} · Svar: {state.org.hrEmail}</div>
+          <div className="ats-send-subj">{p0.subject}</div>
+          <pre>{p0.body}</pre>
+        </div>
+        {p0.soft.length > 0 && <div className="ats-sv-warn is-warn"><AlertTriangle size={14} /> {p0.soft.map((b) => b.msg).join(" · ")}</div>}
+      </div>}
+
+      {blocked.length > 0 && <div className="ats-send-block">
+        <b>{blocked.length} kandidater får inte mejlet</b>
+        <ul className="ats-blocked">{blocked.slice(0, 8).map((r) => <li key={r.c.id}><b>{r.c.name}</b><span>{r.hard[0].msg} — {r.hard[0].fix}</span></li>)}</ul>
+        {blocked.some((r) => r.hard.some((b) => b.code === "duplicate")) && <label className="ats-cb-check"><input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} /> Skicka ändå till dem som redan fått samma mall</label>}
+      </div>}
+    </>}
+
+    <div className="ats-erase-actions">
+      <button className="ats-ghost" onClick={onClose}>Avbryt</button>
+      <button className="ats-btn-primary" disabled={!tpl || !ok.length || busy || (when === "later" && sendAt < Date.now())} onClick={send}>
+        <Send size={15} /> {sendAt ? "Schemalägg" : "Skicka"} till {ok.length} {ok.length === 1 ? "kandidat" : "kandidater"}
+      </button>
+    </div>
+  </div>;
+}
+
+function CommsView({ state, D, me, job, showToast }) {
+  const [tab, setTab] = useState("tpls");
+  const [selT, setSelT] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [newT, setNewT] = useState({ name: "", cat: "info", jobId: "" });
+  const [prevCand, setPrevCand] = useState("");
+  const [showVers, setShowVers] = useState(false);
+  const [q, setQ] = useState("");
+  const [fCat, setFCat] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  const canEdit = can(me.role, "edit");
+  useEffect(() => { if (!(state.tpls || []).length) D({ type: "TPL_INIT" }); }, []);
+
+  const tpls = (state.tpls || []).filter((t) => !t.archived);
+  const t = selT ? tpls.find((x) => x.id === selT) : null;
+  const warns = t ? tplWarnings(t, state) : [];
+  const errs = warns.filter((w) => w.kind === "err");
+  const cands = state.candidates;
+  const pc = prevCand ? cands.find((c) => c.id === prevCand) : cands[0];
+  const pjob = pc ? state.jobs.find((j) => j.id === pc.jobId) : job;
+  const prevSub = t && pc ? renderTpl2(t.subject, pc, pjob, state.org) : null;
+  const prevBody = t && pc ? renderTpl2(t.body, pc, pjob, state.org) : null;
+
+  const msgs = (state.messages || [])
+    .filter((m) => !q.trim() || (m.candidateName + " " + m.subject + " " + m.to).toLowerCase().includes(q.toLowerCase()))
+    .filter((m) => !fCat || m.cat === fCat)
+    .filter((m) => !fStatus || m.status === fStatus);
+  const batches = [...new Set((state.messages || []).filter((m) => m.batchId).map((m) => m.batchId))].slice(0, 10);
+
+  const insertVar = (k) => { if (!t) return; D({ type: "TPL_SET", id: t.id, patch: { body: (t.body || "") + "{{" + k + "}}" } }); };
+
+  return <div className="ats-view">
+    <PageHeader title="Kommunikation" meta={<><span>{tpls.filter((x) => x.version > 0).length} publicerade mallar</span><Dot /><span>{(state.messages || []).length} meddelanden</span></>}
+      right={canEdit && tab === "tpls" && <button className="ats-btn-primary is-sm" onClick={() => setAdding(true)}><Plus size={15} /> Ny mall</button>} />
+
+    <div className="ats-tabs">{[["tpls", "Mallar"], ["log", "Meddelanden"], ["batches", "Massutskick"]].map(([id, l]) =>
+      <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}</button>)}</div>
+
+    {tab === "tpls" && <div className="ats-sv">
+      <div className="ats-sv-main"><div className="ats-panel">
+        <div className="ats-panel-h"><h2>Mallar</h2></div>
+        {Object.entries(TPL_CATS).map(([cat, l]) => { const list = tpls.filter((x) => x.cat === cat); if (!list.length) return null;
+          return <div key={cat} className="ats-tpl-group">
+            <h4>{l}{!ESSENTIAL.has(cat) && <em>icke-nödvändig</em>}</h4>
+            {list.map((x) => <div key={x.id} className={"ats-rl-row" + (selT === x.id ? " is-on" : "") + (x.version === 0 ? " is-draft" : "")}>
+              <button className="ats-rl-n" onClick={() => { setSelT(selT === x.id ? null : x.id); setShowVers(false); }}>
+                <b>{x.name}</b><span>{x.subject || "Ingen ämnesrad"}{x.jobId ? " · " + ((state.jobs.find((j) => j.id === x.jobId) || {}).title || "jobb") : " · alla tjänster"}</span>
+              </button>
+              <span className={"ats-jobbadge is-" + (x.version ? "petrol" : "muted")}>{x.version ? "v" + x.version : "utkast"}</span>
+            </div>)}
+          </div>; })}
+        {tpls.length === 0 && <div className="ats-kb-empty">Inga mallar än.</div>}
+      </div></div>
+
+      {t && <aside className="ats-sv-side"><div className="ats-panel">
+        <div className="ats-panel-h"><h2>{t.name}</h2><button className="ats-ghost is-sm" onClick={() => setSelT(null)}><X size={15} /></button></div>
+        {warns.length > 0 && <div className="ats-sv-warns">{warns.map((w, i) => <div key={i} className={"ats-sv-warn is-" + w.kind}>{w.kind === "err" ? <CircleAlert size={14} /> : <AlertTriangle size={14} />} {w.msg}</div>)}</div>}
+        <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={t.name} disabled={!canEdit} onChange={(e) => D({ type: "TPL_SET", id: t.id, patch: { name: e.target.value } })} /></label>
+        <div className="ats-tpl-two">
+          <label className="ats-field"><span className="ats-field-l">Kategori</span><select className="ats-inp" value={t.cat} disabled={!canEdit} onChange={(e) => D({ type: "TPL_SET", id: t.id, patch: { cat: e.target.value } })}>{Object.entries(TPL_CATS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+          <label className="ats-field"><span className="ats-field-l">Gäller</span><select className="ats-inp" value={t.jobId || ""} disabled={!canEdit} onChange={(e) => D({ type: "TPL_SET", id: t.id, patch: { jobId: e.target.value || null } })}><option value="">Alla tjänster</option>{state.jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}</select></label>
+        </div>
+        <label className="ats-field"><span className="ats-field-l">Ämne</span><input className="ats-inp" value={t.subject} disabled={!canEdit} onChange={(e) => D({ type: "TPL_SET", id: t.id, patch: { subject: e.target.value } })} /></label>
+        <label className="ats-field"><span className="ats-field-l">Meddelande</span><textarea className="ats-inp" rows={9} value={t.body} disabled={!canEdit} onChange={(e) => D({ type: "TPL_SET", id: t.id, patch: { body: e.target.value } })} /></label>
+
+        <h3 className="ats-pb-h">Variabler</h3>
+        {[...new Set(VARS.map((v) => v.g))].map((g) => <div key={g} className="ats-varg">
+          <span>{g}</span>
+          <div className="ats-chipset">{VARS.filter((v) => v.g === g).map((v) => <button key={v.k} className="ats-selchip is-var" disabled={!canEdit} title={v.d} onClick={() => insertVar(v.k)}>{"{{" + v.k + "}}"}</button>)}</div>
+        </div>)}
+
+        <h3 className="ats-pb-h">Förhandsvisning</h3>
+        <select className="ats-select is-sm" value={prevCand} onChange={(e) => setPrevCand(e.target.value)} aria-label="Kandidat"><option value="">Första kandidaten</option>{cands.slice(0, 40).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        {pc ? <div className="ats-send-mail">
+          <div className="ats-send-to">Till: {pc.email}</div>
+          <div className="ats-send-subj">{prevSub.text || "(ingen ämnesrad)"}</div>
+          <pre>{prevBody.text || "(tom text)"}</pre>
+          {[...prevSub.missing, ...prevBody.missing].length > 0 && <div className="ats-sv-warn is-warn"><AlertTriangle size={14} /> Saknas för den här kandidaten: {[...new Set([...prevSub.missing, ...prevBody.missing].map((m) => "{{" + m.k + "}}"))].join(", ")}</div>}
+        </div> : <div className="ats-kb-empty">Ingen kandidat att förhandsvisa mot.</div>}
+
+        <div className="ats-cb-brandacts">
+          {canEdit && <button className="ats-btn-primary is-sm" disabled={errs.length > 0} title={errs.length ? errs[0].msg : "Publicera"} onClick={() => { D({ type: "TPL_PUBLISH", id: t.id }); showToast({ kind: "ok", msg: "Mall publicerad · v" + (t.version + 1) }); }}><Rocket size={14} /> Publicera</button>}
+          <button className="ats-ghost is-sm" onClick={() => setShowVers(!showVers)}><History size={14} /> Versioner ({(t.versions || []).length})</button>
+          {canEdit && <button className="ats-ghost is-sm" onClick={() => D({ type: "TPL_ADD", name: t.name + " (kopia)", from: t.id })}><Copy size={14} /> Duplicera</button>}
+          {canEdit && <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => { D({ type: "TPL_DEL", id: t.id }); setSelT(null); }}><Trash2 size={14} /> Ta bort</button>}
+        </div>
+        {showVers && <div className="ats-sa-rows">{(t.versions || []).map((v) => <div key={v.v} className="ats-sa-row is-card">
+          <div className="ats-sa-main"><b>v{v.v}</b><span>{v.subject}</span></div>
+          <span className="ats-sa-when">{v.by} · {new Date(v.at).toLocaleDateString("sv-SE")}</span>
+          {canEdit && <button className="ats-ghost is-sm" onClick={() => { D({ type: "TPL_RESTORE", id: t.id, v: v.v }); showToast({ kind: "ok", msg: "Återställd till v" + v.v }); }}><RotateCcw size={13} /></button>}
+        </div>)}</div>}
+      </div></aside>}
+    </div>}
+
+    {tab === "log" && <>
+      <div className="ats-jfilters">
+        <div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sök kandidat, ämne eller adress…" /></div>
+        <select className="ats-select is-sm" value={fCat} onChange={(e) => setFCat(e.target.value)} aria-label="Kategori"><option value="">Alla kategorier</option>{Object.entries(TPL_CATS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+        <select className="ats-select is-sm" value={fStatus} onChange={(e) => setFStatus(e.target.value)} aria-label="Status"><option value="">Alla statusar</option>{Object.entries(MSG_LABEL2).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+      </div>
+      {msgs.length === 0 ? <div className="ats-col-empty" style={{ padding: 40 }}>Inga meddelanden matchar.</div>
+        : <div className="ats-jtablewrap"><table className="ats-jtable">
+          <thead><tr><th>Status</th><th>Mottagare</th><th>Ämne</th><th>Mall</th><th>Tid</th><th /></tr></thead>
+          <tbody>{msgs.slice(0, 200).map((m) => <tr key={m.id}>
+            <td><span className={"ats-msgstatus is-" + m.status}>{MSG_LABEL2[m.status] || m.status}</span></td>
+            <td>{m.candidateName}<div className="ats-mono ats-muted">{m.to}</div></td>
+            <td>{m.subject}{m.error && <div className="ats-msgerr">{m.error}</div>}{m.missing && m.missing.length > 0 && <div className="ats-msgerr">Saknade variabler: {m.missing.join(", ")}</div>}</td>
+            <td>{m.tplName}<div className="ats-mono ats-muted">{TPL_CATS[m.cat] || m.cat} v{m.tplVersion || 1}</div></td>
+            <td className="ats-mono">{m.status === "scheduled" ? new Date(m.sendAt).toLocaleString("sv-SE").slice(0, 16) : timeAgo(m.sentAt || m.at)}</td>
+            <td>{["queued", "scheduled"].includes(m.status) && can(me.role, "message") && <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => D({ type: "MSG_CANCEL", id: m.id })}>Avbryt</button>}</td>
+          </tr>)}</tbody></table></div>}
+    </>}
+
+    {tab === "batches" && (batches.length === 0 ? <div className="ats-col-empty" style={{ padding: 40 }}>Inga massutskick än.</div>
+      : <div className="ats-sa-rows">{batches.map((b) => { const list = (state.messages || []).filter((m) => m.batchId === b);
+        const sent = list.filter((m) => m.status === "sent").length, failed = list.filter((m) => m.status === "failed").length;
+        const pending = list.filter((m) => ["queued", "scheduled"].includes(m.status)).length;
+        const m0 = list[0];
+        return <div key={b} className="ats-sa-row is-card">
+          <div className="ats-sa-main">
+            <div className="ats-sa-top"><b>{m0.tplName}</b><span className="ats-jobbadge is-petrol">{list.length} mottagare</span>{m0.sendAt && <span className="ats-jobbadge is-blue">Schemalagt {new Date(m0.sendAt).toLocaleString("sv-SE").slice(0, 16)}</span>}</div>
+            <span>{sent} skickade · {failed} fel · {pending} väntar · {m0.byName} · {timeAgo(m0.at)}</span>
+            {failed > 0 && <ul className="ats-blocked">{list.filter((m) => m.status === "failed").slice(0, 3).map((m) => <li key={m.id}><b>{m.candidateName}</b><span>{m.error}</span></li>)}</ul>}
+          </div>
+          {pending > 0 && can(me.role, "message") && <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => { D({ type: "MSG_CANCEL_BATCH", batchId: b }); showToast({ kind: "ok", msg: "Utskicket avbröts" }); }}><X size={13} /> Avbryt</button>}
+        </div>; })}</div>)}
+
+    {adding && <Modal title="Ny mall" onClose={() => setAdding(false)}><div className="ats-erase">
+      <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={newT.name} onChange={(e) => setNewT({ ...newT, name: e.target.value })} autoFocus /></label>
+      <div className="ats-tpl-two">
+        <label className="ats-field"><span className="ats-field-l">Kategori</span><select className="ats-inp" value={newT.cat} onChange={(e) => setNewT({ ...newT, cat: e.target.value })}>{Object.entries(TPL_CATS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+        <label className="ats-field"><span className="ats-field-l">Gäller</span><select className="ats-inp" value={newT.jobId} onChange={(e) => setNewT({ ...newT, jobId: e.target.value })}><option value="">Alla tjänster</option>{state.jobs.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}</select></label>
+      </div>
+      <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setAdding(false)}>Avbryt</button>
+        <button className="ats-btn-primary" disabled={!newT.name.trim()} onClick={() => { D({ type: "TPL_ADD", name: newT.name.trim(), cat: newT.cat, jobId: newT.jobId || null }); setNewT({ name: "", cat: "info", jobId: "" }); setAdding(false); }}><Plus size={15} /> Skapa</button></div>
+    </div></Modal>}
+  </div>;
+}
 /* ===================== KANDIDATBANK (CRM) ===================== */
 function PersonProfile({ p, state, D, me, showToast, onClose, setDetailId }) {
   const [tab, setTab] = useState("overview");
@@ -5092,6 +5508,8 @@ function PersonProfile({ p, state, D, me, showToast, onClose, setDetailId }) {
   const set = (patch, note2) => D({ type: "PERSON_SET", id: p.id, patch, note: note2 });
   const TL = { created: "Profil skapad", edited: "Uppgifter ändrade", note: "Anteckning", tag: "Tagg", pool: "Talangpool", owner: "Ansvarig", archived: "Arkiverad", restored: "Återställd", merged: "Sammanslagen", unmerged: "Återställd sammanslagning" };
   const tl = (p.timeline || []).filter((t) => !tlF || t.kind === tlF);
+  const msgs = (state.messages || []).filter((m) => m.personId === p.id);
+  const [sendFor2, setSendFor2] = useState(null);
   const pinned = (p.notes || []).filter((n) => n.pinned);
   const notes = (p.notes || []).filter((n) => !n.pinned);
 
@@ -5120,7 +5538,7 @@ function PersonProfile({ p, state, D, me, showToast, onClose, setDetailId }) {
       </div>
     </div>
 
-    <div className="ats-tabs is-sub">{[["overview", "Översikt"], ["apps", "Ansökningar (" + apps.length + ")"], ["notes", "Anteckningar"], ["timeline", "Tidslinje"], ["privacy", "Integritet"]].map(([id, l]) =>
+    <div className="ats-tabs is-sub">{[["overview", "Översikt"], ["apps", "Ansökningar (" + apps.length + ")"], ["msgs", "Kommunikation (" + msgs.length + ")"], ["notes", "Anteckningar"], ["timeline", "Tidslinje"], ["privacy", "Integritet"]].map(([id, l]) =>
       <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}</button>)}</div>
 
     {tab === "overview" && <div className="ats-pp-body">
@@ -5172,6 +5590,23 @@ function PersonProfile({ p, state, D, me, showToast, onClose, setDetailId }) {
       <div className="ats-erase-note"><Info size={14} /> Varje ansökan har sina egna originalsvar, sin scoringversion och sin historik. En ändring i en ansökan påverkar aldrig en annan.</div>
     </div>}
 
+    {tab === "msgs" && <div className="ats-pp-body">
+      {p.optOut && <div className="ats-sv-warn is-warn"><AlertTriangle size={14} /> Avregistrerad från icke-nödvändig kommunikation sedan {new Date(p.optOut.at).toLocaleDateString("sv-SE")}{p.optOut.reason ? " (" + p.optOut.reason + ")" : ""}. Nödvändiga besked skickas ändå.</div>}
+      {can(me.role, "message") && !p.archived && apps.length > 0 && <button className="ats-btn-primary is-sm" onClick={() => setSendFor2(apps.map((a) => a.id))}><Send size={14} /> Skicka meddelande</button>}
+      {msgs.length === 0 ? <div className="ats-col-empty" style={{ padding: 30 }}>Ingen kommunikation än.</div>
+        : <div className="ats-sa-rows">{msgs.map((m) => <div key={m.id} className="ats-sa-row is-card">
+          <div className="ats-sa-main">
+            <div className="ats-sa-top"><b>{m.subject}</b><span className={"ats-msgstatus is-" + m.status}>{MSG_LABEL2[m.status] || m.status}</span></div>
+            <span>{m.tplName} · {TPL_CATS[m.cat] || m.cat}{m.jobId ? " · " + ((state.jobs.find((j) => j.id === m.jobId) || {}).title || "") : ""} · {m.byName}</span>
+            {m.error && <span className="ats-msgerr">{m.error}</span>}
+          </div>
+          <span className="ats-sa-when">{m.status === "scheduled" ? new Date(m.sendAt).toLocaleString("sv-SE").slice(0, 16) : timeAgo(m.sentAt || m.at)}</span>
+        </div>)}</div>}
+      {canEdit && <label className="ats-cb-check"><input type="checkbox" checked={!!p.optOut} onChange={(e) => D({ type: "OPTOUT_SET", id: p.id, on: e.target.checked, reason: "Manuellt av rekryterare" })} /> Avregistrera från icke-nödvändig kommunikation</label>}
+      {sendFor2 && <Modal title="Skicka meddelande" onClose={() => setSendFor2(null)} wide>
+        <SendPanel state={state} D={D} me={me} showToast={showToast} candIds={sendFor2} onClose={() => setSendFor2(null)} />
+      </Modal>}
+    </div>}
     {tab === "notes" && <div className="ats-pp-body">
       {canNotes && !p.archived && <div className="ats-pp-note-add">
         <textarea className="ats-inp" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Intern anteckning — syns aldrig för kandidaten" />
@@ -5240,6 +5675,7 @@ function CrmView({ state, D, me, showToast, setDetailId }) {
   const [newTagCat, setNewTagCat] = useState("skill");
   const [newPool, setNewPool] = useState("");
   const [addPerson, setAddPerson] = useState(false);
+  const [sendFor, setSendFor] = useState(null);
   const [np, setNp] = useState({ name: "", email: "", phone: "" });
   const [page, setPage] = useState(1);
   const PER = 50;
@@ -5353,6 +5789,7 @@ function CrmView({ state, D, me, showToast, setDetailId }) {
           <button className="ats-ghost is-sm" onClick={() => setBulk("owner")}><UserCheck size={13} /> Ansvarig</button>
           {tab === "archived" ? <button className="ats-ghost is-sm" onClick={() => runBulk("restore")}><RotateCcw size={13} /> Återställ</button>
             : <button className="ats-ghost is-sm" onClick={() => runBulk("archive")}><Trash2 size={13} /> Arkivera</button>}
+          {can(me.role, "message") && <button className="ats-ghost is-sm" onClick={() => { const ids = state.candidates.filter((c) => sel.includes(c.personId)).map((c) => c.id); if (!ids.length) { showToast({ kind: "warn", msg: "De valda kandidaterna har inga ansökningar" }); return; } setSendFor(ids); }}><Send size={13} /> Skicka meddelande</button>}
           {can(me.role, "export") && <button className="ats-ghost is-sm" onClick={doExport}><Download size={13} /> Exportera</button>}
           <button className="ats-ghost is-sm" onClick={() => setSel([])}>Avmarkera</button>
         </div>}
@@ -5388,7 +5825,7 @@ function CrmView({ state, D, me, showToast, setDetailId }) {
       </>}
 
     {open && (() => { const p = people.find((x) => x.id === open); if (!p) return null;
-      return <Modal title="" onClose={() => setOpen(null)} wide><PersonProfile p={p} state={state} D={D} me={me} showToast={showToast} onClose={() => setOpen(null)} setDetailId={setDetailId} /></Modal>; })()}
+      return <Modal title="" onClose={() => setOpen(null)} person><PersonProfile p={p} state={state} D={D} me={me} showToast={showToast} onClose={() => setOpen(null)} setDetailId={setDetailId} /></Modal>; })()}
 
     {merge && <Modal title="Slå samman kandidater" onClose={() => setMerge(null)} wide><div className="ats-erase">
       <p><b>{merge.a.name || merge.a.email}</b> blir huvudprofil. <b>{merge.b.name || merge.b.email}</b> slås in i den. <b>Alla ansökningar, bedömningar, scoring, anteckningar och tidslinjer följer med</b> — ingenting raderas, och sammanslagningen kan återställas.</p>
@@ -5418,6 +5855,9 @@ function CrmView({ state, D, me, showToast, setDetailId }) {
       <div className="ats-erase-actions"><button className="ats-btn-primary" onClick={() => setBulkRes(null)}>Stäng</button></div>
     </div></Modal>}
 
+    {sendFor && <Modal title="Skicka meddelande" onClose={() => setSendFor(null)} wide>
+      <SendPanel state={state} D={D} me={me} showToast={showToast} candIds={sendFor} onClose={() => { setSendFor(null); setSel([]); }} />
+    </Modal>}
     {addPerson && <Modal title="Ny kandidat" onClose={() => setAddPerson(false)}><div className="ats-erase">
       <p>Skapa en profil manuellt — till exempel för en rekommendation eller en intern kandidat. Kandidaten behöver ingen ansökan.</p>
       <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={np.name} onChange={(e) => setNp({ ...np, name: e.target.value })} autoFocus /></label>
@@ -8842,8 +9282,11 @@ section.ats-cs-cta p{font-size:17px;opacity:.9;margin-bottom:28px}
 .ats-dup-diffs span{font-size:12px;color:var(--sub);font-family:'IBM Plex Mono',monospace}
 .ats-dup-diffs b{color:var(--muted);font-weight:600}
 /* Kandidatprofil */
-.ats-pp{display:flex;flex-direction:column;gap:14px;max-height:76vh;overflow-y:auto;padding-right:4px}
-.ats-pp-h{display:flex;align-items:flex-start;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.ats-pp{display:flex;flex-direction:column;gap:14px}
+.ats-modal.is-person{width:860px}
+.ats-modal.is-person .ats-modal-h{display:none}
+.ats-modal.is-person>div:last-child{padding:22px}
+.ats-pp-h{display:flex;align-items:flex-start;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--line);position:sticky;top:-22px;background:var(--paper);z-index:3;padding-top:4px}
 .ats-pp-id{flex:1;min-width:0}
 .ats-pp-id h2{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-family:'Bricolage Grotesque';font-weight:600;font-size:22px;letter-spacing:-.018em}
 .ats-pp-id>.ats-mono{display:block;font-size:12.5px;color:var(--muted);margin-top:4px}
@@ -8868,6 +9311,36 @@ section.ats-cs-cta p{font-size:17px;opacity:.9;margin-bottom:28px}
   .ats-pp-h{flex-wrap:wrap}
   .ats-pp-acts{width:100%;justify-content:flex-end}
   .ats-pp-newapp{flex-direction:column}
+}
+
+/* ---- Kommunikation ---- */
+.ats-tpl-group{margin-bottom:16px}
+.ats-tpl-group h4{display:flex;align-items:center;gap:8px;font-family:'Bricolage Grotesque';font-weight:600;font-size:13px;color:var(--muted);margin-bottom:8px}
+.ats-tpl-group h4 em{font-style:normal;font-size:10.5px;padding:2px 7px;border-radius:9px;background:var(--amber-soft);color:var(--gold)}
+.ats-varg{margin-bottom:10px}
+.ats-varg>span{display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px}
+.ats-selchip.is-var{font-family:'IBM Plex Mono',monospace;font-size:11.5px;min-height:34px;padding:6px 10px}
+.ats-send{display:flex;flex-direction:column;gap:14px}
+.ats-send-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.ats-send-sum div{background:var(--surface);padding:12px 14px;display:flex;flex-direction:column;gap:2px}
+.ats-send-sum span{font-size:11.5px;color:var(--muted)}
+.ats-send-sum b{font-family:'Bricolage Grotesque';font-size:20px}
+.ats-send-sum b.is-warn{color:var(--brick)}
+.ats-send-prev-h{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.ats-send-prev-h b{font-size:13px}
+.ats-send-nav{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.ats-send-mail{background:var(--surface);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+.ats-send-to{padding:9px 14px;background:var(--paper2);font-size:11.5px;color:var(--muted);font-family:'IBM Plex Mono',monospace;border-bottom:1px solid var(--line);word-break:break-word}
+.ats-send-subj{padding:12px 14px;font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;border-bottom:1px solid var(--line)}
+.ats-send-mail pre{padding:14px;font-family:inherit;font-size:14px;line-height:1.65;color:var(--sub);white-space:pre-wrap;word-break:break-word;margin:0;max-height:260px;overflow-y:auto}
+.ats-send-block{padding:13px 15px;background:var(--brick-soft);border-radius:11px}
+.ats-send-block>b{display:block;font-size:13px;color:var(--brick);margin-bottom:8px}
+.ats-msgstatus.is-scheduled{background:var(--blue-soft);color:var(--blue)}
+.ats-msgstatus.is-cancelled{background:var(--paper2);color:var(--muted)}
+.ats-msgstatus.is-note{background:var(--amber-soft);color:var(--gold)}
+@media (max-width:640px){
+  .ats-send-sum{grid-template-columns:1fr}
+  .ats-send-prev-h{flex-direction:column;align-items:flex-start;gap:8px}
 }
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
