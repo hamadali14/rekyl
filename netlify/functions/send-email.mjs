@@ -1,113 +1,39 @@
-/* Rekyl — säker e-postutskickstjänst (Netlify Function).
+/* Rekyl — e-post och aviseringar.
+ *
+ * Tre vägar in, med olika behörighetsmodell:
+ *   GET                        → konfigurationsstatus (ingen hemlig information)
+ *   POST + Bearer <token>      → appen skickar mejl till en kandidat i SIN organisation
+ *   POST + x-rekyl-secret      → Supabase-webhook: ny ansökan → avisera rekryteraren
  *
  * Miljövariabler (Netlify → Project configuration → Environment variables):
- *   MAIL_PROVIDER   "brevo" eller "resend"
- *   BREVO_API_KEY   (om brevo)  |  RESEND_API_KEY  (om resend)
- *   MAIL_FROM       verifierad avsändaradress, t.ex. "noreply@dindoman.se"
- *   SUPABASE_URL / SUPABASE_ANON_KEY  (valfria — samma publika värden som i appen)
- *
- * Säkerhet: anroparens Supabase-session verifieras, och mottagaren måste finnas
- * i anroparens EGEN organisation. Tjänsten kan inte missbrukas som spamrelä.
+ *   MAIL_PROVIDER, BREVO_API_KEY (eller RESEND_API_KEY), MAIL_FROM
+ *   NOTIFY_SECRET               → krävs för avisering vid ny ansökan
+ *   SUPABASE_SERVICE_ROLE_KEY   → krävs för intervjupåminnelser
  */
 
-const SB_URL = process.env.SUPABASE_URL || "https://eaditrzamfhylmlrmkca.supabase.co";
-const SB_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVhZGl0cnphbWZoeWxtbHJta2NhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODA4NjgsImV4cCI6MjA5OTE1Njg2OH0.jFzfeVow0P-46Vj7G-yTVjA1IHp8UN-Ts8Us719rYmE";
+import {
+  EMAIL_RE, NOTIFY_SECRET, SB_KEY, SB_SERVICE, PROVIDER, enc, clean, json,
+  configProblem, fromAddress, providerProblem, supabaseOk, verifyUser, sbRest,
+  sendProvider, validAttachment, runReminders,
+} from "../lib/mail.mjs";
 
-const PROVIDER = String(process.env.MAIL_PROVIDER || "").toLowerCase();
-const MAIL_FROM = String(process.env.MAIL_FROM || "").trim();
-const RESEND_API_KEY = String(process.env.RESEND_API_KEY || "").trim();
-const BREVO_API_KEY = String(process.env.BREVO_API_KEY || "").trim();
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_BODY = 20000;
 const MAX_SUBJECT = 300;
-const MAX_ATTACH = 100 * 1024; /* 100 kB */
 
-/* Endast kalenderinbjudningar tillats som bilaga — aldrig godtyckliga filer. */
-function validAttachment(a) {
-  if (!a) return null;
-  if (typeof a !== "object") return { error: "Ogiltig bilaga." };
-  const name = clean(a.name, 60);
-  const content = String(a.content || "");
-  if (!/^[\w-]+\.ics$/i.test(name)) return { error: "Endast kalenderfiler (.ics) far bifogas." };
-  if (!content || !/^[A-Za-z0-9+/=]+$/.test(content)) return { error: "Bilagan ar inte korrekt kodad." };
-  if (content.length > MAX_ATTACH) return { error: "Bilagan ar for stor." };
-  return { name, content };
+/* ---- 1. Status ---- */
+async function handleStatus() {
+  const problem = configProblem();
+  if (problem) return json(200, { configured: false, reason: problem });
+  if (!(await supabaseOk())) return json(200, { configured: false, reason: "Supabase-nyckeln fungerar inte — sätt SUPABASE_ANON_KEY i Netlify." });
+  const pp = await providerProblem();
+  if (pp) return json(200, { configured: false, reason: pp });
+  return json(200, {
+    configured: true, provider: PROVIDER, from: fromAddress(),
+    notify: !!NOTIFY_SECRET,
+    reminders: !!SB_SERVICE,
+  });
 }
 
-const enc = encodeURIComponent;
-const providerKey = () => (PROVIDER === "resend" ? RESEND_API_KEY : PROVIDER === "brevo" ? BREVO_API_KEY : "");
-const fromAddress = () => { const m = MAIL_FROM.match(/<([^>]+)>/); return (m ? m[1] : MAIL_FROM).trim(); };
-
-/* Vad saknas i konfigurationen? Returnerar en läsbar orsak, aldrig ett tyst fel. */
-function configProblem() {
-  if (!PROVIDER) return "MAIL_PROVIDER saknas (sätt 'brevo' eller 'resend').";
-  if (PROVIDER !== "brevo" && PROVIDER !== "resend") return "MAIL_PROVIDER måste vara 'brevo' eller 'resend'.";
-  if (!providerKey()) return (PROVIDER === "brevo" ? "BREVO_API_KEY" : "RESEND_API_KEY") + " saknas.";
-  if (!MAIL_FROM) return "MAIL_FROM saknas.";
-  if (!EMAIL_RE.test(fromAddress())) return "MAIL_FROM är ingen giltig adress.";
-  return null;
-}
-
-/* Skydd mot header-injection. */
-const clean = (v, max) => String(v == null ? "" : v).replace(/[\r\n]+/g, " ").replace(/["<>]/g, "").trim().slice(0, max);
-const json = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
-
-async function sbRest(path, token) {
-  try {
-    const r = await fetch(SB_URL + "/rest/v1/" + path, { headers: { apikey: SB_KEY, Authorization: "Bearer " + token } });
-    if (!r.ok) return null;
-    return await r.json().catch(() => null);
-  } catch (e) { return null; }
-}
-
-/* Verifierar att SUPABASE_ANON_KEY faktiskt fungerar — annars kan status aldrig påstå "aktivt". */
-async function supabaseOk() {
-  try {
-    const r = await fetch(SB_URL + "/auth/v1/settings", { headers: { apikey: SB_KEY } });
-    return r.ok;
-  } catch (e) { return false; }
-}
-
-/* Gör leverantörens felkoder begripliga och åtgärdbara. */
-function providerHint(msg) {
-  const m = String(msg || "").toLowerCase();
-  if (m.includes("key not found") || m.includes("unauthorized") || m.includes("api key is invalid") || m.includes("invalid api key"))
-    return "Leverantören nekar API-nyckeln. I Brevo: hämta en API-nyckel v3 under SMTP & API → API keys (börjar med 'xkeysib-') — en SMTP-nyckel fungerar inte här.";
-  if (m.includes("sender") && (m.includes("not valid") || m.includes("not found") || m.includes("verif")))
-    return "Avsändaradressen (MAIL_FROM) är inte verifierad hos leverantören. Lägg till och verifiera den under Senders i Brevo.";
-  if (m.includes("domain") && m.includes("verif"))
-    return "Avsändardomänen är inte verifierad hos leverantören.";
-  return String(msg || "Leverantörsfel");
-}
-
-/* Kontrollerar att leverantören faktiskt accepterar nyckeln — status får aldrig påstå "aktivt" annars. */
-async function providerProblem() {
-  try {
-    if (PROVIDER === "brevo") {
-      const r = await fetch("https://api.brevo.com/v3/account", { headers: { "api-key": BREVO_API_KEY, Accept: "application/json" } });
-      if (r.status === 401 || r.status === 403) return providerHint("key not found");
-      if (!r.ok) return "Brevo svarar inte (" + r.status + ").";
-      return null;
-    }
-    const r = await fetch("https://api.resend.com/domains", { headers: { Authorization: "Bearer " + RESEND_API_KEY } });
-    if (r.status === 401 || r.status === 403) return providerHint("api key is invalid");
-    if (!r.ok) return "Resend svarar inte (" + r.status + ").";
-    return null;
-  } catch (e) { return "Kunde inte nå e-postleverantören."; }
-}
-
-async function verifyUser(token) {
-  try {
-    const r = await fetch(SB_URL + "/auth/v1/user", { headers: { apikey: SB_KEY, Authorization: "Bearer " + token } });
-    if (!r.ok) return null;
-    const d = await r.json().catch(() => null);
-    return d && d.id ? d : null;
-  } catch (e) { return null; }
-}
-
-/* Mottagaren måste finnas i anroparens organisation — antingen som ansökan i molnet
- * eller som kandidat i organisationens sparade state (täcker båda vägarna in). */
 async function recipientAllowed(orgId, to, token) {
   const apps = await sbRest("applications?org_id=eq." + enc(orgId) + "&email=ilike." + enc(to) + "&select=id&limit=1", token);
   if (Array.isArray(apps) && apps.length) return true;
@@ -116,46 +42,8 @@ async function recipientAllowed(orgId, to, token) {
   return cands.some((c) => String((c && c.email) || "").trim().toLowerCase() === to);
 }
 
-async function sendViaResend({ from, to, subject, text, replyTo, attachment }) {
-  const r = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + RESEND_API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to: [to], subject, text, ...(replyTo ? { reply_to: replyTo } : {}), ...(attachment ? { attachments: [{ filename: attachment.name, content: attachment.content }] } : {}) }),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) return { ok: false, error: providerHint((d && (d.message || d.name)) || "Leverantörsfel (" + r.status + ")") };
-  return { ok: true, id: d.id || null };
-}
-
-async function sendViaBrevo({ fromName, fromEmail, to, subject, text, replyTo, attachment }) {
-  const r = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: { "api-key": BREVO_API_KEY, "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({
-      sender: { name: fromName, email: fromEmail },
-      to: [{ email: to }],
-      subject,
-      textContent: text,
-      ...(replyTo ? { replyTo: { email: replyTo } } : {}),
-      ...(attachment ? { attachment: [{ name: attachment.name, content: attachment.content }] } : {}),
-    }),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) return { ok: false, error: providerHint((d && (d.message || d.code)) || "Leverantörsfel (" + r.status + ")") };
-  return { ok: true, id: d.messageId || null };
-}
-
-export default async (req) => {
-  if (req.method === "GET") {
-    const problem = configProblem();
-    if (problem) return json(200, { configured: false, reason: problem });
-    if (!(await supabaseOk())) return json(200, { configured: false, reason: "Supabase-nyckeln fungerar inte — sätt SUPABASE_ANON_KEY i Netlify." });
-    const pp = await providerProblem();
-    if (pp) return json(200, { configured: false, reason: pp });
-    return json(200, { configured: true, provider: PROVIDER, from: fromAddress() });
-  }
-  if (req.method !== "POST") return json(405, { error: "Metod stöds inte" });
-
+/* ---- 2. Appen skickar till en kandidat (eller kör påminnelser för sin org) ---- */
+async function handleUserSend(req) {
   const problem = configProblem();
   if (problem) return json(503, { error: "Utskick ej konfigurerat: " + problem });
 
@@ -168,6 +56,18 @@ export default async (req) => {
 
   let payload;
   try { payload = await req.json(); } catch (e) { return json(400, { error: "Felaktig begäran." }); }
+
+  const members = await sbRest("members?user_id=eq." + enc(user.id) + "&select=org_id,role", token);
+  const orgId = members && members[0] && members[0].org_id;
+  if (!orgId) return json(403, { error: "Kontot tillhör ingen organisation." });
+
+  /* Manuell påminnelsekörning — bara för den egna organisationen. */
+  if (payload.action === "run-reminders") {
+    if ((members[0].role || "") !== "admin") return json(403, { error: "Endast admin kan köra påminnelser." });
+    const res = await runReminders(orgId);
+    if (res.error) return json(503, { error: res.error });
+    return json(200, res);
+  }
 
   const to = clean(payload.to, 200).toLowerCase();
   const subject = clean(payload.subject, MAX_SUBJECT);
@@ -183,20 +83,53 @@ export default async (req) => {
   const att = validAttachment(payload.attachment);
   if (att && att.error) return json(400, { error: att.error });
 
-  const members = await sbRest("members?user_id=eq." + enc(user.id) + "&select=org_id", token);
-  const orgId = members && members[0] && members[0].org_id;
-  if (!orgId) return json(403, { error: "Kontot tillhör ingen organisation." });
-
+  /* Mottagaren måste finnas i anroparens organisation — annars vore detta ett spamrelä. */
   const isSelf = to === String(user.email || "").toLowerCase();
   if (!isSelf && !(await recipientAllowed(orgId, to, token))) {
     return json(403, { error: "Mottagaren finns inte som kandidat i din organisation." });
   }
 
-  const fromEmail = fromAddress();
-  const res = PROVIDER === "resend"
-    ? await sendViaResend({ from: fromName + " <" + fromEmail + ">", to, subject, text, replyTo, attachment: att })
-    : await sendViaBrevo({ fromName, fromEmail, to, subject, text, replyTo, attachment: att });
-
+  const res = await sendProvider({ fromName, to, subject, text, replyTo, attachment: att });
   if (!res.ok) return json(502, { error: res.error });
   return json(200, { ok: true, id: res.id, provider: PROVIDER });
+}
+
+/* ---- 3. Supabase-webhook: ny ansökan → avisera rekryteraren ---- */
+async function handleWebhook(req, secret) {
+  if (!NOTIFY_SECRET) return json(503, { error: "NOTIFY_SECRET saknas i Netlify." });
+  if (secret !== NOTIFY_SECRET) return json(401, { error: "Fel hemlighet." });
+
+  let p;
+  try { p = await req.json(); } catch (e) { return json(400, { error: "Felaktig begäran." }); }
+  if (!p || p.type !== "INSERT" || p.table !== "applications" || !p.record) return json(200, { ignored: true });
+
+  const rec = p.record;
+  if (!rec.job_slug) return json(200, { ignored: true });
+
+  /* Tjänstens org-uppgifter läses ur den publicerade annonsen — ingen service-nyckel behövs. */
+  const jobs = await sbRest("jobs?slug=eq." + enc(rec.job_slug) + "&select=title,org,org_id&limit=1", SB_KEY);
+  const job = jobs && jobs[0];
+  const org = job && job.org;
+  if (!org || !EMAIL_RE.test(String(org.hrEmail || ""))) return json(200, { skipped: "ingen mottagaradress" });
+
+  const name = clean(rec.name, 80) || "Okänd sökande";
+  const subject = "Ny ansökan: " + name + " - " + clean(job.title, 80);
+  const text = "Ny ansökan till " + job.title + " hos " + (org.companyName || "") + ".\n\n"
+    + "Namn: " + name + "\n"
+    + "E-post: " + (clean(rec.email, 200) || "-") + "\n"
+    + "Telefon: " + (clean(rec.phone, 40) || "-") + "\n"
+    + "Källa: " + (clean(rec.source, 40) || "direkt") + "\n\n"
+    + "Öppna Rekyl för att se matchning och gå vidare:\n" + (org.appUrl || "");
+
+  const res = await sendProvider({ fromName: org.companyName || "Rekyl", to: org.hrEmail, subject, text, replyTo: org.hrEmail });
+  if (!res.ok) return json(502, { error: res.error });
+  return json(200, { ok: true, notified: org.hrEmail });
+}
+
+export default async (req) => {
+  if (req.method === "GET") return handleStatus();
+  if (req.method !== "POST") return json(405, { error: "Metod stöds inte" });
+  const secret = req.headers.get("x-rekyl-secret");
+  if (secret) return handleWebhook(req, secret);
+  return handleUserSend(req);
 };
