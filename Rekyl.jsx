@@ -9,7 +9,7 @@ import {
   ShieldAlert, Pin, PinOff, Server, AtSign, Info, CheckCircle2, Settings, ThumbsUp, ThumbsDown,
   HelpCircle, BadgeCheck, PauseCircle, CalendarCheck, Menu as MenuIcon, PanelLeftClose,
   RotateCw, Rocket, GripVertical, Lock, MousePointerClick, Share2, MessageCircle, Globe, LogOut, UserPlus,
-  Video, CalendarX
+  Video, CalendarX, Flag
 } from "lucide-react";
 
 // ---- Supabase (via REST, inget paket krävs) ----
@@ -669,6 +669,122 @@ function reducer(state, ac) {
       const s2 = { ...state, candidates, jobs: state.jobs.map((j) => j.id === job.id ? jlog(j, "scoring", "Scoring beräknad · " + changed + " kandidater · v" + av.ver.v, who) : j) };
       return { ...s2, log: withLog(s2, "Scoring beräknad", changed + " kandidater · " + av.profile.name + " v" + av.ver.v) };
     }
+    case "AC_ADD": { const jj = ensureRules(state.jobs.find((j) => j.id === ac.jobId) || {}); if (!jj.id || isReadonly(jj)) return state;
+      const c = ac.from ? { ...JSON.parse(JSON.stringify(jj.scoring.scorecards.find((x) => x.id === ac.from))), id: "ac" + uid(), name: ac.name, version: 0, versions: [] } : mkScorecard(ac.name, ac.stage);
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...jj, scoring: { ...jj.scoring, scorecards: [...jj.scoring.scorecards, c] } }, "scoring", "Scorecard skapat: " + c.name, who) : j) }; }
+    case "AC_SET": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : { ...j, scoring: { ...j.scoring, scorecards: j.scoring.scorecards.map((c) => c.id === ac.id ? { ...c, ...ac.patch } : c) } }) }; }
+    case "AC_DEL": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { ...j.scoring, scorecards: j.scoring.scorecards.filter((c) => c.id !== ac.id) } }, "scoring", "Scorecard borttaget", who)) }; }
+    case "AC_PUBLISH": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const c = jj.scoring.scorecards.find((x) => x.id === ac.id); if (!c || !c.sections.some((s2) => s2.items.length)) return state;
+      const v = c.version + 1;
+      const snap = JSON.parse(JSON.stringify({ v, at: Date.now(), by: (_TEAM.find((m) => m.id === who) || {}).name || "System", scale: c.scale, sections: c.sections, aggregate: c.aggregate, visibility: c.visibility }));
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { ...j.scoring, scorecards: j.scoring.scorecards.map((x) => x.id === ac.id ? { ...x, version: v, versions: [snap, ...(x.versions || [])].slice(0, 20) } : x) } }, "scoring", "Scorecard publicerat · v" + v, who)) }; }
+
+    case "RULE_ADD": { const jj = ensureRules(state.jobs.find((j) => j.id === ac.jobId) || {}); if (!jj.id || isReadonly(jj)) return state;
+      const r = ac.from ? { ...JSON.parse(JSON.stringify(jj.scoring.rules.find((x) => x.id === ac.from))), id: "r" + uid(), name: ac.name, version: 0, versions: [] } : mkRule(ac.kind, ac.name);
+      return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? jlog({ ...jj, scoring: { ...jj.scoring, rules: [...jj.scoring.rules, r] } }, "scoring", "Regel skapad: " + r.name, who) : j) }; }
+    case "RULE_SET": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : { ...j, scoring: { ...j.scoring, rules: j.scoring.rules.map((r) => r.id === ac.id ? { ...r, ...ac.patch } : r) } }) }; }
+    case "RULE_DEL": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { ...j.scoring, rules: j.scoring.rules.filter((r) => r.id !== ac.id) } }, "scoring", "Regel borttagen", who)) }; }
+    case "RULE_PUBLISH": { const jj = state.jobs.find((j) => j.id === ac.jobId); if (!jj || isReadonly(jj)) return state;
+      const r = jj.scoring.rules.find((x) => x.id === ac.id); if (!r) return state;
+      const errs = ruleWarnings({ ...jj, scoring: { ...jj.scoring, rules: [r] } }).filter((w) => w.kind === "err" && !/inte publicerad/.test(w.msg));
+      if (errs.length) return state; /* trasig regel får aldrig publiceras */
+      const v = r.version + 1;
+      const snap = JSON.parse(JSON.stringify({ v, at: Date.now(), by: (_TEAM.find((m) => m.id === who) || {}).name || "System", cond: r.cond, outcome: r.outcome, priority: r.priority, stop: r.stop }));
+      return { ...state, jobs: state.jobs.map((j) => j.id !== ac.jobId ? j : jlog({ ...j, scoring: { ...j.scoring, rules: j.scoring.rules.map((x) => x.id === ac.id ? { ...x, version: v, versions: [snap, ...(x.versions || [])].slice(0, 20) } : x) } }, "scoring", "Regel publicerad: " + r.name + " · v" + v, who)) }; }
+
+    case "ASSESS_SAVE": {
+      const cand = state.candidates.find((c) => c.id === ac.candId); if (!cand) return state;
+      const job = state.jobs.find((j) => j.id === cand.jobId); if (!job) return state;
+      const card = (job.scoring.scorecards || []).find((c) => c.id === ac.scorecardId); if (!card) return state;
+      const list = cand.assessments || [];
+      const mine = list.find((a) => a.scorecardId === ac.scorecardId && a.assessorId === who);
+      if (mine && mine.status === "done" && ac.status === "done" && !ac.force) return state; /* slutförd bedömning skrivs aldrig över tyst */
+      const now = Date.now();
+      const next = {
+        id: (mine && mine.id) || "as" + uid(), scorecardId: ac.scorecardId, scorecardVersion: card.version,
+        assessorId: who, status: ac.status || "draft",
+        answers: ac.answers || (mine ? mine.answers : {}), notes: ac.notes || (mine ? mine.notes : {}),
+        recommendation: ac.recommendation ?? (mine ? mine.recommendation : ""),
+        abstainReason: ac.abstainReason || "",
+        at: (mine && mine.at) || now, updatedAt: now, doneAt: ac.status === "done" || ac.status === "abstain" ? now : (mine ? mine.doneAt : null),
+        history: mine ? [{ at: now, by: who, status: mine.status, answers: mine.answers, recommendation: mine.recommendation }, ...(mine.history || [])].slice(0, 10) : [],
+      };
+      const assessments = mine ? list.map((a) => a.id === mine.id ? next : a) : [...list, next];
+      let c2 = { ...cand, assessments, rev: (cand.rev || 0) + 1 };
+      if (ac.status === "done" || ac.status === "abstain") c2 = addTL(c2, "note", "Bedömning " + (ac.status === "done" ? "slutförd" : "avstådd") + ": " + card.name, who);
+      let s2 = { ...state, candidates: state.candidates.map((c) => c.id === cand.id ? c2 : c) };
+      if (ac.status === "done" || ac.status === "abstain") {
+        const agg = aggAssessments(c2, card);
+        const evs = [{ key: evKey("assessment.done", cand.id, card.id + ":" + who), kind: "assessment.done", candId: cand.id, jobId: job.id, data: { scorecardId: card.id } }];
+        if (agg.allDone) evs.push({ key: evKey("assessment.allDone", cand.id, card.id), kind: "assessment.allDone", candId: cand.id, jobId: job.id, data: { scorecardId: card.id, result: agg.result } });
+        s2 = pushEvents(s2, evs);
+      }
+      return { ...s2, log: withLog(s2, "Bedömning", cand.name + " · " + card.name) };
+    }
+
+    case "QUAL_EVAL": {
+      const job = state.jobs.find((j) => j.id === ac.jobId); if (!job) return state;
+      const ids = new Set(ac.candIds || state.candidates.filter((c) => c.jobId === job.id).map((c) => c.id));
+      let evs = [];
+      const candidates = state.candidates.map((c) => {
+        if (!ids.has(c.id) || c.jobId !== job.id) return c;
+        const q = evalQualification(job, c, currentScore(c));
+        evs = evs.concat(qualEvents(job, c, q));
+        const prev = c.qual && c.qual.final;
+        const c2 = { ...c, qual: { ...q, at: Date.now() } };
+        return prev !== q.final ? addTL(c2, "note", "Kvalificeringsstatus: " + QUAL_STATUS[q.final].label, null) : c2;
+      });
+      let s2 = pushEvents({ ...state, candidates }, evs);
+      return { ...s2, jobs: s2.jobs.map((j) => j.id === job.id ? jlog(j, "scoring", "Kvalificering utvärderad", who) : j) };
+    }
+
+    case "OVERRIDE_ADD": {
+      const cand = state.candidates.find((c) => c.id === ac.candId); if (!cand) return state;
+      const job = state.jobs.find((j) => j.id === cand.jobId); if (!job) return state;
+      const me2 = _TEAM.find((m) => m.id === who) || { role: "admin" };
+      const q = cand.qual || evalQualification(job, cand, currentScore(cand));
+      const ko = q.knockouts.filter((k) => k.outcome !== "flag");
+      if (ko.length && !ko.every((k) => k.allowOverride && (k.overrideRoles || []).includes(me2.role))) return state; /* behörighet krävs */
+      if (!String(ac.reason || "").trim()) return state;
+      const ov = { id: "ov" + uid(), at: Date.now(), by: who, byName: me2.name || "System", from: q.status, to: ac.to, reason: ac.reason, comment: ac.comment || "", revokedAt: null };
+      let c2 = addTL({ ...cand, overrides: [ov, ...(cand.overrides || [])] }, "note", "Override: " + QUAL_STATUS[q.status].label + " → " + QUAL_STATUS[ac.to].label + " · " + ac.reason, who);
+      c2 = { ...c2, qual: { ...q, final: ac.to, override: ov, activeKO: false, at: Date.now() } };
+      let s2 = { ...state, candidates: state.candidates.map((c) => c.id === cand.id ? c2 : c) };
+      s2 = pushEvents(s2, [{ key: evKey("override.created", cand.id, ov.id), kind: "override.created", candId: cand.id, jobId: job.id, data: { from: q.status, to: ac.to } }]);
+      return { ...s2, log: withLog(s2, "Override", cand.name + " → " + QUAL_STATUS[ac.to].label) };
+    }
+    case "OVERRIDE_REVOKE": {
+      const cand = state.candidates.find((c) => c.id === ac.candId); if (!cand) return state;
+      const job = state.jobs.find((j) => j.id === cand.jobId); if (!job) return state;
+      const ovs = (cand.overrides || []).map((o) => o.id === ac.id ? { ...o, revokedAt: Date.now(), revokedBy: who, revokeReason: ac.reason || "" } : o);
+      let c2 = addTL({ ...cand, overrides: ovs }, "note", "Override återkallad", who);
+      const q = evalQualification(job, c2, currentScore(c2));
+      c2 = { ...c2, qual: { ...q, at: Date.now() } };
+      let s2 = { ...state, candidates: state.candidates.map((c) => c.id === cand.id ? c2 : c) };
+      return pushEvents(s2, [{ key: evKey("override.revoked", cand.id, ac.id), kind: "override.revoked", candId: cand.id, jobId: job.id, data: {} }]);
+    }
+
+    case "COMPL_ADD": {
+      const cand = state.candidates.find((c) => c.id === ac.candId); if (!cand) return state;
+      const c0 = { id: "cp" + uid(), kind: ac.kind || "field", field: ac.field || "", text: ac.text, internal: ac.internal || "", deadline: Date.now() + (ac.days || 7) * 864e5, status: "open", createdAt: Date.now(), by: who, receivedAt: null, reviewedAt: null, result: "" };
+      const c2 = addTL({ ...cand, completions: [c0, ...(cand.completions || [])] }, "note", "Komplettering begärd: " + ac.text, who);
+      return { ...state, candidates: state.candidates.map((c) => c.id === cand.id ? c2 : c) };
+    }
+    case "COMPL_SET": {
+      const cand = state.candidates.find((c) => c.id === ac.candId); if (!cand) return state;
+      const job = state.jobs.find((j) => j.id === cand.jobId);
+      const comps = (cand.completions || []).map((x) => x.id === ac.id ? { ...x, ...ac.patch, ...(ac.patch.status === "received" ? { receivedAt: Date.now() } : {}), ...(ac.patch.status === "reviewed" ? { reviewedAt: Date.now() } : {}) } : x);
+      let c2 = addTL({ ...cand, completions: comps }, "note", "Komplettering " + (ac.patch.status === "received" ? "mottagen" : ac.patch.status === "reviewed" ? "granskad" : "uppdaterad"), who);
+      if (job && ac.patch.status === "reviewed") { const q = evalQualification(job, c2, currentScore(c2)); c2 = { ...c2, qual: { ...q, at: Date.now() } }; }
+      let s2 = { ...state, candidates: state.candidates.map((c) => c.id === cand.id ? c2 : c) };
+      if (ac.patch.status === "received") s2 = pushEvents(s2, [{ key: evKey("completion.received", cand.id, ac.id), kind: "completion.received", candId: cand.id, jobId: cand.jobId, data: {} }]);
+      return s2;
+    }
     case "MSG_STATUS": {
       const prev = state.messages.find((m) => m.id === ac.id); if (!prev) return state;
       const messages = state.messages.map((m) => m.id === ac.id ? { ...m, status: ac.status, error: ac.error || null, sentAt: ac.status === "sent" ? Date.now() : (m.sentAt || null), providerId: ac.providerId || m.providerId || null } : m);
@@ -740,7 +856,7 @@ function reducer(state, ac) {
 const INITIAL = {
   jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: null, candidates: CANDIDATES0, team: [], currentUserId: null,
   history: [], templates: DEFAULT_TEMPLATES, messages: [],
-  career: null, tags: [], jobViews: [], moves: [], moveIds: [],
+  career: null, tags: [], jobViews: [], moves: [], moveIds: [], events: [],
   org: { companyName: "Nordpuls AB", hrName: "Mona Berg", hrEmail: "mona.berg@nordpuls.se", fromEmail: "noreply@nordpuls.se", appUrl: "https://rekyl.app", defaultInterviewTime: "onsdag 14:00" },
   log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjänst öppnad", detail: "Account Manager · B2B" }],
 };
@@ -1493,7 +1609,7 @@ function publishBlockers(job) {
  * den blir state. Utan detta saknar jobb `pipeline` och kandidater `stageId`. */
 function hydrate(init, d) {
   if (!d || !Array.isArray(d.jobs) || !Array.isArray(d.candidates)) return init;
-  const jobs = d.jobs.map(migrateJob).map(ensurePipeline).map(ensureScoring);
+  const jobs = d.jobs.map(migrateJob).map(ensurePipeline).map(ensureScoring).map(ensureRules);
   const pipeOf = {};
   jobs.forEach((j) => { pipeOf[j.id] = j.pipeline; });
   const arr = (v) => (Array.isArray(v) ? v : []);
@@ -1502,7 +1618,7 @@ function hydrate(init, d) {
     jobs,
     candidates: arr(d.candidates).map((c) => (pipeOf[c.jobId] ? migrateCandidate(c, pipeOf[c.jobId]) : c)),
     team: arr(d.team), tags: arr(d.tags), jobViews: arr(d.jobViews),
-    moves: arr(d.moves), moveIds: arr(d.moveIds),
+    moves: arr(d.moves), moveIds: arr(d.moveIds), events: arr(d.events),
     messages: arr(d.messages), log: arr(d.log), history: arr(d.history),
     templates: arr(d.templates).length ? d.templates : init.templates,
     org: { ...init.org, ...(d.org || {}) },
@@ -1788,7 +1904,7 @@ function defaultProfile(job, name) {
   };
 }
 const ensureScoring = (job) => (job.scoring && Array.isArray(job.scoring.profiles) && job.scoring.profiles.length)
-  ? job : { ...job, scoring: { profiles: [defaultProfile(job)] } };
+  ? job : { ...job, scoring: { ...(job.scoring || {}), profiles: [defaultProfile(job)] } };
 const activeVersion = (job) => {
   const p = ((job.scoring && job.scoring.profiles) || []).find((x) => x.primary && x.active && !x.archived && x.version > 0);
   if (!p) return null;
@@ -1796,6 +1912,236 @@ const activeVersion = (job) => {
   return v ? { profile: p, ver: v } : null;
 };
 const currentScore = (cand) => (cand.scores || []).find((s) => s.current) || null;
+/* ===================== BEDÖMNINGAR, KVALIFICERING OCH KNOCKOUT ===================== */
+const SCALE_DEFAULT = [
+  { key: "no", label: "Uppfyller inte", pts: 0 },
+  { key: "partial", label: "Uppfyller delvis", pts: 1 },
+  { key: "yes", label: "Uppfyller", pts: 2 },
+  { key: "exceed", label: "Överträffar", pts: 3 },
+];
+const ASSESS_STATUS = { draft: "Utkast", done: "Slutförd", abstain: "Avstod" };
+const VISIBILITY = { always: "Ser andras svar direkt", after: "Ser andras först efter eget inskick", summary: "Ser bara sammanfattat resultat", never: "Ser aldrig andras svar" };
+const AGGREGATE = { avg: "Genomsnitt", median: "Median" };
+const QUAL_STATUS = {
+  qualified: { label: "Kvalificerad", tone: "petrol" },
+  not_qualified: { label: "Ej kvalificerad", tone: "brick" },
+  review: { label: "Manuell granskning", tone: "amber" },
+  completion: { label: "Komplettering krävs", tone: "blue" },
+  pending: { label: "Ej bedömd", tone: "muted" },
+};
+const KO_OUTCOMES = {
+  not_qualified: "Ej kvalificerad",
+  review: "Manuell granskning",
+  completion: "Komplettering krävs",
+  flag: "Tillåt men markera internt",
+  reject: "Rekommenderat avslag",
+};
+const RULE_OUTCOMES = { qualified: "Kvalificerad", not_qualified: "Ej kvalificerad", review: "Manuell granskning", completion: "Komplettering krävs", flag: "Informationsmarkering" };
+const SRC_KINDS = { form: "Formulärsvar", score: "Totalpoäng", group: "Gruppresultat", crit: "Enskilt kriterium", assess: "Bedömningsresultat", cv: "CV uppladdat", source: "Ansökningskälla", dupes: "Tidigare ansökningar" };
+
+const mkScorecard = (name, stageId) => ({
+  id: "ac" + uid(), name: name || "Nytt scorecard", desc: "", stage: stageId || "", archived: false,
+  scale: JSON.parse(JSON.stringify(SCALE_DEFAULT)),
+  sections: [{ id: "as" + uid(), name: "Kompetens", items: [{ id: "ai" + uid(), name: "Relevant erfarenhet", desc: "", weight: 1, requireNote: false }] }],
+  visibility: "after", aggregate: "avg", assessors: [], requireNote: false,
+  version: 0, versions: [], createdAt: Date.now(),
+});
+const mkRule = (kind, name) => ({
+  id: "r" + uid(), kind, name: name || (kind === "knockout" ? "Nytt obligatoriskt krav" : "Ny kvalificeringsregel"), desc: "",
+  priority: 10, active: true, stop: kind === "knockout",
+  cond: { mode: "all", rules: [{ src: "form", field: "", op: "is", value: "" }] },
+  outcome: kind === "knockout" ? "not_qualified" : "qualified",
+  allowOverride: true, overrideRoles: ["admin", "recruiter"],
+  completionText: "", completionInternal: "", completionDays: 7,
+  version: 0, versions: [], createdAt: Date.now(),
+});
+const ensureRules = (job) => (job.scoring && Array.isArray(job.scoring.rules) && Array.isArray(job.scoring.scorecards))
+  ? job : { ...job, scoring: { ...(job.scoring || { profiles: [] }), rules: (job.scoring && job.scoring.rules) || [], scorecards: (job.scoring && job.scoring.scorecards) || [] } };
+
+/* ---- Bedömningsresultat: individuellt, aggregerat, spridning, konflikt ---- */
+function scorecardMax(sc) {
+  const top = Math.max(...sc.scale.map((x) => x.pts), 0);
+  return sc.sections.reduce((n, s2) => n + s2.items.reduce((m, it) => m + top * (it.weight || 1), 0), 0);
+}
+function assessScore(sc, a) {
+  const map = {}; sc.scale.forEach((x) => { map[x.key] = x.pts; });
+  let raw = 0, answered = 0, total = 0;
+  sc.sections.forEach((s2) => s2.items.forEach((it) => {
+    total++;
+    const k = (a.answers || {})[it.id];
+    if (k != null && map[k] != null) { raw += map[k] * (it.weight || 1); answered++; }
+  }));
+  const max = scorecardMax(sc);
+  return { raw, max, pct: max > 0 ? Math.round((raw / max) * 100) : 0, answered, total, complete: answered === total };
+}
+const median = (xs) => { if (!xs.length) return 0; const a = [...xs].sort((x, y) => x - y); const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : Math.round((a[m - 1] + a[m]) / 2); };
+function aggAssessments(cand, sc) {
+  const mine = (cand.assessments || []).filter((a) => a.scorecardId === sc.id);
+  const done = mine.filter((a) => a.status === "done");
+  const abstained = mine.filter((a) => a.status === "abstain");
+  const required = (sc.assessors || []);
+  const missing = required.filter((u) => !mine.some((a) => a.assessorId === u && (a.status === "done" || a.status === "abstain")));
+  const per = done.map((a) => ({ assessorId: a.assessorId, ...assessScore(sc, a), rec: a.recommendation, at: a.doneAt }));
+  const pcts = per.map((p) => p.pct);
+  const avg = pcts.length ? Math.round(pcts.reduce((n, x) => n + x, 0) / pcts.length) : 0;
+  const med = median(pcts);
+  const spread = pcts.length > 1 ? Math.max(...pcts) - Math.min(...pcts) : 0;
+  const recs = [...new Set(per.map((p) => p.rec).filter(Boolean))];
+  return {
+    per, done: done.length, abstained: abstained.length, missing, required: required.length,
+    result: sc.aggregate === "median" ? med : avg, avg, median: med, spread,
+    conflict: spread >= 40 || recs.length > 1,
+    allDone: required.length > 0 && missing.length === 0,
+  };
+}
+const canSeeOthers = (sc, cand, me) => {
+  if (sc.visibility === "always") return true;
+  if (sc.visibility === "never") return false;
+  const mine = (cand.assessments || []).find((a) => a.scorecardId === sc.id && a.assessorId === me.id);
+  return !!(mine && (mine.status === "done" || mine.status === "abstain"));
+};
+
+/* ---- Regelvillkor: läser från alla datakällor, deterministiskt ---- */
+function ruleValue(rule, cand, job, sc) {
+  const A = cand.answers || {};
+  switch (rule.src) {
+    case "score": return sc ? sc.percent : null;
+    case "group": { const g = sc && sc.groups.find((x) => x.id === rule.field); return g && g.pct != null ? Math.round(g.pct * 100) : null; }
+    case "crit": { const c = sc && sc.criteria.find((x) => x.id === rule.field); return c && c.applicable ? Math.round((c.max ? c.pts / c.max : 0) * 100) : null; }
+    case "assess": { const card = (job.scoring.scorecards || []).find((x) => x.id === rule.field); if (!card) return null; const a = aggAssessments(cand, card); return a.done ? a.result : null; }
+    case "cv": return Object.values(A).some((v) => v && typeof v === "object" && v.url) ? "ja" : "";
+    case "source": return cand.source || "";
+    case "dupes": return (cand.dupes || 0);
+    default: return A[rule.field];
+  }
+}
+function ruleHit(rule, cand, job, sc) {
+  const v = ruleValue(rule, cand, job, sc);
+  return condHit({ field: "_v", op: rule.op, value: rule.value }, { _v: v }, cand);
+}
+function condGroupHit(cond, cand, job, sc) {
+  const rules = (cond.rules || []).filter((r) => r.op);
+  const groups = cond.groups || [];
+  const hits = [...rules.map((r) => ruleHit(r, cand, job, sc)), ...groups.map((g) => condGroupHit(g, cand, job, sc))];
+  if (!hits.length) return true;
+  if (cond.mode === "any") return hits.some(Boolean);
+  if (cond.mode === "none") return !hits.some(Boolean);
+  return hits.every(Boolean);
+}
+
+/* ---- Läsbar regeltext, genererad deterministiskt (ingen AI) ---- */
+function ruleText(rule, job) {
+  const lbl = (r) => {
+    const f = (job.criteria || []).find((x) => x.id === r.field);
+    const base = r.src === "form" ? (f ? f.label : "okänt fält")
+      : r.src === "score" ? "totalpoängen"
+      : r.src === "group" ? "gruppresultatet"
+      : r.src === "crit" ? "kriteriet"
+      : r.src === "assess" ? "bedömningsresultatet"
+      : r.src === "cv" ? "CV" : r.src === "source" ? "ansökningskällan" : "antal tidigare ansökningar";
+    const op = COND_OPS[r.op] || r.op;
+    const val = ["empty", "notempty", "exists", "missing"].includes(r.op) ? "" : " " + JSON.stringify(String(r.value));
+    return base + " " + op + val;
+  };
+  const walk = (c) => {
+    const parts = [...(c.rules || []).filter((r) => r.op).map(lbl), ...(c.groups || []).map((g) => "(" + walk(g) + ")")];
+    if (!parts.length) return "inga villkor";
+    const join = c.mode === "any" ? " eller " : c.mode === "none" ? " eller " : " och ";
+    return (c.mode === "none" ? "inte " : "") + parts.join(join);
+  };
+  const out = rule.kind === "knockout" ? KO_OUTCOMES[rule.outcome] : RULE_OUTCOMES[rule.outcome];
+  return "När " + walk(rule.cond) + " → " + out.toLowerCase() + (rule.stop ? " (stoppar vidare utvärdering)" : "") + ".";
+}
+
+/* ---- Kvalificeringsmotorn: knockout först, sedan regler efter prioritet ---- */
+function evalQualification(job, cand, sc) {
+  const rules = ((job.scoring && job.scoring.rules) || []).filter((r) => r.active && r.version > 0);
+  const ko = rules.filter((r) => r.kind === "knockout").sort((a, b) => a.priority - b.priority);
+  const qu = rules.filter((r) => r.kind === "qual").sort((a, b) => a.priority - b.priority);
+  const hits = [], knockouts = [], flags = [], completions = [];
+  let status = null;
+
+  /* Knockout utvärderas ALLTID först — hög poäng får aldrig dölja ett obligatoriskt krav. */
+  ko.forEach((r) => {
+    if (!condGroupHit(r.cond, cand, job, sc)) return;
+    knockouts.push({ ruleId: r.id, name: r.name, outcome: r.outcome, why: ruleText(r, job), allowOverride: r.allowOverride, overrideRoles: r.overrideRoles || [], version: r.version });
+    if (r.outcome === "completion") completions.push({ ruleId: r.id, name: r.name, text: r.completionText, internal: r.completionInternal, days: r.completionDays });
+    if (r.outcome === "flag") flags.push({ ruleId: r.id, name: r.name, why: ruleText(r, job) });
+    if (!status && ["not_qualified", "review", "completion", "reject"].includes(r.outcome)) status = r.outcome === "reject" ? "not_qualified" : r.outcome;
+  });
+
+  const stopped = knockouts.some((k) => { const r = ko.find((x) => x.id === k.ruleId); return r && r.stop && k.outcome !== "flag"; });
+  if (!stopped) {
+    for (const r of qu) {
+      if (!condGroupHit(r.cond, cand, job, sc)) continue;
+      hits.push({ ruleId: r.id, name: r.name, outcome: r.outcome, why: ruleText(r, job), version: r.version });
+      if (r.outcome === "flag") { flags.push({ ruleId: r.id, name: r.name, why: ruleText(r, job) }); continue; }
+      if (r.outcome === "completion") completions.push({ ruleId: r.id, name: r.name, text: r.completionText, internal: r.completionInternal, days: r.completionDays });
+      if (!status) status = r.outcome;
+      if (r.stop) break;
+    }
+  }
+
+  /* Motstridiga slututfall -> manuell granskning i stället för godtycke. */
+  const finals = [...knockouts, ...hits].filter((h) => ["qualified", "not_qualified"].includes(h.outcome)).map((h) => h.outcome);
+  const conflict = new Set(finals).size > 1;
+  if (conflict) status = "review";
+  if (!status) status = rules.length ? "qualified" : "pending";
+
+  /* Override: ändrar utfallet men raderar aldrig regelträffen. */
+  const ov = (cand.overrides || []).find((o) => !o.revokedAt);
+  const final = ov ? ov.to : status;
+  return { status, final, knockouts, hits, flags, completions, conflict, override: ov || null, activeKO: knockouts.filter((k) => k.outcome !== "flag").length > 0 && !ov };
+}
+
+/* ---- Konfliktdetektering i byggaren ---- */
+function ruleWarnings(job) {
+  const w = [];
+  const rules = ((job.scoring && job.scoring.rules) || []).filter((r) => r.active);
+  const cards = (job.scoring && job.scoring.scorecards) || [];
+  const key = (r) => JSON.stringify(r.cond);
+  rules.forEach((r, i) => {
+    const empty = !(r.cond.rules || []).some((x) => x.op) && !(r.cond.groups || []).length;
+    if (empty) w.push({ kind: "err", msg: "Regeln " + JSON.stringify(r.name) + " saknar villkor och skulle träffa alla kandidater." });
+    (r.cond.rules || []).forEach((x) => {
+      if (x.src === "form" && x.field && !(job.criteria || []).some((f) => f.id === x.field)) w.push({ kind: "err", msg: "Regeln " + JSON.stringify(r.name) + " pekar på ett formulärfält som inte finns." });
+      if (x.src === "assess" && x.field && !cards.some((c) => c.id === x.field)) w.push({ kind: "err", msg: "Regeln " + JSON.stringify(r.name) + " pekar på ett scorecard som inte finns." });
+      if (["gt", "gte"].includes(x.op) && x.src === "score" && Number(x.value) > 100) w.push({ kind: "warn", msg: "Regeln " + JSON.stringify(r.name) + " kan aldrig träffa — poäng över 100 är omöjligt." });
+    });
+    rules.slice(i + 1).forEach((o) => {
+      if (key(o) === key(r)) {
+        if (o.outcome !== r.outcome) w.push({ kind: "err", msg: "Reglerna " + JSON.stringify(r.name) + " och " + JSON.stringify(o.name) + " har samma villkor men motsatta utfall." });
+        else w.push({ kind: "warn", msg: "Regeln " + JSON.stringify(o.name) + " dubblerar " + JSON.stringify(r.name) + "." });
+      }
+    });
+    if (r.version === 0) w.push({ kind: "warn", msg: "Regeln " + JSON.stringify(r.name) + " är inte publicerad och används inte." });
+    if (r.outcome === "completion" && !String(r.completionText || "").trim()) w.push({ kind: "err", msg: "Regeln " + JSON.stringify(r.name) + " kräver komplettering men saknar instruktion till kandidaten." });
+  });
+  cards.filter((c) => !c.archived).forEach((c) => {
+    if (!(c.assessors || []).length) w.push({ kind: "warn", msg: "Scorecardet " + JSON.stringify(c.name) + " har inga tilldelade bedömare." });
+    if (!c.sections.some((s2) => s2.items.length)) w.push({ kind: "err", msg: "Scorecardet " + JSON.stringify(c.name) + " har inga frågor." });
+    if (c.version === 0) w.push({ kind: "warn", msg: "Scorecardet " + JSON.stringify(c.name) + " är inte publicerat." });
+  });
+  return w;
+}
+
+/* ---- Event för Fas 2D: idempotenta, organisationsisolerade ---- */
+const evKey = (kind, candId, extra) => kind + ":" + candId + ":" + (extra || "");
+function pushEvents(state, list) {
+  const seen = new Set((state.events || []).map((e) => e.key));
+  const add = list.filter((e) => !seen.has(e.key));
+  if (!add.length) return state;
+  return { ...state, events: [...add.map((e) => ({ ...e, id: "ev" + uid(), at: Date.now() })), ...(state.events || [])].slice(0, 1000) };
+}
+function qualEvents(job, cand, q) {
+  const out = [];
+  const v = (q.knockouts.map((k) => k.ruleId).join(",") + "|" + q.final);
+  out.push({ key: evKey("qual." + q.final, cand.id, v), kind: "qual." + q.final, candId: cand.id, jobId: job.id, data: { status: q.final } });
+  q.knockouts.forEach((k) => out.push({ key: evKey("knockout.hit", cand.id, k.ruleId + ":" + k.version), kind: "knockout.hit", candId: cand.id, jobId: job.id, data: { ruleId: k.ruleId, name: k.name } }));
+  q.completions.forEach((c) => out.push({ key: evKey("completion.required", cand.id, c.ruleId), kind: "completion.required", candId: cand.id, jobId: job.id, data: { ruleId: c.ruleId } }));
+  if (q.final === "review") out.push({ key: evKey("review.required", cand.id, v), kind: "review.required", candId: cand.id, jobId: job.id, data: {} });
+  return out;
+}
 /* ===================== PIPELINE, SLA OCH FÖRFLYTTNINGSMOTOR ===================== */
 /* Stegtyper. `legacy` håller den gamla statusmodellen synkad så att kö, statistik,
  * kalender och rapporter fortsätter fungera oförändrat. */
@@ -1823,7 +2169,8 @@ const mkStage = (o) => ({
   active: true, hidden: false, system: !!o.system, locked: !!o.system, archived: false,
   ownerId: null, ownerRole: "", assign: "keep",
   sla: { mode: o.sla ? "soft" : "none", days: o.sla || 0, calendar: "business", warnDays: 1, escalate: "owner" },
-  req: { reason: !!o.reqReason, comment: false, assessment: false, interview: false, cv: false, contact: false, owner: false, roles: [] },
+  req: { reason: !!o.reqReason, comment: false, assessment: false, interview: false, cv: false, contact: false, owner: false, qualified: false, noKnockout: false, scorecard: false, completion: false, roles: [] },
+  scorecardId: "",
   allowBulk: true, allowBack: true, allowAuto: true, confirm: !!o.confirm,
   createdAt: Date.now(), updatedAt: Date.now(),
 });
@@ -1925,6 +2272,14 @@ function moveBlockers(state, cand, job, to, me, opts = {}) {
   if (r.cv && !Object.values(cand.answers || {}).some((v) => v && typeof v === "object" && v.url)) b.push({ code: "cv", msg: "Kandidaten har inte laddat upp CV", fix: "Begär komplettering." });
   if (r.interview && !ivActive(cand)) b.push({ code: "interview", msg: "Ingen intervju är bokad", fix: "Boka en intervju från kandidatpanelen." });
   if (r.assessment && !(cand.rating > 0)) b.push({ code: "assessment", msg: "Bedömning saknas", fix: "Sätt betyg på kandidaten." });
+  const q = cand.qual;
+  if (r.qualified && (!q || q.final !== "qualified")) b.push({ code: "qual", msg: "Kandidaten är inte kvalificerad (" + ((q && QUAL_STATUS[q.final] && QUAL_STATUS[q.final].label) || "ej bedömd") + ")", fix: "Kör kvalificeringen, komplettera eller gör en override." });
+  if (r.noKnockout && q && q.activeKO) b.push({ code: "knockout", msg: "Ett obligatoriskt krav är inte uppfyllt: " + q.knockouts.filter((k) => k.outcome !== "flag").map((k) => k.name).join(", "), fix: "Begär komplettering eller gör en behörig override." });
+  if (r.scorecard && to.scorecardId) {
+    const card = ((job.scoring && job.scoring.scorecards) || []).find((c) => c.id === to.scorecardId);
+    if (card) { const agg = aggAssessments(cand, card); if (!agg.allDone) b.push({ code: "scorecard", msg: "Alla bedömare har inte lämnat sitt scorecard (" + agg.done + " av " + agg.required + ")", fix: "Väntar på: " + agg.missing.map((u) => (_TEAM.find((m) => m.id === u) || {}).name || "okänd").join(", ") }); }
+  }
+  if (r.completion && (cand.completions || []).some((c) => c.status === "open")) b.push({ code: "completion", msg: "Kandidaten har en obesvarad komplettering", fix: "Markera kompletteringen som mottagen och granskad." });
   return b;
 }
 function ownerFor(to, job, cand, opts) {
@@ -3216,6 +3571,7 @@ function PipeCard({ c, pipe, org, sel, onSel, onOpen, onMove, dense, dragProps, 
       {!c.ownerId && <span className="ats-pc-warn"><UserCheck size={11} /> Ingen ansvarig</span>}
       {iv && <span className="ats-pc-iv"><CalendarCheck size={11} /> {fmtInterview(iv.at)}</span>}
       {c.rating > 0 && <span className="ats-pc-rate"><Star size={11} /> {c.rating}</span>}
+      {c.qual && c.qual.final !== "pending" && <QualChip q={c.qual} size="sm" />}
     </div>
     <button className="ats-pc-move" onClick={() => onMove(c)} aria-label={"Flytta " + c.name}><ArrowRight size={14} /></button>
   </div>;
@@ -3597,6 +3953,94 @@ function ScoreExplain({ sc, compact }) {
   </div>;
 }
 
+/* ---- Kvalificeringsstatus som chip (aldrig bara färg) ---- */
+function QualChip({ q, size }) {
+  if (!q) return null;
+  const S = QUAL_STATUS[q.final] || QUAL_STATUS.pending;
+  return <span className={"ats-qc is-" + S.tone + (size === "sm" ? " is-sm" : "")}>
+    {q.final === "qualified" ? <Check size={11} /> : q.final === "not_qualified" ? <X size={11} /> : q.final === "review" ? <AlertTriangle size={11} /> : q.final === "completion" ? <Upload size={11} /> : <Info size={11} />}
+    {S.label}{q.override ? " (override)" : ""}{q.activeKO ? " · krav ej uppfyllt" : ""}
+  </span>;
+}
+
+/* ---- Bedömningspanel: ett scorecard, en bedömare ---- */
+function AssessPanel({ cand, job, card, me, D, showToast, onClose }) {
+  const mine = (cand.assessments || []).find((a) => a.scorecardId === card.id && a.assessorId === me.id);
+  const [answers, setAnswers] = useState((mine && mine.answers) || {});
+  const [notes, setNotes] = useState((mine && mine.notes) || {});
+  const [rec, setRec] = useState((mine && mine.recommendation) || "");
+  const [abstain, setAbstain] = useState("");
+  const locked = mine && mine.status === "done";
+  const [force, setForce] = useState(false);
+  const agg = aggAssessments(cand, card);
+  const showOthers = canSeeOthers(card, cand, me);
+  const items = card.sections.flatMap((s2) => s2.items);
+  const missingNotes = items.filter((it) => (it.requireNote || card.requireNote) && answers[it.id] && !String(notes[it.id] || "").trim());
+  const allAnswered = items.every((it) => answers[it.id]);
+  const canDone = allAnswered && missingNotes.length === 0 && rec;
+  const sc = assessScore(card, { answers });
+
+  const save = (status) => {
+    if (status === "done" && !canDone) return;
+    D({ type: "ASSESS_SAVE", candId: cand.id, scorecardId: card.id, status, answers, notes, recommendation: rec, force: force || undefined });
+    showToast({ kind: "ok", msg: status === "done" ? "Bedömning slutförd" : status === "abstain" ? "Du avstod" : "Utkast sparat" });
+    if (status !== "draft") onClose();
+  };
+  return <div className="ats-as">
+    <div className="ats-as-h">
+      <div><b>{card.name}</b><span>{card.desc || "Strukturerad bedömning"} · v{card.version}</span></div>
+      <div className="ats-as-score"><b>{sc.pct}%</b><span>{sc.answered}/{sc.total} besvarade</span></div>
+    </div>
+    {locked && !force && <div className="ats-erase-note"><Lock size={14} /> Din bedömning är slutförd. <button className="ats-link" onClick={() => setForce(true)}>Ändra ändå</button> — den gamla versionen sparas i historiken.</div>}
+    {card.sections.map((s2) => <div key={s2.id} className="ats-as-sec">
+      <h4>{s2.name}</h4>
+      {s2.items.map((it) => <div key={it.id} className="ats-as-item">
+        <div className="ats-as-q"><b>{it.name}</b>{it.desc && <span>{it.desc}</span>}{it.weight > 1 && <em>vikt {it.weight}</em>}</div>
+        <div className="ats-as-scale">{card.scale.map((x) => <button key={x.key} className={"ats-as-opt" + (answers[it.id] === x.key ? " is-on" : "")} disabled={locked && !force} onClick={() => setAnswers({ ...answers, [it.id]: x.key })}>{x.label}<em>{x.pts}p</em></button>)}</div>
+        {(it.requireNote || card.requireNote) && <textarea className="ats-inp" rows={2} value={notes[it.id] || ""} disabled={locked && !force} onChange={(e) => setNotes({ ...notes, [it.id]: e.target.value })} placeholder="Motivering krävs" />}
+        {missingNotes.includes(it) && <span className="ats-af-err"><CircleAlert size={13} /> Motivering krävs.</span>}
+      </div>)}
+    </div>)}
+    <label className="ats-field"><span className="ats-field-l">Rekommendation <i style={{ color: "var(--brick)" }}>*</i></span>
+      <div className="ats-chipset">{["Gå vidare", "Osäker", "Avslå"].map((r) => <button key={r} className={"ats-selchip" + (rec === r ? " is-on" : "")} disabled={locked && !force} onClick={() => setRec(r)}>{r}</button>)}</div>
+    </label>
+
+    {showOthers && agg.per.filter((p) => p.assessorId !== me.id).length > 0 && <div className="ats-as-others">
+      <h4>Andra bedömare</h4>
+      {agg.per.filter((p) => p.assessorId !== me.id).map((p) => <div key={p.assessorId} className="ats-as-other">
+        <b>{(_TEAM.find((m) => m.id === p.assessorId) || {}).name || "Okänd"}</b><span>{p.pct}% · {p.rec || "—"}</span>
+      </div>)}
+      {agg.conflict && <div className="ats-sv-warn is-warn"><AlertTriangle size={14} /> Bedömarna är oense — spridning {agg.spread} procentenheter.</div>}
+    </div>}
+    {!showOthers && agg.done > 0 && <div className="ats-erase-note"><EyeOff size={14} /> {VISIBILITY[card.visibility]} — {agg.done} andra har lämnat sin bedömning.</div>}
+
+    <div className="ats-erase-actions">
+      <button className="ats-ghost" onClick={onClose}>Stäng</button>
+      <button className="ats-ghost" disabled={locked && !force} onClick={() => save("draft")}>Spara utkast</button>
+      <Menu align="right" trigger={<button className="ats-ghost">Avstå</button>}>
+        {["Jäv", "Hann inte", "Otillräckligt underlag"].map((r) => <button key={r} className="ats-menu-item" onClick={() => { setAbstain(r); D({ type: "ASSESS_SAVE", candId: cand.id, scorecardId: card.id, status: "abstain", abstainReason: r, force: true }); showToast({ kind: "ok", msg: "Du avstod: " + r }); onClose(); }}>{r}</button>)}
+      </Menu>
+      <button className="ats-btn-primary" disabled={!canDone || (locked && !force)} onClick={() => save("done")}><Check size={15} /> Slutför bedömning</button>
+    </div>
+    {!canDone && <span className="ats-af-help">{!allAnswered ? "Alla frågor måste besvaras." : missingNotes.length ? "Motivering saknas." : "Välj en rekommendation."}</span>}
+  </div>;
+}
+
+/* ---- Regelbyggarens villkorsrad ---- */
+function CondRow({ r, job, onSet, onDel, disabled }) {
+  const fields = job.criteria || [];
+  const cards = (job.scoring.scorecards || []);
+  const ops = r.src === "form" ? Object.keys(COND_OPS) : ["gte", "lte", "gt", "lt", "is", "isnot", "between"];
+  return <div className="ats-sv-cond">
+    <select className="ats-inp" value={r.src} disabled={disabled} onChange={(e) => onSet({ src: e.target.value, field: "" })}>{Object.entries(SRC_KINDS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+    {r.src === "form" && <select className="ats-inp" value={r.field} disabled={disabled} onChange={(e) => onSet({ field: e.target.value })}><option value="">Fält…</option>{fields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select>}
+    {r.src === "assess" && <select className="ats-inp" value={r.field} disabled={disabled} onChange={(e) => onSet({ field: e.target.value })}><option value="">Scorecard…</option>{cards.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>}
+    {!["form", "assess"].includes(r.src) && <span className="ats-sv-srcl">{SRC_KINDS[r.src]}</span>}
+    <select className="ats-inp" value={r.op} disabled={disabled} onChange={(e) => onSet({ op: e.target.value })}>{ops.map((k) => <option key={k} value={k}>{COND_OPS[k]}</option>)}</select>
+    <input className="ats-inp" value={r.value || ""} disabled={disabled || ["empty", "notempty", "exists", "missing"].includes(r.op)} onChange={(e) => onSet({ value: e.target.value })} placeholder="Värde" />
+    <button className="ats-ghost is-sm" disabled={disabled} onClick={onDel} aria-label="Ta bort villkor"><Trash2 size={14} /></button>
+  </div>;
+}
 /* ---- Scoringvyn: profiler, byggare, versioner, förhandsvisning ---- */
 function ScoringView({ state, D, me, job, cands, showToast }) {
   const [pid, setPid] = useState(null);
@@ -3610,6 +4054,15 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
   const [addSrc, setAddSrc] = useState({ groupId: "", source: "" });
   const canEdit = can(me.role, "edit") && job && !isReadonly(job);
   const canScore = can(me.role, "decide");
+  const canRules = can(me.role, "edit") && job && !isReadonly(job);
+  const [selR, setSelR] = useState(null);
+  const [selCard, setSelCard] = useState(null);
+  const [assessFor, setAssessFor] = useState(null);
+  const [ovFor, setOvFor] = useState(null);
+  const [ovTo, setOvTo] = useState("qualified");
+  const [ovReason, setOvReason] = useState("");
+  const [complFor, setComplFor] = useState(null);
+  const [complText, setComplText] = useState("");
 
   useEffect(() => { if (job && !job.scoring) D({ type: "SCORING_INIT", jobId: job.id }); }, [job && job.id]);
   if (!job) return <div className="ats-view"><PageHeader title="Scoring" /><div className="ats-col-empty" style={{ padding: 40 }}>Välj en tjänst först.</div></div>;
@@ -3627,6 +4080,22 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
   const fieldOf = (id) => fields.find((f) => f.id === id);
   const totalMax = crits.filter((c) => c.active !== false).reduce((n, c) => n + maxPts(c), 0);
   const av = activeVersion(job);
+  const rules = (job.scoring.rules || []);
+  const cards = (job.scoring.scorecards || []).filter((c) => !c.archived);
+  const rWarns = ruleWarnings(job);
+  const rule = selR ? rules.find((r) => r.id === selR) : null;
+  const cardSel = selCard ? cards.find((c) => c.id === selCard) : null;
+  const reviewQ = cands.filter((c) => c.qual && ["review", "completion", "not_qualified"].includes(c.qual.final));
+  const setR = (patch) => D({ type: "RULE_SET", jobId: job.id, id: rule.id, patch });
+  const setCard2 = (patch) => D({ type: "AC_SET", jobId: job.id, id: cardSel.id, patch });
+  const evalQ = () => { D({ type: "QUAL_EVAL", jobId: job.id }); showToast({ kind: "ok", msg: "Kvalificeringen utvärderades om" }); };
+  const RuleRow = ({ r }) => <div className={"ats-rl-row" + (selR === r.id ? " is-on" : "") + (r.version === 0 ? " is-draft" : "")}>
+    <span className="ats-rl-p">{r.priority}</span>
+    <button className="ats-rl-n" onClick={() => setSelR(selR === r.id ? null : r.id)}>
+      <b>{r.name}</b><span>{ruleText(r, job)}</span>
+    </button>
+    <span className={"ats-jobbadge is-" + (r.kind === "knockout" ? "brick" : "petrol")}>{r.version ? "v" + r.version : "utkast"}</span>
+  </div>;
   const dirty = !p.version || JSON.stringify({ g: d.groups, c: d.criteria, n: d.norm }) !== JSON.stringify((() => { const v = (p.versions || []).find((x) => x.v === p.version); return v ? { g: v.groups, c: v.criteria, n: v.norm } : {}; })());
 
   const setD = (patch) => D({ type: "SP_DRAFT", jobId: job.id, id: p.id, patch });
@@ -3659,8 +4128,12 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
     </div>
 
     <div className="ats-tabs">
-      {[["build", "Byggare"], ["preview", "Förhandsvisning"], ["settings", "Profilinställningar"]].map(([id, l]) =>
-        <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}{id === "build" && warns.length > 0 && <span className="ats-tab-n">{warns.length}</span>}</button>)}
+      {[["build", "Byggare"], ["rules", "Regler och krav"], ["cards", "Scorecards"], ["review", "Granskning"], ["preview", "Förhandsvisning"], ["settings", "Inställningar"]].map(([id, l]) =>
+        <button key={id} className={"ats-tab" + (tab === id ? " is-on" : "")} onClick={() => setTab(id)}>{l}
+          {id === "build" && warns.length > 0 && <span className="ats-tab-n">{warns.length}</span>}
+          {id === "rules" && rWarns.length > 0 && <span className="ats-tab-n">{rWarns.length}</span>}
+          {id === "review" && reviewQ.length > 0 && <span className="ats-tab-n">{reviewQ.length}</span>}
+        </button>)}
     </div>
 
     {warns.length > 0 && tab === "build" && <div className="ats-sv-warns">{warns.map((w, i) =>
@@ -3820,6 +4293,138 @@ function ScoringView({ state, D, me, job, cands, showToast }) {
       {fields.filter((f) => !crits.some((c) => c.source === f.id)).length === 0 && <div className="ats-col-empty" style={{ padding: 24 }}>Alla formulärfält används redan.</div>}
     </div></Modal>}
 
+
+    {tab === "rules" && <div className="ats-sv">
+      <div className="ats-sv-main">
+        {rWarns.length > 0 && <div className="ats-sv-warns">{rWarns.map((w, i) => <div key={i} className={"ats-sv-warn is-" + w.kind}>{w.kind === "err" ? <CircleAlert size={14} /> : <AlertTriangle size={14} />} {w.msg}</div>)}</div>}
+        <div className="ats-panel">
+          <div className="ats-panel-h"><h2>Obligatoriska krav (knockout)</h2>{canRules && <button className="ats-ghost is-sm" onClick={() => D({ type: "RULE_ADD", jobId: job.id, kind: "knockout" })}><Plus size={14} /> Nytt krav</button>}</div>
+          <div className="ats-erase-note"><ShieldAlert size={14} /> Ett obligatoriskt krav gäller oavsett hur hög poängen är. Använd det bara för krav som faktiskt är nödvändiga och lagliga för rollen.</div>
+          <div className="ats-rl">{rules.filter((r) => r.kind === "knockout").sort((a, b) => a.priority - b.priority).map((r) => <RuleRow key={r.id} r={r} />)}
+            {rules.filter((r) => r.kind === "knockout").length === 0 && <div className="ats-kb-empty">Inga obligatoriska krav.</div>}</div>
+        </div>
+        <div className="ats-panel">
+          <div className="ats-panel-h"><h2>Kvalificeringsregler</h2>{canRules && <button className="ats-ghost is-sm" onClick={() => D({ type: "RULE_ADD", jobId: job.id, kind: "qual" })}><Plus size={14} /> Ny regel</button>}</div>
+          <div className="ats-rl">{rules.filter((r) => r.kind === "qual").sort((a, b) => a.priority - b.priority).map((r) => <RuleRow key={r.id} r={r} />)}
+            {rules.filter((r) => r.kind === "qual").length === 0 && <div className="ats-kb-empty">Inga kvalificeringsregler.</div>}</div>
+        </div>
+        {canScore && <button className="ats-ghost" onClick={evalQ}><RotateCw size={15} /> Utvärdera alla kandidater</button>}
+      </div>
+      {rule && <aside className="ats-sv-side"><div className="ats-panel">
+        <div className="ats-panel-h"><h2>{rule.name}</h2><button className="ats-ghost is-sm" onClick={() => setSelR(null)}><X size={15} /></button></div>
+        <div className="ats-rl-text"><Info size={14} /> {ruleText(rule, job)}</div>
+        <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={rule.name} disabled={!canRules} onChange={(e) => setR({ name: e.target.value })} /></label>
+        <label className="ats-field"><span className="ats-field-l">Intern förklaring</span><textarea className="ats-inp" rows={2} value={rule.desc} disabled={!canRules} onChange={(e) => setR({ desc: e.target.value })} placeholder="Varför är detta kravet motiverat för rollen?" /></label>
+        <div className="ats-tpl-two">
+          <label className="ats-field"><span className="ats-field-l">Prioritet (lägre först)</span><input className="ats-inp" type="number" min="1" max="99" value={rule.priority} disabled={!canRules} onChange={(e) => setR({ priority: Number(e.target.value) })} /></label>
+          <label className="ats-field"><span className="ats-field-l">Utfall</span><select className="ats-inp" value={rule.outcome} disabled={!canRules} onChange={(e) => setR({ outcome: e.target.value })}>{Object.entries(rule.kind === "knockout" ? KO_OUTCOMES : RULE_OUTCOMES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+        </div>
+        {rule.outcome === "completion" && <>
+          <label className="ats-field"><span className="ats-field-l">Instruktion till kandidaten <i style={{ color: "var(--brick)" }}>*</i></span><textarea className="ats-inp" rows={2} value={rule.completionText} disabled={!canRules} onChange={(e) => setR({ completionText: e.target.value })} placeholder="Ladda upp ditt körkort" /><span className="ats-af-help">Kandidaten ser bara den här texten — aldrig regeln eller orsaken.</span></label>
+          <label className="ats-field"><span className="ats-field-l">Intern anledning</span><input className="ats-inp" value={rule.completionInternal} disabled={!canRules} onChange={(e) => setR({ completionInternal: e.target.value })} /></label>
+        </>}
+        <h3 className="ats-pb-h">Villkor</h3>
+        <label className="ats-field"><span className="ats-field-l">Matchning</span><select className="ats-inp" value={rule.cond.mode} disabled={!canRules} onChange={(e) => setR({ cond: { ...rule.cond, mode: e.target.value } })}><option value="all">Alla villkor</option><option value="any">Något villkor</option><option value="none">Inget villkor</option></select></label>
+        {(rule.cond.rules || []).map((r2, i) => <CondRow key={i} r={r2} job={job} disabled={!canRules}
+          onSet={(patch) => { const n = [...rule.cond.rules]; n[i] = { ...n[i], ...patch }; setR({ cond: { ...rule.cond, rules: n } }); }}
+          onDel={() => setR({ cond: { ...rule.cond, rules: rule.cond.rules.filter((_, j) => j !== i) } })} />)}
+        {canRules && <button className="ats-ghost is-sm" onClick={() => setR({ cond: { ...rule.cond, rules: [...(rule.cond.rules || []), { src: "form", field: "", op: "is", value: "" }] } })}><Plus size={13} /> Lägg till villkor</button>}
+        <h3 className="ats-pb-h">Beteende</h3>
+        <label className="ats-cb-check"><input type="checkbox" checked={!!rule.stop} disabled={!canRules} onChange={(e) => setR({ stop: e.target.checked })} /> Stoppa vidare utvärdering vid träff</label>
+        <label className="ats-cb-check"><input type="checkbox" checked={!!rule.allowOverride} disabled={!canRules} onChange={(e) => setR({ allowOverride: e.target.checked })} /> Tillåt manuell override</label>
+        {rule.allowOverride && <label className="ats-field"><span className="ats-field-l">Roller som får göra override</span><div className="ats-chipset">{Object.keys(ROLE_LABEL).map((r3) => {
+          const on = (rule.overrideRoles || []).includes(r3);
+          return <button key={r3} className={"ats-selchip" + (on ? " is-on" : "")} disabled={!canRules} onClick={() => setR({ overrideRoles: on ? rule.overrideRoles.filter((x) => x !== r3) : [...(rule.overrideRoles || []), r3] })}>{ROLE_LABEL[r3]}</button>;
+        })}</div></label>}
+        <div className="ats-cb-brandacts">
+          {canRules && <button className="ats-btn-primary is-sm" onClick={() => { D({ type: "RULE_PUBLISH", jobId: job.id, id: rule.id }); showToast({ kind: "ok", msg: "Regel publicerad · v" + (rule.version + 1) }); }}><Rocket size={14} /> Publicera regel</button>}
+          {canRules && <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => { D({ type: "RULE_DEL", jobId: job.id, id: rule.id }); setSelR(null); }}><Trash2 size={14} /> Ta bort</button>}
+        </div>
+      </div></aside>}
+    </div>}
+
+    {tab === "cards" && <div className="ats-sv">
+      <div className="ats-sv-main"><div className="ats-panel">
+        <div className="ats-panel-h"><h2>Scorecards</h2>{canRules && <button className="ats-ghost is-sm" onClick={() => D({ type: "AC_ADD", jobId: job.id, name: "Nytt scorecard" })}><Plus size={14} /> Nytt scorecard</button>}</div>
+        <div className="ats-rl">{cards.map((c) => { const st = liveStages(job.pipeline).find((x) => x.id === c.stage);
+          return <div key={c.id} className={"ats-rl-row" + (selCard === c.id ? " is-on" : "")}>
+            <button className="ats-rl-n" onClick={() => setSelCard(selCard === c.id ? null : c.id)}>
+              <b>{c.name}</b><span>{c.sections.reduce((n, s2) => n + s2.items.length, 0)} frågor · {(c.assessors || []).length} bedömare{st ? " · " + st.name : ""} · {c.version ? "v" + c.version : "utkast"}</span>
+            </button>
+          </div>; })}
+          {cards.length === 0 && <div className="ats-kb-empty">Inga scorecards. Skapa ett för intervju, arbetsprov eller slutbedömning.</div>}</div>
+      </div></div>
+      {cardSel && <aside className="ats-sv-side"><div className="ats-panel">
+        <div className="ats-panel-h"><h2>{cardSel.name}</h2><button className="ats-ghost is-sm" onClick={() => setSelCard(null)}><X size={15} /></button></div>
+        <label className="ats-field"><span className="ats-field-l">Namn</span><input className="ats-inp" value={cardSel.name} disabled={!canRules} onChange={(e) => setCard2({ name: e.target.value })} /></label>
+        <label className="ats-field"><span className="ats-field-l">Kopplat pipelinesteg</span><select className="ats-inp" value={cardSel.stage} disabled={!canRules} onChange={(e) => setCard2({ stage: e.target.value })}><option value="">Inget</option>{liveStages(job.pipeline).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}</select></label>
+        <label className="ats-field"><span className="ats-field-l">Bedömare</span><div className="ats-chipset">{state.team.map((m) => {
+          const on = (cardSel.assessors || []).includes(m.id);
+          return <button key={m.id} className={"ats-selchip" + (on ? " is-on" : "")} disabled={!canRules} onClick={() => setCard2({ assessors: on ? cardSel.assessors.filter((x) => x !== m.id) : [...(cardSel.assessors || []), m.id] })}>{m.name}</button>;
+        })}</div></label>
+        <div className="ats-tpl-two">
+          <label className="ats-field"><span className="ats-field-l">Synlighet</span><select className="ats-inp" value={cardSel.visibility} disabled={!canRules} onChange={(e) => setCard2({ visibility: e.target.value })}>{Object.entries(VISIBILITY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+          <label className="ats-field"><span className="ats-field-l">Sammanräkning</span><select className="ats-inp" value={cardSel.aggregate} disabled={!canRules} onChange={(e) => setCard2({ aggregate: e.target.value })}>{Object.entries(AGGREGATE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+        </div>
+        <label className="ats-cb-check"><input type="checkbox" checked={!!cardSel.requireNote} disabled={!canRules} onChange={(e) => setCard2({ requireNote: e.target.checked })} /> Kräv motivering på varje fråga</label>
+        <h3 className="ats-pb-h">Bedömningsskala</h3>
+        <div className="ats-cb-list">{cardSel.scale.map((x, i) => <div key={i} className="ats-cb-item">
+          <input className="ats-inp" value={x.label} disabled={!canRules} onChange={(e) => { const n = [...cardSel.scale]; n[i] = { ...n[i], label: e.target.value }; setCard2({ scale: n }); }} />
+          <input className="ats-inp" type="number" value={x.pts} disabled={!canRules} onChange={(e) => { const n = [...cardSel.scale]; n[i] = { ...n[i], pts: Number(e.target.value) }; setCard2({ scale: n }); }} />
+          <button className="ats-ghost is-sm" disabled={!canRules || cardSel.scale.length < 3} onClick={() => setCard2({ scale: cardSel.scale.filter((_, j) => j !== i) })}><Trash2 size={14} /></button>
+        </div>)}
+        {canRules && <button className="ats-ghost is-sm" onClick={() => setCard2({ scale: [...cardSel.scale, { key: "k" + uid(), label: "Ny nivå", pts: cardSel.scale.length }] })}><Plus size={13} /> Lägg till nivå</button>}</div>
+        <h3 className="ats-pb-h">Frågor</h3>
+        {cardSel.sections.map((s2, si) => <div key={s2.id} className="ats-as-secedit">
+          <input className="ats-sv-gname" value={s2.name} disabled={!canRules} onChange={(e) => { const n = [...cardSel.sections]; n[si] = { ...n[si], name: e.target.value }; setCard2({ sections: n }); }} />
+          {s2.items.map((it, ii) => <div key={it.id} className="ats-cb-item">
+            <input className="ats-inp" value={it.name} disabled={!canRules} onChange={(e) => { const n = JSON.parse(JSON.stringify(cardSel.sections)); n[si].items[ii].name = e.target.value; setCard2({ sections: n }); }} />
+            <input className="ats-inp" type="number" min="1" max="5" value={it.weight} disabled={!canRules} onChange={(e) => { const n = JSON.parse(JSON.stringify(cardSel.sections)); n[si].items[ii].weight = Number(e.target.value); setCard2({ sections: n }); }} />
+            <button className="ats-ghost is-sm" disabled={!canRules} onClick={() => { const n = JSON.parse(JSON.stringify(cardSel.sections)); n[si].items.splice(ii, 1); setCard2({ sections: n }); }}><Trash2 size={14} /></button>
+          </div>)}
+          {canRules && <button className="ats-ghost is-sm" onClick={() => { const n = JSON.parse(JSON.stringify(cardSel.sections)); n[si].items.push({ id: "ai" + uid(), name: "Ny fråga", desc: "", weight: 1, requireNote: false }); setCard2({ sections: n }); }}><Plus size={13} /> Lägg till fråga</button>}
+        </div>)}
+        {canRules && <button className="ats-ghost is-sm" onClick={() => setCard2({ sections: [...cardSel.sections, { id: "as" + uid(), name: "Ny sektion", items: [] }] })}><Plus size={13} /> Lägg till sektion</button>}
+        <div className="ats-cb-brandacts">
+          {canRules && <button className="ats-btn-primary is-sm" onClick={() => { D({ type: "AC_PUBLISH", jobId: job.id, id: cardSel.id }); showToast({ kind: "ok", msg: "Scorecard publicerat · v" + (cardSel.version + 1) }); }}><Rocket size={14} /> Publicera</button>}
+          {canRules && <button className="ats-ghost is-sm" onClick={() => D({ type: "AC_ADD", jobId: job.id, name: cardSel.name + " (kopia)", from: cardSel.id })}><Copy size={14} /> Duplicera</button>}
+          {canRules && <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => { D({ type: "AC_DEL", jobId: job.id, id: cardSel.id }); setSelCard(null); }}><Trash2 size={14} /> Ta bort</button>}
+        </div>
+      </div></aside>}
+    </div>}
+
+    {tab === "review" && <div className="ats-act">
+      {reviewQ.length === 0 ? <div className="ats-col-empty" style={{ padding: 44 }}>Ingen kandidat kräver granskning. Kör <b>Utvärdera alla kandidater</b> under Regler om du precis ändrat något.</div>
+        : <div className="ats-sa-rows">{[...reviewQ].sort((a, b) => ({ review: 0, completion: 1, not_qualified: 2 }[a.qual.final]) - ({ review: 0, completion: 1, not_qualified: 2 }[b.qual.final])).map((c) => <div key={c.id} className="ats-sa-row is-card">
+          <div className="ats-sa-main">
+            <div className="ats-sa-top"><button className="ats-jobcard-title" onClick={() => setDetailId && setDetailId(c.id)}>{c.name}</button><QualChip q={c.qual} size="sm" />{c.total != null && <span className="ats-jtag" style={{ background: "var(--petrol-soft)", color: "var(--petrol)" }}>{c.total}%</span>}</div>
+            <span>{c.qual.knockouts.filter((k) => k.outcome !== "flag").map((k) => k.name).join(", ") || c.qual.hits.map((h) => h.name).join(", ") || "—"}</span>
+            {c.qual.completions.length > 0 && <span className="ats-muted">Komplettering: {c.qual.completions.map((x) => x.text || x.name).join(", ")}</span>}
+          </div>
+          {canScore && <div className="ats-sa-acts">
+            {cards.length > 0 && <button className="ats-ghost is-sm" onClick={() => setAssessFor({ c, card: cards[0] })}><ListChecks size={13} /> Bedöm</button>}
+            <button className="ats-ghost is-sm" onClick={() => { setComplFor(c); setComplText(c.qual.completions[0] ? c.qual.completions[0].text : ""); }}><Upload size={13} /> Komplettering</button>
+            <button className="ats-ghost is-sm" onClick={() => { setOvFor(c); setOvTo("qualified"); setOvReason(""); }}><ShieldAlert size={13} /> Override</button>
+          </div>}
+        </div>)}</div>}
+    </div>}
+
+    {assessFor && <Modal title="Bedömning" onClose={() => setAssessFor(null)} wide>
+      <AssessPanel cand={state.candidates.find((c) => c.id === assessFor.c.id)} job={job} card={assessFor.card} me={me} D={D} showToast={showToast} onClose={() => setAssessFor(null)} />
+    </Modal>}
+    {ovFor && <Modal title="Manuell override" onClose={() => setOvFor(null)}><div className="ats-erase">
+      <p>Du åsidosätter systemets utfall för <b>{ovFor.name}</b>. Regelträffen och den ursprungliga bedömningen <b>raderas aldrig</b> — båda syns i historiken.</p>
+      {ovFor.qual.knockouts.filter((k) => k.outcome !== "flag").length > 0 && <div className="ats-erase-note"><ShieldAlert size={14} /> Obligatoriskt krav som inte är uppfyllt: {ovFor.qual.knockouts.filter((k) => k.outcome !== "flag").map((k) => k.name).join(", ")}</div>}
+      <label className="ats-field"><span className="ats-field-l">Nytt utfall</span><select className="ats-inp" value={ovTo} onChange={(e) => setOvTo(e.target.value)}>{Object.entries(QUAL_STATUS).filter(([k]) => k !== "pending").map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></label>
+      <label className="ats-field"><span className="ats-field-l">Anledning <i style={{ color: "var(--brick)" }}>*</i></span><textarea className="ats-inp" rows={2} value={ovReason} onChange={(e) => setOvReason(e.target.value)} placeholder="Varför frångår vi kravet?" /></label>
+      <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setOvFor(null)}>Avbryt</button>
+        <button className="ats-btn-primary" disabled={!ovReason.trim()} onClick={() => { D({ type: "OVERRIDE_ADD", candId: ovFor.id, to: ovTo, reason: ovReason }); setOvFor(null); showToast({ kind: "ok", msg: "Override registrerad och loggad" }); }}><ShieldAlert size={15} /> Registrera override</button></div>
+    </div></Modal>}
+    {complFor && <Modal title="Begär komplettering" onClose={() => setComplFor(null)}><div className="ats-erase">
+      <label className="ats-field"><span className="ats-field-l">Instruktion till kandidaten</span><textarea className="ats-inp" rows={2} value={complText} onChange={(e) => setComplText(e.target.value)} placeholder="Ladda upp ditt körkort" /><span className="ats-af-help">Kandidaten ser bara den här texten — aldrig regeln eller den interna orsaken.</span></label>
+      <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setComplFor(null)}>Avbryt</button>
+        <button className="ats-btn-primary" disabled={!complText.trim()} onClick={() => { D({ type: "COMPL_ADD", candId: complFor.id, text: complText, days: 7 }); setComplFor(null); showToast({ kind: "ok", msg: "Komplettering registrerad" }); }}><Upload size={15} /> Begär</button></div>
+    </div></Modal>}
     {showVers && <Modal title="Scoringversioner" onClose={() => { setShowVers(false); setCmp(null); }} wide><div className="ats-erase">
       {(p.versions || []).length === 0 ? <div className="ats-col-empty" style={{ padding: 24 }}>Ingen version publicerad än.</div>
         : <div className="ats-sa-rows">{p.versions.map((v) => <div key={v.v} className="ats-sa-row is-card">
@@ -7121,6 +7726,69 @@ section.ats-cs-cta p{font-size:17px;opacity:.9;margin-bottom:28px}
   .ats-se-gh>b{min-width:0}
   .ats-sv-cond{grid-template-columns:1fr 1fr;gap:6px}
   .ats-se-top{gap:14px}
+}
+
+/* ---- Kvalificering, regler, scorecards ---- */
+.ats-qc{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:11px;white-space:nowrap}
+.ats-qc.is-sm{font-size:10.5px;padding:2px 7px}
+.ats-qc.is-petrol{background:var(--petrol-soft);color:var(--petrol-deep)}
+.ats-qc.is-brick{background:var(--brick-soft);color:var(--brick)}
+.ats-qc.is-amber{background:var(--amber-soft);color:var(--gold)}
+.ats-qc.is-blue{background:var(--blue-soft);color:var(--blue)}
+.ats-qc.is-muted{background:var(--paper2);color:var(--muted)}
+.ats-rl{display:flex;flex-direction:column;gap:6px}
+.ats-rl-row{display:flex;align-items:center;gap:11px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;background:var(--surface);transition:.14s}
+.ats-rl-row.is-on{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-rl-row.is-draft{border-style:dashed;opacity:.75}
+.ats-rl-p{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);background:var(--paper2);width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:8px;flex-shrink:0}
+.ats-rl-n{flex:1;min-width:0;text-align:left}
+.ats-rl-n b{display:block;font-size:13.5px}
+.ats-rl-n span{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.ats-rl-text{display:flex;gap:9px;padding:11px 13px;background:var(--petrol-soft);color:var(--petrol-deep);border-radius:10px;font-size:12.5px;line-height:1.5;margin-bottom:12px}
+.ats-rl-text svg{flex-shrink:0;margin-top:1px}
+.ats-sv-srcl{font-size:12px;color:var(--muted);padding:0 6px;align-self:center}
+.ats-link{color:var(--petrol);font-weight:600;text-decoration:underline}
+/* Bedömningspanel */
+.ats-as{display:flex;flex-direction:column;gap:16px;max-height:72vh;overflow-y:auto;padding-right:4px}
+.ats-as-h{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;background:var(--paper2);border-radius:11px}
+.ats-as-h b{display:block;font-family:'Bricolage Grotesque';font-size:16px}
+.ats-as-h span{font-size:12px;color:var(--muted)}
+.ats-as-score{text-align:right;flex-shrink:0}
+.ats-as-score b{font-family:'Bricolage Grotesque';font-size:22px;color:var(--petrol)}
+.ats-as-score span{display:block;font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.ats-as-sec h4{font-family:'Bricolage Grotesque';font-weight:600;font-size:14px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.ats-as-item{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid var(--line)}
+.ats-as-item:last-child{border-bottom:0}
+.ats-as-q b{font-size:14px}
+.ats-as-q span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.ats-as-q em{font-style:normal;font-size:11px;color:var(--petrol);background:var(--petrol-soft);padding:2px 7px;border-radius:8px;margin-left:6px}
+.ats-as-scale{display:flex;gap:7px;flex-wrap:wrap}
+.ats-as-opt{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:12.5px;font-weight:600;color:var(--sub);min-height:52px;flex:1;min-width:96px;transition:.14s}
+.ats-as-opt:hover:not(:disabled){border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-as-opt.is-on{background:var(--petrol);border-color:var(--petrol);color:#fff}
+.ats-as-opt em{font-style:normal;font-size:10.5px;opacity:.7;font-family:'IBM Plex Mono',monospace}
+.ats-as-others{padding:13px 15px;background:var(--paper2);border-radius:11px}
+.ats-as-others h4{font-family:'Bricolage Grotesque';font-weight:600;font-size:13px;margin-bottom:9px}
+.ats-as-other{display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-size:13px}
+.ats-as-other span{color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:12px}
+.ats-as-secedit{display:flex;flex-direction:column;gap:7px;padding:12px 0;border-bottom:1px solid var(--line)}
+/* Kandidatpanel: kvalificering */
+.ats-dr-qual{display:flex;flex-direction:column;gap:8px;margin-bottom:6px}
+.ats-dr-ko,.ats-dr-ov,.ats-dr-compl{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:10px}
+.ats-dr-ko{background:var(--brick-soft)}
+.ats-dr-ov{background:var(--amber-soft)}
+.ats-dr-compl{background:var(--blue-soft);align-items:center}
+.ats-dr-ko svg{color:var(--brick);flex-shrink:0;margin-top:2px}
+.ats-dr-ov svg{color:var(--gold);flex-shrink:0;margin-top:2px}
+.ats-dr-compl svg{color:var(--blue);flex-shrink:0}
+.ats-dr-ko div,.ats-dr-ov div,.ats-dr-compl div{flex:1;min-width:0}
+.ats-dr-ko b,.ats-dr-ov b,.ats-dr-compl b{display:block;font-size:12.5px}
+.ats-dr-ko span,.ats-dr-ov span,.ats-dr-compl span{font-size:11.5px;color:var(--sub);line-height:1.45}
+.ats-dr-flag{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;background:var(--amber-soft);color:var(--gold);border-radius:9px;font-size:11.5px;font-weight:600}
+@media (max-width:640px){
+  .ats-as-opt{min-width:0;flex:1 1 45%}
+  .ats-as-h{flex-direction:column;align-items:flex-start;gap:8px}
+  .ats-as-score{text-align:left}
 }
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
