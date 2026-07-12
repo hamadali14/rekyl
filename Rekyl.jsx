@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useReducer, useCallback, Fragment } from "react";
+import { Component, useState, useEffect, useMemo, useRef, useReducer, useCallback, Fragment } from "react";
 import {
   Briefcase, GraduationCap, Clock, Wallet, MapPin, ShieldCheck, FileText, Award, Users,
   SlidersHorizontal, BarChart3, ClipboardList, Layers, Check, X, Star, RotateCcw, Search,
@@ -663,8 +663,9 @@ function reducer(state, ac) {
     case "UPDATE_TEMPLATE": return { ...state, templates: state.templates.map((t) => t.id === ac.id ? { ...t, ...ac.patch } : t) };
     case "REMOVE_TEMPLATE": return { ...state, templates: state.templates.filter((t) => t.id !== ac.id) };
     case "SET_ORG": return { ...state, org: { ...state.org, ...ac.patch } };
-    case "LOAD_STATE": { const d = ac.data || {}; const tpl = d.templates ? [...d.templates, ...DEFAULT_TEMPLATES.filter((t) => !d.templates.some((x) => x.trigger === t.trigger))] : state.templates; const jobs2 = (d.jobs || []).map(migrateJob).map(ensurePipeline); const pipeOf = {}; jobs2.forEach((j) => { pipeOf[j.id] = j.pipeline; });
-      return { ...state, career: d.career || null, tags: d.tags || [], jobViews: d.jobViews || [], moves: d.moves || [], moveIds: d.moveIds || [], jobs: jobs2, candidates: (d.candidates || []).map((c) => pipeOf[c.jobId] ? migrateCandidate(c, pipeOf[c.jobId]) : c), org: d.org || state.org, templates: tpl, messages: d.messages || [], log: d.log || state.log, team: d.team || state.team, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
+    case "LOAD_STATE": { const d = ac.data || {}; const tpl = d.templates ? [...d.templates, ...DEFAULT_TEMPLATES.filter((t) => !d.templates.some((x) => x.trigger === t.trigger))] : state.templates;
+      return { ...hydrate(state, { ...d, jobs: d.jobs || [], candidates: d.candidates || [] }), templates: tpl, team: state.team, currentUserId: state.currentUserId };
+    }
     case "SYNC_APPLICATIONS": { const job = ensurePipeline(state.jobs.find((j) => j.slug === ac.slug) || {}); if (!job.id) return state; const existing = new Set(state.candidates.map((c) => c.id)); const add = (ac.rows || []).filter((r) => !existing.has("sb_" + r.id)).map((r) => migrateCandidate(({ id: "sb_" + r.id, jobId: job.id, name: r.name || "Namnlös", email: r.email || null, phone: r.phone || null, answers: r.answers || {}, source: r.source || "Länk", status: "new", managerStatus: null, starred: false, rating: 0, comments: [], reviews: {}, reason: null, interviewTime: null, consentAt: r.consent_at ? new Date(r.consent_at).getTime() : null, formVersion: job.version, appliedAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(), timeline: [{ id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + (r.source || "länk"), at: Date.now(), actor: "System" }] }), job.pipeline)); if (!add.length) return state; return { ...state, candidates: [...add, ...state.candidates], jobs: state.jobs.map((j) => j.id === job.id ? { ...j, stats: { started: j.stats.started + add.length, submitted: j.stats.submitted + add.length } } : j) }; }
     default: return state;
   }
@@ -1225,7 +1226,7 @@ function cloudHint(e) {
   return "Molnfel (" + e.status + ")" + (e.msg ? ": " + e.msg.slice(0, 90) : "") + ".";
 }
 export default function App() {
-  const [state, dispatch] = useReducer(reducer, INITIAL, (init) => { try { const sv = store.get("rekyl_state", null); return sv && sv.jobs && sv.candidates ? { ...init, ...sv, team: Array.isArray(sv.team) ? sv.team : [] } : init; } catch (e) { return init; } });
+  const [state, dispatch] = useReducer(reducer, INITIAL, (init) => { try { const sv = store.get("rekyl_state", null); return hydrate(init, sv); } catch (e) { return init; } });
   const D = dispatch;
   const [view, setView] = useState("dashboard");
   const [pinned, setPinned] = useState(() => store.get("rekyl_pin", false));
@@ -1333,12 +1334,14 @@ export default function App() {
 
         <main className="ats-main">
           <div className="ats-canvas">
+            <ErrorBoundary view name={view} key={view}>
             {view === "dashboard" && <DashboardView {...shared} />}
             {view === "jobs" && <JobsView {...shared} />}
             {view === "calendar" && <CalendarView {...shared} />}
             {view === "career" && <CareerView {...shared} />}
             {view === "pipeline" && <PipelineView {...shared} />}
             {view === "superadmin" && isSuper && <SuperadminView {...shared} />}
+            </ErrorBoundary>
             {view === "queue" && <QueueView {...shared} />}
             {view === "candidates" && <CandidatesView {...shared} />}
             {view === "form" && <FormView {...shared} />}
@@ -1364,7 +1367,7 @@ export default function App() {
         <p>Ditt paket <b>{PLAN_LABEL[plan.plan] || plan.plan}</b> tillåter <b>{plan.maxJobs} tjänster</b> och du har {state.jobs.length}. Arkivera eller radera en tjänst under <b>Tjänster</b>, eller uppgradera paketet.</p>
         <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setLimitHit(false)}>Stäng</button><button className="ats-btn-primary" onClick={() => { setLimitHit(false); go("jobs"); }}>Till Tjänster</button></div>
       </div></Modal>}
-      {tourOpen && <ProductTour steps={TOUR_STEPS} setView={go} onClose={(done) => { setTourOpen(false); if (done) store.set("rekyl_tour_done", true); }} />}
+      {tourOpen && <ErrorBoundary name="tour"><ProductTour steps={TOUR_STEPS} setView={go} onClose={(done) => { setTourOpen(false); if (done) store.set("rekyl_tour_done", true); }} /></ErrorBoundary>}
       {sbEnabled && session && org && !cloudOk && <div className="ats-cloudbar"><AlertTriangle size={14} /> {cloudHint(cloudErr)} <button onClick={cloudRetry}>Försök igen</button></div>}
     </div>
   );
@@ -1387,6 +1390,53 @@ function publishBlockers(job) {
   if (!a.contact || !validEmail(a.contact.email || "")) out.push("Kontaktperson med giltig e-post saknas");
   if (!a.deadline) out.push("Sista ansökningsdag saknas");
   return out;
+}
+/* Sparad data (localStorage eller moln) måste ALLTID gå genom migreringarna innan
+ * den blir state. Utan detta saknar jobb `pipeline` och kandidater `stageId`. */
+function hydrate(init, d) {
+  if (!d || !Array.isArray(d.jobs) || !Array.isArray(d.candidates)) return init;
+  const jobs = d.jobs.map(migrateJob).map(ensurePipeline);
+  const pipeOf = {};
+  jobs.forEach((j) => { pipeOf[j.id] = j.pipeline; });
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  return {
+    ...init, ...d,
+    jobs,
+    candidates: arr(d.candidates).map((c) => (pipeOf[c.jobId] ? migrateCandidate(c, pipeOf[c.jobId]) : c)),
+    team: arr(d.team), tags: arr(d.tags), jobViews: arr(d.jobViews),
+    moves: arr(d.moves), moveIds: arr(d.moveIds),
+    messages: arr(d.messages), log: arr(d.log), history: arr(d.history),
+    templates: arr(d.templates).length ? d.templates : init.templates,
+    org: { ...init.org, ...(d.org || {}) },
+    activeJobId: jobs.some((j) => j.id === d.activeJobId) ? d.activeJobId : (jobs[0] ? jobs[0].id : null),
+  };
+}
+/* ===================== FELGRÄNS ===================== */
+/* Isolerar fel per modul. En trasig vy får aldrig riva hela appen. */
+class ErrorBoundary extends Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) {
+    try { console.error("[rekyl] " + (this.props.name || "app"), err, info && info.componentStack); } catch (e) { /* konsolen kan saknas */ }
+  }
+  render() {
+    if (!this.state.err) return this.props.children;
+    const msg = String((this.state.err && this.state.err.message) || this.state.err);
+    const isView = !!this.props.view;
+    return <div className={"ats-eb" + (isView ? " is-view" : "")}>
+      <div className="ats-eb-card">
+        <div className="ats-eb-i"><ShieldAlert size={24} /></div>
+        <h2>{isView ? "Den här vyn kunde inte visas" : "Något gick fel"}</h2>
+        <p>{isView ? "Resten av appen fungerar — du kan gå vidare till en annan vy eller försöka igen." : "Appen stötte på ett oväntat fel. Din data är sparad."}</p>
+        <details className="ats-eb-d"><summary>Teknisk information</summary><pre>{msg}</pre></details>
+        <div className="ats-eb-acts">
+          <button className="ats-btn-primary" onClick={() => this.setState({ err: null })}><RotateCw size={15} /> Försök igen</button>
+          <button className="ats-ghost" onClick={() => window.location.reload()}>Ladda om sidan</button>
+          {!isView && <button className="ats-ghost" onClick={() => { try { store.set("rekyl_state", null); } catch (e) { /* privat läge */ } window.location.reload(); }}>Rensa lokal data och ladda om</button>}
+        </div>
+      </div>
+    </div>;
+  }
 }
 /* ===================== PIPELINE, SLA OCH FÖRFLYTTNINGSMOTOR ===================== */
 /* Stegtyper. `legacy` håller den gamla statusmodellen synkad så att kö, statistik,
@@ -6306,6 +6356,24 @@ section.ats-cs-cta p{font-size:17px;opacity:.9;margin-bottom:28px}
   .ats-pc-move{opacity:1}
   .ats-move{flex-wrap:wrap}
 }
+
+/* ---- Felgräns ---- */
+.ats-eb{display:flex;align-items:center;justify-content:center;min-height:100dvh;padding:24px;background:var(--paper)}
+.ats-eb.is-view{min-height:340px;padding:32px 0}
+.ats-eb-card{max-width:520px;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:32px;text-align:center}
+.ats-eb-i{width:56px;height:56px;border-radius:50%;background:var(--brick-soft);color:var(--brick);display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
+.ats-eb-card h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:22px;margin-bottom:10px}
+.ats-eb-card p{font-size:15px;line-height:1.6;color:var(--sub);margin-bottom:20px}
+.ats-eb-d{text-align:left;margin-bottom:20px}
+.ats-eb-d summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);padding:8px 0;min-height:36px}
+.ats-eb-d pre{background:var(--paper2);border-radius:9px;padding:12px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;color:var(--brick);font-family:'IBM Plex Mono',monospace}
+.ats-eb-acts{display:flex;gap:9px;flex-wrap:wrap;justify-content:center}
+/* ---- Mobil viewport och safe areas ---- */
+.ats-app{min-height:100dvh}
+.ats-bottomnav{padding-bottom:calc(8px + env(safe-area-inset-bottom))}
+.ats-fab{bottom:calc(84px + env(safe-area-inset-bottom))}
+.ats-jp-mobar{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+@media (max-width:640px){ .ats-eb-card{padding:24px 20px} .ats-eb-acts button{width:100%} }
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
