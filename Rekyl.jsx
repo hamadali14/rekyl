@@ -313,13 +313,13 @@ const DEFAULT_TEMPLATES = [
   { id: "t_received", name: "Tack för ansökan", trigger: "received", active: true, subject: "Tack för din ansökan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}} hos {{companyName}}. Vi har tagit emot den och går igenom alla ansökningar löpande. Du hör från oss.\n\nVänliga hälsningar,\n{{hrName}}\n{{companyName}}" },
   { id: "t_shortlist", name: "Intressant profil", trigger: "shortlist", active: true, subject: "Din ansökan till {{jobTitle}} går vidare", body: "Hej {{candidateName}},\n\nVi tycker din profil verkar intressant för {{jobTitle}} hos {{companyName}} och vill gärna ta det vidare. Vi återkommer inom kort med nästa steg.\n\nVänliga hälsningar,\n{{hrName}}" },
   { id: "t_interview", name: "Boka intervju", trigger: "interview", active: true, subject: "Vi vill träffa dig - {{jobTitle}}", body: "Hej {{candidateName}},\n\nVi vill gärna träffa dig för {{jobTitle}} hos {{companyName}}. Förslag på tid: {{interviewTime}}. Passar det, eller föreslår du en annan tid?\n\nSvara på detta mejl så bokar vi.\n\nVänliga hälsningar,\n{{hrName}}\n{{hrEmail}}" },
-  { id: "t_reserve", name: "Reservlista", trigger: "reserve", active: true, subject: "Din ansökan - {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}}. Vi har lagt din profil på var reservlista och hör av oss om en passande roll blir aktuell.\n\nVänliga hälsningar,\n{{hrName}}" },
-  { id: "t_reject", name: "Avslag", trigger: "reject", active: true, subject: "Besked om din ansökan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}} hos {{companyName}}. Den har gången går vi vidare med andra kandidater ({{rejectionReason}}). Vi önskar dig lycka till framöver.\n\nVänliga hälsningar,\n{{hrName}}" },
+  { id: "t_reserve", name: "Reservlista", trigger: "reserve", active: true, subject: "Din ansökan - {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}}. Vi har lagt din profil på vår reservlista och hör av oss om en passande roll blir aktuell.\n\nVänliga hälsningar,\n{{hrName}}" },
+  { id: "t_reject", name: "Avslag", trigger: "reject", active: true, subject: "Besked om din ansökan till {{jobTitle}}", body: "Hej {{candidateName}},\n\nTack för din ansökan till {{jobTitle}} hos {{companyName}}. Den här gången går vi vidare med andra kandidater ({{rejectionReason}}). Vi önskar dig lycka till framöver.\n\nVänliga hälsningar,\n{{hrName}}" },
   { id: "t_completion", name: "Begär komplettering", trigger: "completion", active: true, subject: "Komplettering behövs - {{jobTitle}}", body: "Hej {{candidateName}},\n\nDin ansökan ser bra ut, men vi saknar: {{missingField}}. Kan du komplettera genom att svara på detta mejl?\n\nTack,\n{{hrName}}" },
   { id: "t_offer", name: "Erbjudande", trigger: "offer", active: true, subject: "Erbjudande - {{jobTitle}} hos {{companyName}}", body: "Hej {{candidateName}},\n\nVi är glada att erbjuda dig rollen som {{jobTitle}} hos {{companyName}}. Vi mejlar detaljerna separat. Hör gärna av dig till {{hrName}} på {{hrEmail}} vid frågor.\n\nVarmt välkommen!\n{{hrName}}" },
   { id: "t_interview_reminder", name: "Påminnelse intervju", trigger: "interview_reminder", active: true, subject: "Påminnelse: intervju imorgon - {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn vänlig påminnelse om din intervju för {{jobTitle}} hos {{companyName}}.\n\nTid: {{interviewTime}}\n\nHör av dig om något har kommit emellan.\n\nVänliga hälsningar,\n{{hrName}}\n{{companyName}}" },
   { id: "t_interview_cancelled", name: "Avbokad intervju", trigger: "interview_cancelled", active: true, subject: "Ändrad tid - {{jobTitle}}", body: "Hej {{candidateName}},\n\nTyvärr måste vi avboka den inplanerade intervjun för {{jobTitle}} hos {{companyName}}. Kalenderinbjudan tas bort automatiskt.\n\nVi återkommer med ett nytt tidsförslag så snart vi kan.\n\nVänliga hälsningar,\n{{hrName}}\n{{companyName}}" },
-  { id: "t_reminder", name: "Påminnelse", trigger: "reminder", active: true, subject: "Påminnelse — {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn liten paminnelse angående din ansökan till {{jobTitle}}. Hör av dig till {{hrName}} ({{hrEmail}}) om du har frågor.\n\nVänliga hälsningar,\n{{hrName}}" },
+  { id: "t_reminder", name: "Påminnelse", trigger: "reminder", active: true, subject: "Påminnelse — {{jobTitle}}", body: "Hej {{candidateName}},\n\nEn liten påminnelse angående din ansökan till {{jobTitle}}. Hör av dig till {{hrName}} ({{hrEmail}}) om du har frågor.\n\nVänliga hälsningar,\n{{hrName}}" },
 ];
 function renderTpl(str, vars) { return (str || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, k) => (vars[k] == null || vars[k] === "" ? `{{${k}}}` : vars[k])); }
 function tplVars(state, cand, job) { return { candidateName: cand.name, jobTitle: job.title, companyName: state.org.companyName, hrName: state.org.hrName, hrEmail: state.org.hrEmail, missingField: (missingInfo(job, cand)[0] || "efterfrågad uppgift"), interviewTime: cand.interviewTime || state.org.defaultInterviewTime, rejectionReason: cand.reason ? cand.reason.toLowerCase() : "andra kandidater gick vidare" }; }
@@ -565,28 +565,40 @@ function CookieBanner() {
 function LandingPage({ onLogin, onSignup }) {
   const [open, setOpen] = useState(false);
   const [faq, setFaq] = useState(0);
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll(); window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("is-in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -10% 0px" });
+    document.querySelectorAll(".ats-rv").forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, []);
   const go = (id) => { setOpen(false); const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
 
   const PLANS = [
-    { n: "Start", p: "0 kr", per: "för din första tjänst", d: "Kom igång och rekrytera en roll hela vägen.", f: ["1 aktiv tjänst", "Formulärbyggare och poängsättning", "Publik jobbannons", "Automatiska mejl"], cta: "Skapa konto" },
-    { n: "Pro", p: "790 kr", per: "per månad", d: "För dig som rekryterar löpande.", f: ["25 aktiva tjänster", "Team och roller", "Kalender med intervjubokning", "Källkvalitet och rapporter", "Påminnelser till kandidater"], cta: "Börja med Pro", hot: true },
-    { n: "Enterprise", p: "Offert", per: "efter behov", d: "För större organisationer med egna krav.", f: ["Obegränsat antal tjänster", "Revisionslogg och behörighetsstyrning", "Egna mallar och processer", "Support med namngiven kontakt"], cta: "Kontakta oss" },
+    { n: "Start", p: "0 kr", per: "för din första tjänst", d: "Rekrytera en roll hela vägen, utan kostnad.", f: ["1 aktiv tjänst", "Formulärbyggare och poängsättning", "Publik jobbannons", "Automatiska besked till kandidater"], cta: "Skapa konto" },
+    { n: "Pro", p: "790 kr", per: "per månad", d: "För dig som rekryterar löpande.", f: ["25 aktiva tjänster", "Team, roller och revisionslogg", "Kalender med intervjubokning", "Påminnelser till kandidater", "Källkvalitet och rapporter"], cta: "Börja med Pro", hot: true },
+    { n: "Enterprise", p: "Offert", per: "efter behov", d: "För större organisationer med egna krav.", f: ["Obegränsat antal tjänster", "Egna mallar och processer", "Utökad behörighetsstyrning", "Namngiven kontaktperson"], cta: "Kontakta oss" },
   ];
   const FAQS = [
-    ["Använder Rekyl AI för att välja bort kandidater?", "Nej. Poängsättningen är helt deterministisk: du bestämmer själv vilka frågor som väger tungt, vad som är ett absolut krav och var tröskeln går. Samma svar ger alltid samma poäng, och varje poäng kan brytas ned och förklaras. Ingen modell gissar åt dig."],
+    ["Använder Rekyl AI för att välja bort kandidater?", "Nej. Poängsättningen är helt deterministisk. Du bestämmer själv vilka frågor som väger tungt, vad som är ett absolut krav och var tröskeln går. Samma svar ger alltid samma poäng, och varje poäng går att bryta ned och förklara för både kandidat och chef. Ingen modell gissar åt dig."],
     ["Var lagras kandidaternas uppgifter?", "Inom EU. Kandidaten samtycker vid ansökan, samtycket tidsstämplas, och du kan radera all data för en kandidat eller en hel tjänst permanent — inklusive uppladdade filer."],
-    ["Kan jag börja utan att prata med en säljare?", "Ja. Du skapar konto, väljer en branschmall och har en publicerad annons med fungerande ansökningslänk på några minuter."],
-    ["Skickas mejlen till kandidaterna på riktigt?", "Ja. När du fattar ett beslut går rätt mejl iväg direkt, och du ser den verkliga leveransstatusen — inte ett påstående om att något är \"köat\"."],
-    ["Vad händer med kandidater vi inte går vidare med?", "De får besked. Det är hela poängen med att ha mallar kopplade till varje beslut: ingen blir kvar i tystnad."],
+    ["Kan jag komma igång utan att prata med en säljare?", "Ja. Du skapar konto, väljer en branschmall och har en publicerad annons med fungerande ansökningslänk på några minuter."],
+    ["Skickas mejlen till kandidaterna på riktigt?", "Ja. När du fattar ett beslut går rätt mejl iväg direkt, och du ser den verkliga leveransstatusen från mejlleverantören. Ingen kandidat blir kvar i tystnad."],
+    ["Vad kostar det när vi växer?", "Start är gratis för din första tjänst. Pro kostar 790 kr per månad utan bindningstid, och Enterprise prissätts efter behov. Du kan byta paket när du vill."],
   ];
 
   return <div className="ats-root"><Style /><div className="ats-lp">
-    <header className="ats-lp-nav">
+    <header className={"ats-lp-nav" + (scrolled ? " is-stuck" : "")}>
       <div className="ats-lp-nav-in">
-        <div className="ats-lp-brand"><span className="ats-logo">R</span> Rekyl</div>
+        <button className="ats-lp-brand" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span className="ats-logo">R</span> Rekyl</button>
         <nav className="ats-lp-links">
           <button onClick={() => go("produkt")}>Produkt</button>
-          <button onClick={() => go("sa-funkar")}>Så funkar det</button>
+          <button onClick={() => go("kandidaten")}>Kandidatupplevelse</button>
           <button onClick={() => go("priser")}>Priser</button>
           <button onClick={() => go("fragor")}>Vanliga frågor</button>
         </nav>
@@ -594,194 +606,209 @@ function LandingPage({ onLogin, onSignup }) {
           <button className="ats-lp-login" onClick={onLogin}>Logga in</button>
           <button className="ats-lp-cta" onClick={onSignup}>Kom igång</button>
         </div>
-        <button className="ats-lp-burger" onClick={() => setOpen(!open)}>{open ? <X size={20} /> : <MenuIcon size={20} />}</button>
+        <button className="ats-lp-burger" onClick={() => setOpen(!open)} aria-label={open ? "Stäng menyn" : "Öppna menyn"}>{open ? <X size={22} /> : <MenuIcon size={22} />}</button>
       </div>
       {open && <div className="ats-lp-mob">
         <button onClick={() => go("produkt")}>Produkt</button>
-        <button onClick={() => go("sa-funkar")}>Så funkar det</button>
+        <button onClick={() => go("kandidaten")}>Kandidatupplevelse</button>
         <button onClick={() => go("priser")}>Priser</button>
         <button onClick={() => go("fragor")}>Vanliga frågor</button>
-        <button className="ats-lp-login" onClick={onLogin}>Logga in</button>
-        <button className="ats-lp-cta" onClick={onSignup}>Kom igång</button>
+        <div className="ats-lp-mob-acts">
+          <button className="ats-lp-ghost is-block" onClick={onLogin}>Logga in</button>
+          <button className="ats-lp-cta is-block" onClick={onSignup}>Kom igång</button>
+        </div>
       </div>}
     </header>
 
+    {/* 1. HERO */}
     <section className="ats-lp-hero">
       <div className="ats-lp-hero-in">
-        <span className="ats-lp-eyebrow">Rekryteringsverktyg för svenska arbetsgivare</span>
-        <h1>Sluta läsa CV:n i blindo.<br /><em>Låt kraven göra jobbet.</em></h1>
-        <p className="ats-lp-sub">Du bestämmer vad som faktiskt spelar roll för rollen. Rekyl poängsätter varje ansökan efter det — transparent, deterministiskt och utan AI som gissar. Kvar blir en kö du kan beta av på en kafferast.</p>
-        <div className="ats-lp-hero-acts">
-          <button className="ats-lp-cta is-lg" onClick={onSignup}>Skapa konto gratis <ArrowRight size={18} /></button>
-          <button className="ats-lp-ghost" onClick={() => go("sa-funkar")}>Se hur det fungerar</button>
-        </div>
-        <div className="ats-lp-trust">
-          <span><Check size={14} /> Ingen AI som sållar</span>
-          <span><Check size={14} /> Data inom EU</span>
-          <span><Check size={14} /> Igång på minuter</span>
-        </div>
-      </div>
-      <div className="ats-lp-shot">
-        <div className="ats-lp-shot-bar"><span /><span /><span /><b>rekyl.app/queue</b></div>
-        <div className="ats-lp-shot-body">
-          <div className="ats-lp-card">
-            <div className="ats-lp-card-top">
-              <div><b>Amina Karlsson</b><span>Säljare · via LinkedIn</span></div>
-              <ScoreDial value={92} knockout={false} size={58} />
-            </div>
-            <div className="ats-lp-bars">
-              <div className="ats-lp-bar"><span>Nyckelkompetenser</span><i style={{ width: "100%" }} /><b>+30</b></div>
-              <div className="ats-lp-bar"><span>Års erfarenhet</span><i style={{ width: "82%" }} /><b>+24</b></div>
-              <div className="ats-lp-bar is-weak"><span>Löneanspråk</span><i style={{ width: "46%" }} /><b>+8</b></div>
-            </div>
-            <div className="ats-lp-rec"><Sparkles size={14} /> Rekommenderad åtgärd: <b>Boka intervju</b></div>
+        <div className="ats-lp-hero-txt">
+          <h1>Rekrytera på krav.<br /><em>Inte på magkänsla.</em></h1>
+          <p className="ats-lp-sub">Du bestämmer vad som faktiskt spelar roll för rollen. Rekyl poängsätter varje ansökan efter det — transparent och förklarbart. Kvar blir en kö du kan beta av på en kafferast.</p>
+          <div className="ats-lp-hero-acts">
+            <button className="ats-lp-cta is-lg" onClick={onSignup}>Skapa konto gratis <ArrowRight size={19} /></button>
+            <button className="ats-lp-ghost" onClick={() => go("produkt")}>Se hur det fungerar</button>
           </div>
-          <div className="ats-lp-deck">
-            <div className="ats-lp-deck-c" /><div className="ats-lp-deck-c" />
+          <ul className="ats-lp-trust">
+            <li><Check size={15} /> Ingen AI som sållar</li>
+            <li><Check size={15} /> Data inom EU</li>
+            <li><Check size={15} /> Igång på minuter</li>
+          </ul>
+        </div>
+        <div className="ats-lp-shot">
+          <div className="ats-lp-shot-bar"><span /><span /><span /><b>rekyl.app</b></div>
+          <div className="ats-lp-shot-body">
+            <div className="ats-lp-card">
+              <div className="ats-lp-card-top">
+                <div><b>Amina Karlsson</b><span>Säljare · via LinkedIn</span></div>
+                <ScoreDial value={92} knockout={false} size={62} />
+              </div>
+              <div className="ats-lp-bars">
+                <div className="ats-lp-bar"><span>Nyckelkompetenser</span><i style={{ width: "100%" }} /><b>+30</b></div>
+                <div className="ats-lp-bar"><span>Års erfarenhet</span><i style={{ width: "82%" }} /><b>+24</b></div>
+                <div className="ats-lp-bar is-weak"><span>Löneanspråk</span><i style={{ width: "46%" }} /><b>+8</b></div>
+              </div>
+              <div className="ats-lp-rec"><Sparkles size={15} /> Rekommenderad åtgärd: <b>Boka intervju</b></div>
+            </div>
+            <div className="ats-lp-swipe"><span><X size={14} /> Avslag</span><span className="is-mid"><PauseCircle size={14} /> Reserv</span><span className="is-ok"><Check size={14} /> Shortlist</span></div>
           </div>
-          <div className="ats-lp-swipe"><span><X size={13} /> Avslag</span><span className="is-mid"><PauseCircle size={13} /> Reserv</span><span className="is-ok"><Check size={13} /> Shortlist</span></div>
         </div>
       </div>
     </section>
 
+    {/* 2. PROBLEMET — redaktionell, mörk */}
     <section className="ats-lp-problem">
-      <div className="ats-lp-wrap">
-        <div className="ats-lp-prob-l">
-          <span className="ats-lp-eyebrow is-dark">Problemet</span>
-          <h2>Trettio ansökningar. Ingen struktur. Magkänsla får avgöra.</h2>
-        </div>
-        <div className="ats-lp-prob-r">
-          <p>De flesta mindre arbetsgivare rekryterar i mejlkorgen. Ansökningar blandas med fakturor, någon får aldrig svar, och beslutet fattas på den som råkade skriva bäst personligt brev.</p>
-          <p>Det är inte slarv. Det är att verktygen antingen kostar som en heltidstjänst eller kräver en HR-avdelning för att sättas upp.</p>
+      <div className="ats-lp-wrap ats-lp-problem-in ats-rv">
+        <h2>Trettio ansökningar i mejlkorgen.<br />Ingen struktur. Ingen som får svar.</h2>
+        <div className="ats-lp-problem-r">
+          <p>De flesta mindre arbetsgivare rekryterar mellan fakturor och möten. Ansökningar hamnar i inkorgen, någon glöms bort, och beslutet fattas på den som råkade skriva bäst personligt brev.</p>
+          <p>Det är inte slarv. Det är att verktygen antingen kostar som en halvtidstjänst eller kräver en HR-avdelning för att sättas upp.</p>
         </div>
       </div>
     </section>
 
-    <section className="ats-lp-sec" id="sa-funkar">
-      <div className="ats-lp-wrap">
-        <span className="ats-lp-eyebrow is-dark">Så funkar det</span>
-        <h2 className="ats-lp-h2">Fyra steg från annons till anställd</h2>
-        <div className="ats-lp-flow">
-          {[["Bestäm kraven", "Välj en branschmall och justera vad som väger tungt. Sätt absoluta krav — de sållar bort automatiskt."],
-            ["Publicera annonsen", "Du får en publik jobbsida och en delningslänk per kanal, så du ser var de bästa kandidaterna kommer ifrån."],
-            ["Beta av kön", "Varje ansökan poängsätts direkt. Du ser styrkor, risker och en rekommendation — och swipar dig igenom."],
-            ["Boka och besked", "Beslut skickar rätt mejl automatiskt. Intervjun landar i kandidatens kalender."]].map(([t, d], i) =>
-            <div key={t} className="ats-lp-flow-i"><span className="ats-lp-flow-n">{String(i + 1).padStart(2, "0")}</span><h3>{t}</h3><p>{d}</p></div>)}
-        </div>
-      </div>
-    </section>
-
+    {/* 3. FORMULÄRET BLIR URVAL — text + visual */}
     <section className="ats-lp-split" id="produkt">
-      <div className="ats-lp-wrap ats-lp-split-in">
+      <div className="ats-lp-wrap ats-lp-split-in ats-rv">
         <div className="ats-lp-split-t">
-          <span className="ats-lp-eyebrow is-dark">Formuläret</span>
+          <span className="ats-lp-eyebrow">Formuläret</span>
           <h2>Formuläret är också din urvalsmotor</h2>
-          <p>Dra in fälten du bryr dig om: års erfarenhet, körkort, tillgänglighet, kompetenser. Sätt vikt på det som väger tungt och markera vad som är ett absolut krav.</p>
+          <p>Dra in fälten du bryr dig om — års erfarenhet, körkort, tillgänglighet, kompetenser. Sätt vikt på det som väger tungt och markera vad som är ett absolut krav. Poängen räknas ut på samma sätt varje gång.</p>
           <ul className="ats-lp-checks">
-            <li><Check size={15} /> Dra och släpp, ingen kod</li>
-            <li><Check size={15} /> Följdfrågor som bara visas när de behövs</li>
-            <li><Check size={15} /> Absoluta krav sållar automatiskt</li>
+            <li><Check size={17} /> Dra och släpp, ingen kod</li>
+            <li><Check size={17} /> Följdfrågor som bara visas när de behövs</li>
+            <li><Check size={17} /> Absoluta krav sållar bort automatiskt</li>
           </ul>
         </div>
         <div className="ats-lp-split-v">
           <div className="ats-lp-mini">
-            <div className="ats-lp-mini-h"><Blocks size={14} /> Formulärbyggare</div>
+            <div className="ats-lp-mini-h"><Blocks size={15} /> Formulärbyggare</div>
             <div className="ats-lp-fields">
-              <div className="ats-lp-field"><GripVertical size={13} /><span>Års erfarenhet</span><em>vikt 24</em></div>
-              <div className="ats-lp-field is-sel"><GripVertical size={13} /><span>Nyckelkompetenser</span><em>vikt 28</em></div>
-              <div className="ats-lp-field"><GripVertical size={13} /><span>Har B-körkort</span><em className="is-ko">krav</em></div>
-              <div className="ats-lp-field"><GripVertical size={13} /><span>Kan börja</span><em>vikt 12</em></div>
+              <div className="ats-lp-field"><GripVertical size={14} /><span>Års erfarenhet</span><em>vikt 24</em></div>
+              <div className="ats-lp-field is-sel"><GripVertical size={14} /><span>Nyckelkompetenser</span><em>vikt 28</em></div>
+              <div className="ats-lp-field"><GripVertical size={14} /><span>Har B-körkort</span><em className="is-ko">krav</em></div>
+              <div className="ats-lp-field"><GripVertical size={14} /><span>Kan börja</span><em>vikt 12</em></div>
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <section className="ats-lp-split is-flip">
-      <div className="ats-lp-wrap ats-lp-split-in">
+    {/* 4. KANDIDATEN — visual + text */}
+    <section className="ats-lp-split is-flip" id="kandidaten">
+      <div className="ats-lp-wrap ats-lp-split-in ats-rv">
         <div className="ats-lp-split-v">
           <div className="ats-lp-mini">
-            <div className="ats-lp-mini-h"><Globe size={14} /> Publik jobbannons</div>
+            <div className="ats-lp-mini-h"><Globe size={15} /> Publik jobbannons</div>
             <div className="ats-lp-jobmini">
+              <div className="ats-lp-jm-kicker">Sälj — Växjö — Hybrid</div>
               <div className="ats-lp-jm-title">Säljare till Nordpuls</div>
-              <div className="ats-lp-jm-chips"><span>Växjö</span><span>Hybrid</span><span>Heltid</span></div>
               <div className="ats-lp-jm-line" /><div className="ats-lp-jm-line is-s" />
               <div className="ats-lp-jm-btn">Ansök till tjänsten</div>
+              <div className="ats-lp-jm-prog"><span>Steg 2 av 4</span><i><b /></i></div>
             </div>
           </div>
         </div>
         <div className="ats-lp-split-t">
-          <span className="ats-lp-eyebrow is-dark">Kandidatupplevelsen</span>
+          <span className="ats-lp-eyebrow">Kandidatupplevelsen</span>
           <h2>En annons kandidaten faktiskt vill söka på</h2>
-          <p>Egen jobbsida med er profil, tydlig process och ett ansökningsflöde som fungerar lika bra i mobilen. Kandidaten ser aldrig poäng, krav eller interna bedömningar — bara en trygg och tydlig ansökan.</p>
+          <p>Egen jobbsida med er profil, tydlig process och ett ansökningsflöde som fungerar lika bra i mobilen. Kandidaten ser aldrig poäng, krav eller interna bedömningar — bara en lugn och tydlig ansökan.</p>
           <ul className="ats-lp-checks">
-            <li><Check size={15} /> Ett steg i taget, inget krångel</li>
-            <li><Check size={15} /> CV-uppladdning som bara fungerar</li>
-            <li><Check size={15} /> Alla får besked — ingen lämnas i tystnad</li>
+            <li><Check size={17} /> Ett steg i taget, inget krångel</li>
+            <li><Check size={17} /> CV-uppladdning som bara fungerar</li>
+            <li><Check size={17} /> Alla får besked — ingen lämnas i tystnad</li>
           </ul>
         </div>
       </div>
     </section>
 
-    <section className="ats-lp-strip">
-      <div className="ats-lp-wrap ats-lp-strip-in">
-        {[[CalendarClock, "Kalender och bokning", "Boka intervju, skicka kalenderinbjudan och påminn kandidaten dagen innan — automatiskt."],
-          [TrendingUp, "Källkvalitet", "Se vilken kanal som ger bäst kandidater, inte bara flest."],
-          [Users, "Team och roller", "Bjud in kollegor med rätt behörighet. Allt som händer loggas."]].map(([I, t, d]) =>
-          <div key={t} className="ats-lp-strip-i"><I size={18} /><h3>{t}</h3><p>{d}</p></div>)}
+    {/* 5. BEDÖMNING — fullbredd */}
+    <section className="ats-lp-full">
+      <div className="ats-lp-wrap ats-rv">
+        <span className="ats-lp-eyebrow">Bedömningen</span>
+        <h2 className="ats-lp-h2">Varje poäng går att förklara</h2>
+        <p className="ats-lp-lead">Kandidatkortet visar exakt varför någon fick sin poäng: vilka styrkor som drog upp, vilka risker som drog ner och om ett absolut krav inte är uppfyllt. Du fattar beslutet — Rekyl visar underlaget.</p>
+        <div className="ats-lp-explain">
+          {[["Styrkor", "Det som drog upp poängen, med exakt viktning.", "ok"],
+            ["Risker", "Det som drog ner — synligt, inte gömt.", "warn"],
+            ["Absoluta krav", "Saknas ett skallkrav sållas ansökan bort automatiskt, med angiven orsak.", "ko"],
+            ["Rekommendation", "Boka intervju, shortlista, begär komplettering eller avslå.", "rec"]].map(([t, d, k]) =>
+            <div key={t} className={"ats-lp-ex is-" + k}><b>{t}</b><span>{d}</span></div>)}
+        </div>
       </div>
     </section>
 
+    {/* 6. TEAM & MÄTNING — tidslinje */}
+    <section className="ats-lp-sec">
+      <div className="ats-lp-wrap ats-rv">
+        <span className="ats-lp-eyebrow">Processen</span>
+        <h2 className="ats-lp-h2">Från annons till anställd — utan att något faller mellan stolarna</h2>
+        <ol className="ats-lp-timeline">
+          {[["Publicera", "En jobbsida och en delningslänk per kanal, så du ser var kandidaterna kommer ifrån."],
+            ["Beta av kön", "Varje ansökan poängsätts direkt. Swipa igenom, kommentera, rösta med teamet."],
+            ["Boka intervjun", "Tiden landar i kandidatens kalender. Påminnelse går ut dagen innan."],
+            ["Ge besked", "Rätt mejl skickas automatiskt vid varje beslut. Allt loggas."],
+            ["Mät källorna", "Se vilken kanal som ger bäst kandidater — inte bara flest."]].map(([t, d], i) =>
+            <li key={t}><span>{String(i + 1).padStart(2, "0")}</span><div><b>{t}</b><p>{d}</p></div></li>)}
+        </ol>
+      </div>
+    </section>
+
+    {/* 7. SÄKERHET */}
     <section className="ats-lp-safe">
-      <div className="ats-lp-wrap ats-lp-safe-in">
-        <div>
+      <div className="ats-lp-wrap ats-lp-safe-in ats-rv">
+        <div className="ats-lp-safe-l">
           <span className="ats-lp-eyebrow">Trygghet</span>
-          <h2>Ansvarsfullt med kandidaters uppgifter</h2>
+          <h2>Ansvarsfullt med människors uppgifter</h2>
           <p>Rekrytering handlar om människor. Därför är Rekyl byggt för att du ska kunna förklara varje beslut — och radera allt när det är dags.</p>
         </div>
         <div className="ats-lp-safe-list">
           {[["Deterministisk poängsättning", "Varje poäng går att bryta ned och förklara. Ingen modell gissar."],
-            ["Data inom EU", "Kandidatuppgifter och filer lagras inom EU."],
-            ["Samtycke och radering", "Samtycket tidsstämplas. Radering tar bort allt, även uppladdade filer."],
-            ["Rollstyrd åtkomst", "Admin, rekryterare, chef eller insyn — var och en ser bara det de ska."],
+            ["Data inom EU", "Kandidatuppgifter och uppladdade filer lagras inom EU."],
+            ["Samtycke och radering", "Samtycket tidsstämplas. Radering tar bort allt, även filerna."],
+            ["Rollstyrd åtkomst", "Admin, rekryterare, chef eller insyn — var och en ser bara sitt."],
             ["Revisionslogg", "Beslut, mejl och ändringar loggas med vem och när."]].map(([t, d]) =>
-            <div key={t} className="ats-lp-safe-i"><ShieldCheck size={15} /><div><b>{t}</b><span>{d}</span></div></div>)}
+            <div key={t} className="ats-lp-safe-i"><ShieldCheck size={17} /><div><b>{t}</b><span>{d}</span></div></div>)}
         </div>
       </div>
     </section>
 
+    {/* 8. PRISER */}
     <section className="ats-lp-sec" id="priser">
-      <div className="ats-lp-wrap">
-        <span className="ats-lp-eyebrow is-dark">Priser</span>
+      <div className="ats-lp-wrap ats-rv">
+        <span className="ats-lp-eyebrow">Priser</span>
         <h2 className="ats-lp-h2">Börja gratis. Betala när du växer.</h2>
         <div className="ats-lp-plans">{PLANS.map((p) => <div key={p.n} className={"ats-lp-plan" + (p.hot ? " is-hot" : "")}>
           {p.hot && <span className="ats-lp-plan-tag">Populärast</span>}
           <h3>{p.n}</h3>
           <div className="ats-lp-price"><b>{p.p}</b><span>{p.per}</span></div>
           <p className="ats-lp-plan-d">{p.d}</p>
-          <ul>{p.f.map((f) => <li key={f}><Check size={14} /> {f}</li>)}</ul>
+          <ul>{p.f.map((f) => <li key={f}><Check size={15} /> {f}</li>)}</ul>
           <button className={p.hot ? "ats-lp-cta is-block" : "ats-lp-ghost is-block"} onClick={onSignup}>{p.cta}</button>
         </div>)}</div>
         <p className="ats-lp-plans-note">Alla priser exklusive moms. Inga bindningstider.</p>
       </div>
     </section>
 
+    {/* 9. FAQ */}
     <section className="ats-lp-sec is-tight" id="fragor">
-      <div className="ats-lp-wrap ats-lp-faqwrap">
-        <span className="ats-lp-eyebrow is-dark">Vanliga frågor</span>
+      <div className="ats-lp-wrap ats-lp-faqwrap ats-rv">
+        <span className="ats-lp-eyebrow">Vanliga frågor</span>
         <h2 className="ats-lp-h2">Det du undrar över</h2>
-        <div className="ats-lp-faq">{FAQS.map(([q, a], i) => <div key={q} className={"ats-lp-faq-i" + (faq === i ? " is-on" : "")}>
-          <button onClick={() => setFaq(faq === i ? -1 : i)}>{q}<ChevronDown size={17} /></button>
-          {faq === i && <p>{a}</p>}
+        <div className="ats-lp-faq">{FAQS.map(([q, ans], i) => <div key={q} className={"ats-lp-faq-i" + (faq === i ? " is-on" : "")}>
+          <button onClick={() => setFaq(faq === i ? -1 : i)} aria-expanded={faq === i}>{q}<ChevronDown size={19} /></button>
+          <div className="ats-lp-faq-a" style={{ maxHeight: faq === i ? 320 : 0 }}><p>{ans}</p></div>
         </div>)}</div>
       </div>
     </section>
 
+    {/* 10. SLUT-CTA */}
     <section className="ats-lp-final">
-      <div className="ats-lp-wrap ats-lp-final-in">
-        <h2>Nästa rekrytering behöver inte kännas som en gissningslek.</h2>
-        <p>Skapa konto, välj en mall och publicera din första tjänst idag.</p>
-        <button className="ats-lp-cta is-lg" onClick={onSignup}>Skapa konto gratis <ArrowRight size={18} /></button>
+      <div className="ats-lp-wrap ats-lp-final-in ats-rv">
+        <h2>Nästa rekrytering behöver inte vara en gissningslek.</h2>
+        <p>Skapa konto, välj en branschmall och publicera din första tjänst idag.</p>
+        <button className="ats-lp-cta is-lg" onClick={onSignup}>Skapa konto gratis <ArrowRight size={19} /></button>
         <span className="ats-lp-final-note">Inget kreditkort. Ingen demo att boka.</span>
       </div>
     </section>
@@ -793,7 +820,7 @@ function LandingPage({ onLogin, onSignup }) {
           <p>Rekryteringsverktyget för svenska arbetsgivare som vill fatta beslut de kan förklara.</p>
         </div>
         <div className="ats-lp-foot-cols">
-          <div><h4>Produkt</h4><button onClick={() => go("produkt")}>Funktioner</button><button onClick={() => go("sa-funkar")}>Så funkar det</button><button onClick={() => go("priser")}>Priser</button></div>
+          <div><h4>Produkt</h4><button onClick={() => go("produkt")}>Formulärbyggaren</button><button onClick={() => go("kandidaten")}>Kandidatupplevelse</button><button onClick={() => go("priser")}>Priser</button></div>
           <div><h4>Kom igång</h4><button onClick={onSignup}>Skapa konto</button><button onClick={onLogin}>Logga in</button><button onClick={() => go("fragor")}>Vanliga frågor</button></div>
           <div><h4>Ansvar</h4><span>Data inom EU</span><span>GDPR-anpassad</span><span>Deterministisk poängsättning</span></div>
         </div>
@@ -841,6 +868,24 @@ function LoginScreen({ onAuthed, onBack, start }) {
 function PublicApply({ slug, localJobs, localOrg }) {
   const [remote, setRemote] = useState(undefined);
   const [copied, setCopied] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [atForm, setAtForm] = useState(false);
+  useEffect(() => {
+    const onScroll = () => {
+      setScrolled(window.scrollY > 12);
+      const el = document.getElementById("apply");
+      if (el) { const r = el.getBoundingClientRect(); setAtForm(r.top < window.innerHeight * 0.75); }
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("is-in"); io.unobserve(e.target); } }), { rootMargin: "0px 0px -12% 0px" });
+    document.querySelectorAll(".ats-rv").forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  });
   const source = typeof window !== "undefined" ? (new URLSearchParams(window.location.search).get("source") || null) : null;
   useEffect(() => { let alive = true; (async () => { if (sbEnabled) { const rows = await sbGet("jobs?slug=eq." + encodeURIComponent(slug) + "&published=eq.true&select=*"); if (alive) { const rr = rows && rows.length ? rows[0] : null; setRemote(rr); if (rr) sbSetUploadOrg(rr.org_id); } } else setRemote(null); })(); return () => { alive = false; }; }, [slug]);
   const localJob = localJobs.find((j) => j.slug === slug);
@@ -851,23 +896,31 @@ function PublicApply({ slug, localJobs, localOrg }) {
   if (remote === undefined) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><div className="ats-spinner" /><span>Laddar…</span></div></div></div>;
   if (!job) return <div className="ats-root"><Style /><div className="ats-pub"><div className="ats-pub-card"><h2>Tjänsten hittades inte</h2><p>Länken kan vara felaktig eller så är annonsen inte publicerad än.</p></div></div></div>;
   const a = job.annons || {};
-  const meta = [a.location && ["MapPin", "Plats", a.location], a.workmode && ["Building2", "Arbetsform", a.workmode], a.employment && ["Briefcase", "Anställning", a.employment], a.salary && ["Wallet", "Lön", a.salary], a.start && ["CalendarClock", "Start", a.start], a.deadline && ["Bell", "Sista ansökningsdag", a.deadline]].filter(Boolean);
   const IC = { MapPin, Building2, Briefcase, Wallet, CalendarClock, Bell };
+  const facts = [
+    a.location && ["MapPin", "Plats", a.location],
+    job.team && ["Building2", "Avdelning", job.team],
+    a.employment && ["Briefcase", "Anställningsform", a.employment],
+    a.workmode && ["Building2", "Arbetsform", a.workmode],
+    a.salary && ["Wallet", "Lön", a.salary],
+    a.start && ["CalendarClock", "Start", a.start],
+    a.deadline && ["Bell", "Sista ansökningsdag", a.deadline],
+  ].filter(Boolean);
   const scrollForm = () => { const el = document.getElementById("apply"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   const share = async () => {
     const url = typeof window !== "undefined" ? window.location.href : "";
-    try { if (navigator.share) { await navigator.share({ title: job.title + " · " + company, url }); return; } } catch (e) { /* avbruten delning */ }
+    try { if (navigator.share) { await navigator.share({ title: job.title + " · " + company, url }); return; } } catch (e) { /* kandidaten avbröt delningen */ }
     copyText(url); setCopied(true); setTimeout(() => setCopied(false), 2200);
   };
-  const Section = ({ id, title, children }) => <section className="ats-jp-sec" id={id}><h2>{title}</h2>{children}</section>;
   const initial = (company || "R").trim()[0].toUpperCase();
+  const hasBody = !!(a.description || (a.requirements && a.requirements.length) || (a.meriter && a.meriter.length));
 
   return <div className="ats-root"><Style /><div className="ats-jp">
-    <header className="ats-jp-nav">
+    <header className={"ats-jp-nav" + (scrolled ? " is-stuck" : "")}>
       <div className="ats-jp-nav-in">
         <div className="ats-jp-brand"><span className="ats-jp-mark">{initial}</span><span className="ats-jp-co">{company}</span></div>
         <div className="ats-jp-nav-r">
-          <button className="ats-jp-share" onClick={share} title="Dela annonsen">{copied ? <><Check size={15} /> Kopierad</> : <><Share2 size={15} /> Dela</>}</button>
+          <button className="ats-jp-share" onClick={share}>{copied ? <><Check size={16} /> <span>Länk kopierad</span></> : <><Share2 size={16} /> <span>Dela</span></>}</button>
           <button className="ats-jp-cta is-sm" onClick={scrollForm}>Ansök</button>
         </div>
       </div>
@@ -876,59 +929,72 @@ function PublicApply({ slug, localJobs, localOrg }) {
     <section className="ats-jp-hero">
       <div className="ats-jp-hero-in">
         <div className="ats-jp-hero-txt">
-          <div className="ats-jp-kicker">{[job.team, a.location].filter(Boolean).join(" · ") || company}</div>
+          <div className="ats-jp-kicker">{[job.team, a.location, a.workmode].filter(Boolean).join(" — ") || company}</div>
           <h1>{job.title}</h1>
           {a.pitch && <p className="ats-jp-pitch">{a.pitch}</p>}
           <div className="ats-jp-hero-acts">
-            <button className="ats-jp-cta" onClick={scrollForm}>Ansök till tjänsten <ArrowRight size={17} /></button>
-            {a.deadline && <span className="ats-jp-deadline"><Bell size={14} /> Sök senast {a.deadline}</span>}
+            <button className="ats-jp-cta is-lg" onClick={scrollForm}>Ansök till tjänsten <ArrowRight size={18} /></button>
+            {a.deadline && <span className="ats-jp-deadline"><Bell size={15} /> Sök senast {a.deadline}</span>}
           </div>
         </div>
-        <div className="ats-jp-hero-card">
-          <div className="ats-jp-hc-top"><span className="ats-jp-mark is-lg">{initial}</span><div><b>{company}</b><span>{a.workmode || "Arbetsplats"}{a.location ? " · " + a.location : ""}</span></div></div>
-          <dl className="ats-jp-hc-meta">{meta.slice(0, 4).map(([ic, l, v]) => { const I = IC[ic]; return <div key={l}><dt><I size={13} /> {l}</dt><dd>{v}</dd></div>; })}</dl>
+        <div className="ats-jp-brandwall" aria-hidden="true">
+          <div className="ats-jp-bw-mark">{initial}</div>
+          <div className="ats-jp-bw-co">{company}</div>
+          <div className="ats-jp-bw-grid"><span /><span /><span /><span /></div>
         </div>
       </div>
     </section>
 
     <div className="ats-jp-main">
       <article className="ats-jp-article">
-        {a.description && <Section title="Om rollen"><p className="ats-jp-lead">{a.description}</p></Section>}
-        {a.requirements && a.requirements.length > 0 && <Section title="Vi söker dig som">
-          <ul className="ats-jp-list">{a.requirements.map((r, i) => <li key={i}><Check size={15} /> <span>{r}</span></li>)}</ul>
-        </Section>}
-        {a.meriter && a.meriter.length > 0 && <Section title="Meriterande">
-          <ul className="ats-jp-list is-soft">{a.meriter.map((r, i) => <li key={i}><Star size={14} /> <span>{r}</span></li>)}</ul>
-        </Section>}
-        {a.benefits && a.benefits.length > 0 && <Section title="Vi erbjuder">
-          <div className="ats-jp-benefits">{a.benefits.map((b, i) => <div key={i} className="ats-jp-benefit"><Sparkles size={14} /> {b}</div>)}</div>
-        </Section>}
-        {a.process && a.process.length > 0 && <Section title="Så går rekryteringen till">
+        {a.description && <section className="ats-jp-sec ats-rv"><h2>Om rollen</h2><p className="ats-jp-lead">{a.description}</p></section>}
+        {a.requirements && a.requirements.length > 0 && <section className="ats-jp-sec ats-rv"><h2>Vem vi söker</h2>
+          <ul className="ats-jp-list">{a.requirements.map((r, i) => <li key={i}><Check size={16} /><span>{r}</span></li>)}</ul>
+        </section>}
+        {a.meriter && a.meriter.length > 0 && <section className="ats-jp-sec ats-rv"><h2>Meriterande</h2>
+          <ul className="ats-jp-list is-soft">{a.meriter.map((r, i) => <li key={i}><Star size={15} /><span>{r}</span></li>)}</ul>
+        </section>}
+        {!hasBody && <section className="ats-jp-sec"><h2>Om rollen</h2><p className="ats-jp-lead">Vi söker en {job.title.toLowerCase()} till {company}. Fyll i formuläret nedan så hör vi av oss.</p></section>}
+
+        {a.benefits && a.benefits.length > 0 && <section className="ats-jp-sec ats-rv"><h2>Vad vi erbjuder</h2>
+          <div className="ats-jp-benefits">{a.benefits.map((b, i) => <div key={i} className="ats-jp-benefit"><Sparkles size={15} /><span>{b}</span></div>)}</div>
+        </section>}
+
+        {a.process && a.process.length > 0 && <section className="ats-jp-sec ats-rv"><h2>Så går rekryteringen till</h2>
           <ol className="ats-jp-steps">{a.process.map((p, i) => <li key={i}><span>{i + 1}</span><div>{p}</div></li>)}</ol>
-        </Section>}
-        {a.faq && a.faq.length > 0 && <Section title="Vanliga frågor">
-          <div className="ats-jp-faq">{a.faq.map((f, i) => <details key={i}><summary>{f.q}<ChevronDown size={16} /></summary><p>{f.a}</p></details>)}</div>
-        </Section>}
-        {!a.description && (!a.requirements || !a.requirements.length) && <Section title="Om rollen"><p className="ats-jp-lead">Vi söker en {job.title.toLowerCase()} till {company}. Fyll i formuläret nedan så hör vi av oss.</p></Section>}
+        </section>}
+
+        {a.faq && a.faq.length > 0 && <section className="ats-jp-sec ats-rv"><h2>Vanliga frågor</h2>
+          <div className="ats-jp-faq">{a.faq.map((f, i) => <details key={i}><summary>{f.q}<ChevronDown size={18} /></summary><p>{f.a}</p></details>)}</div>
+        </section>}
+
+        <div className="ats-jp-midcta ats-rv">
+          <div>
+            <h3>Låter det som du?</h3>
+            <p>Ansökan tar ett par minuter. Vi hör av oss oavsett hur det går.</p>
+          </div>
+          <button className="ats-jp-cta is-lg" onClick={scrollForm}>Ansök nu <ArrowRight size={18} /></button>
+        </div>
       </article>
 
       <aside className="ats-jp-side">
         <div className="ats-jp-sidecard">
           <h3>Om tjänsten</h3>
-          <dl className="ats-jp-facts">{meta.map(([ic, l, v]) => { const I = IC[ic]; return <div key={l}><dt><I size={13} /> {l}</dt><dd>{v}</dd></div>; })}</dl>
+          <dl className="ats-jp-facts">{facts.map(([ic, l, v]) => { const I = IC[ic]; return <div key={l}><dt><I size={14} /> {l}</dt><dd>{v}</dd></div>; })}</dl>
           <button className="ats-jp-cta is-block" onClick={scrollForm}>Ansök nu</button>
+          <button className="ats-jp-sideshare" onClick={share}>{copied ? <><Check size={15} /> Kopierad</> : <><Share2 size={15} /> Dela annonsen</>}</button>
         </div>
         {(a.contact && (a.contact.name || a.contact.email)) && <div className="ats-jp-sidecard">
           <h3>Frågor om rollen?</h3>
           <div className="ats-jp-contact">
-            <span className="ats-jp-avatar">{(a.contact.name || company)[0].toUpperCase()}</span>
-            <div><b>{a.contact.name || company}</b>{a.contact.email && <a href={"mailto:" + a.contact.email}>{a.contact.email}</a>}</div>
+            <span className="ats-jp-avatar">{(a.contact.name || company).trim()[0].toUpperCase()}</span>
+            <div>
+              <b>{a.contact.name || company}</b>
+              <span>Kontaktperson</span>
+              {a.contact.email && <a href={"mailto:" + a.contact.email}>{a.contact.email}</a>}
+            </div>
           </div>
         </div>}
-        <div className="ats-jp-sidecard is-quiet">
-          <h3>Din ansökan</h3>
-          <p>Vi läser varje ansökan och hör av oss oavsett hur det går. Dina uppgifter används bara för den här rekryteringen.</p>
-        </div>
       </aside>
     </div>
 
@@ -941,14 +1007,14 @@ function PublicApply({ slug, localJobs, localOrg }) {
     <footer className="ats-jp-foot">
       <div className="ats-jp-foot-in">
         <div className="ats-jp-brand"><span className="ats-jp-mark">{initial}</span><span className="ats-jp-co">{company}</span></div>
-        <span className="ats-jp-foot-note">Rekryteras med Rekyl · Dina uppgifter hanteras enligt GDPR</span>
+        <span className="ats-jp-foot-note">Rekryteras med Rekyl — dina uppgifter hanteras enligt GDPR</span>
       </div>
     </footer>
 
-    <div className="ats-jp-mobar">
+    {!atForm && <div className="ats-jp-mobar">
       <div><b>{job.title}</b><span>{a.location || company}</span></div>
       <button className="ats-jp-cta is-sm" onClick={scrollForm}>Ansök</button>
-    </div>
+    </div>}
   </div></div>;
 }
 function ProductTour({ steps, onClose, setView }) {
@@ -1127,7 +1193,7 @@ export default function App() {
   );
 }
 
-function NewJobModal({ onClose, onCreate }) { const [title, setTitle] = useState(""); const [tmpl, setTmpl] = useState(TEMPLATES[0].id); return <Modal title="Ny tjänst" onClose={onClose} wide><div className="ats-nj"><label className="ats-field"><span className="ats-field-l">Titel</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="t.ex. Innesäljare Göteborg" /></label><div className="ats-field-l" style={{ marginTop: 4 }}>Starta från mall — scoring, knockout och kandidatkort forladdas automatiskt</div><div className="ats-tmplgrid">{TEMPLATES.map((t) => { const Ic = ICONS[t.icon] || Briefcase; return <button key={t.id} className={"ats-tmpl" + (tmpl === t.id ? " is-on" : "")} onClick={() => setTmpl(t.id)}><span className="ats-tmpl-ic"><Ic size={16} /></span><b>{t.name}</b><span>{t.desc}</span></button>; })}</div><button className={"ats-send" + (title.trim().length > 1 ? "" : " is-off")} onClick={() => title.trim().length > 1 && onCreate(title.trim(), tmpl)}>Skapa tjänst <ArrowRight size={16} /></button></div></Modal>; }
+function NewJobModal({ onClose, onCreate }) { const [title, setTitle] = useState(""); const [tmpl, setTmpl] = useState(TEMPLATES[0].id); return <Modal title="Ny tjänst" onClose={onClose} wide><div className="ats-nj"><label className="ats-field"><span className="ats-field-l">Titel</span><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="t.ex. Innesäljare Göteborg" /></label><div className="ats-field-l" style={{ marginTop: 4 }}>Starta från mall — scoring, knockout och kandidatkort förladdas automatiskt</div><div className="ats-tmplgrid">{TEMPLATES.map((t) => { const Ic = ICONS[t.icon] || Briefcase; return <button key={t.id} className={"ats-tmpl" + (tmpl === t.id ? " is-on" : "")} onClick={() => setTmpl(t.id)}><span className="ats-tmpl-ic"><Ic size={16} /></span><b>{t.name}</b><span>{t.desc}</span></button>; })}</div><button className={"ats-send" + (title.trim().length > 1 ? "" : " is-off")} onClick={() => title.trim().length > 1 && onCreate(title.trim(), tmpl)}>Skapa tjänst <ArrowRight size={16} /></button></div></Modal>; }
 function ReasonModal({ onClose, onPick }) { return <Modal title="Anledning till avslag" onClose={onClose}><div className="ats-reasons">{REASONS.map((r) => <button key={r} className="ats-reason" onClick={() => onPick(r)}>{r}</button>)}</div><p className="ats-reason-note">Anledningen sparas i kandidatens timeline och i statistiken, och används i avslagsmejlet ({"{{rejectionReason}}"}).</p></Modal>; }
 function PrintModal({ doc, onClose }) { return <div className="ats-printwrap"><div className="ats-print-toolbar"><span>{doc.title}</span><div><button className="ats-ghost" onClick={() => window.print()}><Download size={15} /> Skriv ut / PDF</button><button className="ats-ghost" onClick={onClose}><X size={15} /> Stäng</button></div></div><div className="ats-printdoc">{doc.node}</div></div>; }
 
@@ -1442,7 +1508,7 @@ function DashboardView({ allScored, state, D, cands, job, setView, setDetailId }
       </div>
       <div className="ats-panel"><div className="ats-panel-h"><h2>Snabbstatus · {job.title}</h2><button className="ats-linkbtn" onClick={() => setView("stats")}>Statistik <ChevronRight size={14} /></button></div>
         <div className="ats-quickgrid">
-          <div className="ats-quick"><span className="ats-quick-v">{job.stats.submitted}/{job.stats.started}</span><span className="ats-quick-l">Skickade / pabörjade</span></div>
+          <div className="ats-quick"><span className="ats-quick-v">{job.stats.submitted}/{job.stats.started}</span><span className="ats-quick-l">Skickade / påbörjade</span></div>
           <div className="ats-quick"><span className="ats-quick-v">{Math.round((job.stats.submitted / Math.max(1, job.stats.started)) * 100)}%</span><span className="ats-quick-l">Completion rate</span></div>
           <div className="ats-quick"><span className="ats-quick-v">{cands.filter((c) => c.missing.length).length}</span><span className="ats-quick-l">Ofullständiga</span></div>
           <div className="ats-quick"><span className="ats-quick-v">{cands.filter((c) => c.status === "hired").length}</span><span className="ats-quick-l">Anställda</span></div>
@@ -1789,13 +1855,14 @@ function ApplyForm({ job, D, org, showToast, onSubmit, source }) {
   const set = (id, v) => setAnswers((a) => ({ ...a, [id]: v }));
   const visible = job.criteria.filter((c) => isVisible(c, answers));
   const pageNums = getPages(job).filter((n) => visible.some((c) => c.step === n));
-  const steps = [{ key: "base", label: "Om dig" }, ...pageNums.map((n) => ({ key: n, label: pageLabel(job, n) })), { key: "gdpr", label: "Skicka in" }];
+  const steps = [{ key: "base", label: "Om dig" }, ...pageNums.map((n) => ({ key: n, label: pageLabel(job, n) })), { key: "gdpr", label: "Granska och skicka" }];
   const cur = steps[step];
+  const nextStep = steps[step + 1];
   const stepFields = typeof cur.key === "number" ? visible.filter((c) => c.step === cur.key) : [];
   const nameOk = base.name.trim().length > 1; const emailOk = validEmail(base.email.trim());
-  const missing = stepFields.filter((c) => c.required).filter((c) => { const v = answers[c.id]; return v == null || v === "" || (Array.isArray(v) && v.length === 0); });
-  const canNext = cur.key === "base" ? (nameOk && emailOk) : cur.key === "gdpr" ? consent : missing.length === 0;
-  const pct = Math.round((step / (steps.length - 1)) * 100);
+  const isEmpty = (v) => v == null || v === "" || (Array.isArray(v) && v.length === 0);
+  const canNext = cur.key === "base" ? (nameOk && emailOk) : cur.key === "gdpr" ? consent : stepFields.filter((c) => c.required).every((c) => !isEmpty(answers[c.id]));
+  const pct = Math.round(((step + 1) / steps.length) * 100);
   const topRef = useRef(null);
   const goStep = (n) => { setStep(n); setTouched(false); if (topRef.current) topRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); };
   const next = () => { if (!canNext) { setTouched(true); return; } goStep(step + 1); };
@@ -1810,66 +1877,67 @@ function ApplyForm({ job, D, org, showToast, onSubmit, source }) {
 
   if (sent) return (
     <div className="ats-af-done">
-      <div className="ats-af-done-mark"><Check size={26} /></div>
-      <h2>Tack {base.name.trim().split(" ")[0]}, vi har tagit emot din ansökan</h2>
-      <p>Din ansökan till <b>{job.title}</b> hos {org.companyName} är registrerad. Du får en bekräftelse till <b>{base.email}</b>.</p>
+      <div className="ats-af-done-mark"><Check size={30} strokeWidth={2.4} /></div>
+      <h2>Tack {base.name.trim().split(" ")[0]} — vi har din ansökan</h2>
+      <p>Din ansökan till <b>{job.title}</b> hos {org.companyName} är registrerad. En bekräftelse är på väg till <b>{base.email}</b>.</p>
       <div className="ats-af-nextup">
         <h3>Vad händer nu?</h3>
         <ol>
-          <li><span>1</span><div><b>Vi läser din ansökan</b><small>Alla ansökningar gås igenom av en människa.</small></div></li>
+          <li><span>1</span><div><b>Vi läser din ansökan</b><small>Varje ansökan gås igenom av en människa.</small></div></li>
           <li><span>2</span><div><b>Du får besked</b><small>Vi hör av oss oavsett hur det går — du behöver inte undra.</small></div></li>
           <li><span>3</span><div><b>Nästa steg</b><small>Går du vidare bokar vi en tid som passar dig.</small></div></li>
         </ol>
       </div>
-      {org.hrEmail && <p className="ats-af-done-foot">Har du frågor? Hör av dig till {org.hrName ? org.hrName + ", " : ""}<a href={"mailto:" + org.hrEmail}>{org.hrEmail}</a>.</p>}
+      <div className="ats-af-done-acts">
+        {org.hrEmail && <a className="ats-af-mail" href={"mailto:" + org.hrEmail}><Mail size={15} /> Kontakta {org.hrName || org.companyName}</a>}
+        <button className="ats-af-back" type="button" onClick={() => { const el = document.querySelector(".ats-jp-hero"); if (el) el.scrollIntoView({ behavior: "smooth" }); }}><ChevronLeft size={16} /> Tillbaka till annonsen</button>
+      </div>
     </div>
   );
 
   return (
     <div className="ats-af" ref={topRef}>
       <div className="ats-af-head">
-        <span className="ats-af-eyebrow">Ansökan</span>
         <h2>Ansök till {job.title}</h2>
-        <p>Det tar ett par minuter. Du kan inte spara halvvägs, så ha gärna ditt CV till hands.</p>
+        <p>Ett steg i taget. Ha gärna ditt CV till hands.</p>
       </div>
 
-      <div className="ats-af-prog">
+      <div className="ats-af-prog" role="group" aria-label="Formulärets framsteg">
+        <div className="ats-af-prog-t">
+          <span className="ats-af-stepno">Steg {step + 1} av {steps.length}</span>
+          {nextStep && <span className="ats-af-nextlbl">Nästa: {nextStep.label}</span>}
+        </div>
         <div className="ats-af-bar"><div className="ats-af-bar-fill" style={{ width: pct + "%" }} /></div>
-        <div className="ats-af-steps">{steps.map((st, i) => (
-          <button key={String(st.key)} className={"ats-af-step" + (i === step ? " is-on" : i < step ? " is-done" : "")} onClick={() => i < step && goStep(i)} disabled={i > step} type="button">
-            <span className="ats-af-dot">{i < step ? <Check size={12} /> : i + 1}</span>
-            <span className="ats-af-slabel">{st.label}</span>
-          </button>
-        ))}</div>
+        <h3 className="ats-af-curstep">{cur.label}</h3>
       </div>
 
-      <div className="ats-af-body">
+      <div className="ats-af-body" key={step}>
         {cur.key === "base" && <div className="ats-af-fields">
-          <label className="ats-af-f">
-            <span className="ats-af-l">Namn <i>*</i></span>
-            <input className={"ats-inp" + (touched && !nameOk ? " is-err" : "")} value={base.name} onChange={(e) => setBase((b) => ({ ...b, name: e.target.value }))} placeholder="För- och efternamn" autoComplete="name" />
-            {touched && !nameOk && <span className="ats-af-err"><CircleAlert size={13} /> Fyll i ditt namn.</span>}
-          </label>
-          <label className="ats-af-f">
-            <span className="ats-af-l">E-post <i>*</i></span>
-            <input className={"ats-inp" + (touched && !emailOk ? " is-err" : "")} type="email" value={base.email} onChange={(e) => setBase((b) => ({ ...b, email: e.target.value }))} placeholder="din@epost.se" autoComplete="email" />
-            {touched && !emailOk ? <span className="ats-af-err"><CircleAlert size={13} /> Ange en giltig e-postadress.</span> : <span className="ats-af-help">Hit skickar vi besked om din ansökan.</span>}
-          </label>
-          <label className="ats-af-f">
-            <span className="ats-af-l">Telefon</span>
-            <input className="ats-inp" type="tel" value={base.phone} onChange={(e) => setBase((b) => ({ ...b, phone: e.target.value }))} placeholder="070-123 45 67" autoComplete="tel" />
+          <div className="ats-af-f">
+            <label className="ats-af-l" htmlFor="af-name">Namn <i aria-hidden="true">*</i><span className="ats-sr">obligatoriskt</span></label>
+            <input id="af-name" className={"ats-inp" + (touched && !nameOk ? " is-err" : "")} value={base.name} onChange={(e) => setBase((b) => ({ ...b, name: e.target.value }))} placeholder="För- och efternamn" autoComplete="name" aria-invalid={touched && !nameOk} />
+            {touched && !nameOk && <span className="ats-af-err"><CircleAlert size={14} /> Fyll i ditt namn.</span>}
+          </div>
+          <div className="ats-af-f">
+            <label className="ats-af-l" htmlFor="af-mail">E-post <i aria-hidden="true">*</i><span className="ats-sr">obligatoriskt</span></label>
+            <input id="af-mail" className={"ats-inp" + (touched && !emailOk ? " is-err" : "")} type="email" value={base.email} onChange={(e) => setBase((b) => ({ ...b, email: e.target.value }))} placeholder="din@epost.se" autoComplete="email" aria-invalid={touched && !emailOk} />
+            {touched && !emailOk ? <span className="ats-af-err"><CircleAlert size={14} /> Ange en giltig e-postadress.</span> : <span className="ats-af-help">Hit skickar vi besked om din ansökan.</span>}
+          </div>
+          <div className="ats-af-f">
+            <label className="ats-af-l" htmlFor="af-tel">Telefon</label>
+            <input id="af-tel" className="ats-inp" type="tel" value={base.phone} onChange={(e) => setBase((b) => ({ ...b, phone: e.target.value }))} placeholder="070-123 45 67" autoComplete="tel" />
             <span className="ats-af-help">Frivilligt, men gör det lättare att nå dig.</span>
-          </label>
+          </div>
         </div>}
 
         {typeof cur.key === "number" && <div className="ats-af-fields">
           {stepFields.map((c) => {
-            const empty = touched && c.required && (answers[c.id] == null || answers[c.id] === "" || (Array.isArray(answers[c.id]) && answers[c.id].length === 0));
-            return <div key={c.id} className={"ats-af-f" + (empty ? " is-err" : "")}>
-              <span className="ats-af-l">{c.label} {c.required && <i>*</i>}</span>
+            const bad = touched && c.required && isEmpty(answers[c.id]);
+            return <div key={c.id} className={"ats-af-f" + (bad ? " is-err" : "")}>
+              <span className="ats-af-l">{c.label} {c.required && <><i aria-hidden="true">*</i><span className="ats-sr">obligatoriskt</span></>}</span>
               {c.help && <span className="ats-af-help is-top">{c.help}</span>}
               <FieldInput c={c} value={answers[c.id]} onChange={(v) => set(c.id, v)} />
-              {empty && <span className="ats-af-err"><CircleAlert size={13} /> Den här frågan behöver besvaras.</span>}
+              {bad && <span className="ats-af-err"><CircleAlert size={14} /> Den här frågan behöver besvaras.</span>}
             </div>;
           })}
           {stepFields.length === 0 && <p className="ats-af-help">Inga frågor i det här steget.</p>}
@@ -1877,11 +1945,12 @@ function ApplyForm({ job, D, org, showToast, onSubmit, source }) {
 
         {cur.key === "gdpr" && <div className="ats-af-fields">
           <div className="ats-af-review">
-            <h3>Innan du skickar</h3>
+            <h3>Dina uppgifter</h3>
             <div className="ats-af-rrow"><span>Namn</span><b>{base.name || "—"}</b></div>
             <div className="ats-af-rrow"><span>E-post</span><b>{base.email || "—"}</b></div>
             {base.phone && <div className="ats-af-rrow"><span>Telefon</span><b>{base.phone}</b></div>}
             <div className="ats-af-rrow"><span>Tjänst</span><b>{job.title}</b></div>
+            <button className="ats-af-edit" type="button" onClick={() => goStep(0)}>Ändra</button>
           </div>
           <div className="ats-af-gdpr">
             <h3>Så hanterar vi dina uppgifter</h3>
@@ -1891,19 +1960,20 @@ function ApplyForm({ job, D, org, showToast, onSubmit, source }) {
               <li>Du kan när som helst be oss radera allt, så gör vi det.</li>
             </ul>
             <label className={"ats-af-consent" + (touched && !consent ? " is-err" : "")}>
-              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+              <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} aria-invalid={touched && !consent} />
               <span>Jag godkänner att {org.companyName} behandlar mina uppgifter för den här rekryteringen.</span>
             </label>
-            {touched && !consent && <span className="ats-af-err"><CircleAlert size={13} /> Du behöver godkänna hanteringen för att kunna skicka in.</span>}
+            {touched && !consent && <span className="ats-af-err"><CircleAlert size={14} /> Du behöver godkänna hanteringen för att kunna skicka in.</span>}
+            {org.hrEmail && <p className="ats-af-gdpr-foot">Frågor om hur vi hanterar dina uppgifter? Mejla <a href={"mailto:" + org.hrEmail}>{org.hrEmail}</a>.</p>}
           </div>
         </div>}
       </div>
 
       <div className="ats-af-nav">
-        {step > 0 ? <button className="ats-af-back" onClick={() => goStep(step - 1)} type="button"><ChevronLeft size={17} /> Bakåt</button> : <span />}
+        {step > 0 && <button className="ats-af-back" onClick={() => goStep(step - 1)} type="button"><ChevronLeft size={17} /> Bakåt</button>}
         {step < steps.length - 1
-          ? <button className="ats-af-next" onClick={next} type="button">Nästa <ChevronRight size={17} /></button>
-          : <button className="ats-af-submit" onClick={submit} type="button"><Send size={16} /> Skicka ansökan</button>}
+          ? <button className="ats-af-next" onClick={next} type="button">Nästa <ArrowRight size={17} /></button>
+          : <button className="ats-af-submit" onClick={submit} type="button">Skicka ansökan <ArrowRight size={17} /></button>}
       </div>
     </div>
   );
@@ -2305,7 +2375,7 @@ function Style() {
   return <style>{`
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 .ats-root *{box-sizing:border-box;margin:0;padding:0}
-.ats-root{--paper:#EDEBE5;--paper2:#EFEEE9;--surface:#fff;--ink:#16171B;--sub:#55524B;--muted:#86827A;--line:#E1DBCF;--line2:#EAE5DA;--petrol:#0C5C52;--petrol-deep:#083F38;--petrol-soft:#E3EEEB;--amber:#C98A24;--amber-soft:#F6ECD8;--brick:#A6412B;--brick-soft:#F3E2DC;--blue:#2C5F86;--blue-soft:#E4EDF6;--gold:#8A6516;--gold-soft:#F3E7C4;
+.ats-root{--paper:#F4F0E8;--paper2:#EEE9DF;--surface:#FFFCF7;--ink:#10201C;--sub:#5E655F;--muted:#8A9089;--line:#DDD5C8;--line2:#E8E1D5;--petrol:#0B5C52;--petrol-deep:#063D37;--petrol-soft:#DDEDE7;--amber:#B8763A;--amber-soft:#F6EADC;--brick:#C2513A;--brick-soft:#F5E2D9;--blue:#2C5F86;--blue-soft:#E4EDF6;--accent:#D96F4B;--accent-soft:#F5E2D9;--r-sm:10px;--r-md:14px;--r-lg:20px;--ease:cubic-bezier(.22,.61,.36,1);--gold:#8A6516;--gold-soft:#F2E8CE;
   font-family:'Hanken Grotesk',system-ui,sans-serif;color:var(--ink);background:var(--paper);-webkit-font-smoothing:antialiased;line-height:1.45;font-size:14.5px;min-height:100vh}
 .ats-root h1,.ats-root h2,.ats-root h3{font-family:'Bricolage Grotesque',sans-serif;font-weight:600;letter-spacing:-.01em}
 .ats-root button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
@@ -3002,50 +3072,6 @@ function Style() {
 .ats-login-switch{font-size:12.5px;color:var(--petrol);font-weight:600;padding:6px;text-align:center}
 /* ===== Publik jobbsida ===== */
 .ats-jobpage{min-height:100vh;background:var(--paper)}
-.ats-jp-top{position:sticky;top:0;z-index:20;background:rgba(255,255,255,.82);backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
-.ats-jp-top-in{max-width:1000px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;justify-content:space-between}
-.ats-jp-brand{display:flex;align-items:center;gap:9px;font-family:'Bricolage Grotesque';font-weight:700;font-size:16px}
-.ats-jp-brand .ats-logo{width:30px;height:30px}
-.ats-jp-main{max-width:1000px;margin:0 auto;padding:34px 20px 10px}
-.ats-jp-hero{padding:6px 0 26px}
-.ats-jp-eyebrow{display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--petrol);background:var(--petrol-soft);padding:5px 11px;border-radius:20px}
-.ats-jp-src{color:var(--sub);background:none;padding:0;text-transform:none;letter-spacing:0}
-.ats-jp-hero h1{font-family:'Bricolage Grotesque';font-weight:700;font-size:38px;line-height:1.08;margin:16px 0 6px;letter-spacing:-.02em}
-.ats-jp-company{display:inline-flex;align-items:center;gap:7px;color:var(--sub);font-size:15px;font-weight:600}
-.ats-jp-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
-.ats-jp-chip{display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;color:var(--ink)}
-.ats-jp-pitch{font-size:18px;line-height:1.55;color:var(--ink);margin:20px 0 0;max-width:680px;font-weight:500}
-.ats-jp-cta{margin-top:22px;padding:13px 22px;font-size:15px;gap:9px}
-.ats-jp-grid{display:grid;grid-template-columns:1fr 400px;gap:34px;align-items:start;padding:8px 0 40px}
-.ats-jp-content{min-width:0;display:flex;flex-direction:column;gap:28px}
-.ats-jp-sec h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:21px;margin-bottom:12px}
-.ats-jp-prose{font-size:15.5px;line-height:1.7;color:var(--sub);white-space:pre-wrap}
-.ats-jp-list{display:flex;flex-direction:column;gap:9px}
-.ats-jp-list li{display:flex;align-items:flex-start;gap:10px;font-size:15px;color:var(--ink)}
-.ats-jp-list li svg{color:var(--petrol);flex-shrink:0;margin-top:2px}
-.ats-jp-list.is-plus li svg{color:var(--amber)}
-.ats-jp-benefits{display:flex;flex-wrap:wrap;gap:9px}
-.ats-jp-benefit{display:inline-flex;align-items:center;gap:7px;background:var(--petrol-soft);color:var(--petrol-deep);border-radius:9px;padding:8px 13px;font-size:13.5px;font-weight:600}
-.ats-jp-steps{display:flex;flex-direction:column;gap:12px;counter-reset:step}
-.ats-jp-steps li{display:flex;align-items:center;gap:13px;font-size:15px;font-weight:500}
-.ats-jp-stepn{width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font-family:'Bricolage Grotesque';font-weight:700;font-size:13px;flex-shrink:0}
-.ats-jp-faq{display:flex;flex-direction:column;gap:8px}
-.ats-jp-faq-item{border:1px solid var(--line);border-radius:11px;background:var(--surface);padding:2px 15px}
-.ats-jp-faq-item summary{cursor:pointer;padding:13px 0;font-weight:600;font-size:14.5px;list-style:none;display:flex;justify-content:space-between;align-items:center}
-.ats-jp-faq-item summary::-webkit-details-marker{display:none}
-.ats-jp-faq-item summary:after{content:"+";font-size:20px;color:var(--petrol);font-weight:400}
-.ats-jp-faq-item[open] summary:after{content:"−"}
-.ats-jp-faq-item p{padding:0 0 14px;font-size:14px;line-height:1.6;color:var(--sub)}
-.ats-jp-side{position:sticky;top:78px;display:flex;flex-direction:column;gap:16px}
-.ats-jp-form{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 20px 50px -30px rgba(0,0,0,.3)}
-.ats-jp-form h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:20px}
-.ats-jp-form-sub{font-size:13px;color:var(--muted);margin:2px 0 14px}
-.ats-jp-form .ats-apply{padding:0}
-.ats-jp-contact{background:var(--paper2);border:1px solid var(--line);border-radius:14px;padding:16px}
-.ats-jp-contact-h{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;margin-bottom:8px}
-.ats-jp-contact-n{font-size:14px;font-weight:600}
-.ats-jp-contact a{font-size:13.5px;color:var(--petrol);font-weight:600}
-.ats-jp-foot{max-width:1000px;margin:0 auto;padding:24px 20px 40px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
 /* Kanaler */
 .ats-chan{display:flex;flex-direction:column;gap:16px;padding:18px 22px 22px}
 .ats-chan-intro{font-size:13.5px;line-height:1.6;color:var(--sub)}
@@ -3147,69 +3173,7 @@ function Style() {
 .ats-report-hired{display:flex;align-items:center;gap:8px;background:#EAF3EC;color:#1f6b3a;border-radius:10px;padding:12px 14px;font-size:14px;margin-bottom:6px}
 @media print{.ats-report-stat,.ats-report-hired{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 .ats-login-back{display:inline-flex;align-items:center;gap:5px;justify-content:center;font-size:12px;color:var(--muted);padding:4px;margin-top:2px}
-.ats-lp{background:var(--paper);color:var(--ink)}
-.ats-lp-nav{position:sticky;top:0;z-index:30;background:rgba(244,237,226,.82);backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid var(--line)}
-.ats-lp-nav-in,.ats-lp-sec-in,.ats-lp-hero-in,.ats-lp-final-in,.ats-lp-foot-in{max-width:1080px;margin:0 auto;padding:0 22px}
-.ats-lp-nav-in{display:flex;align-items:center;justify-content:space-between;height:64px}
-.ats-lp-logo{display:flex;align-items:center;gap:9px;font-family:'Bricolage Grotesque';font-weight:700;font-size:19px}
-.ats-lp-nav-r{display:flex;align-items:center;gap:14px}
-.ats-lp-link{font-weight:600;font-size:14px;color:var(--ink)}
-.ats-lp-hero{padding:74px 0 60px;text-align:center;background:radial-gradient(120% 90% at 50% 0%, var(--petrol-soft) 0%, transparent 60%)}
-.ats-lp-badge{display:inline-flex;align-items:center;gap:8px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.03em;background:var(--surface);border:1px solid var(--line);color:var(--petrol-deep);padding:7px 14px;border-radius:20px}
-.ats-lp-hero h1{font-family:'Bricolage Grotesque';font-weight:700;font-size:52px;line-height:1.05;letter-spacing:-.025em;margin:22px auto 0;max-width:800px}
-.ats-lp-hl{color:var(--petrol);font-style:italic}
-.ats-lp-hero p{font-size:18px;line-height:1.6;color:var(--sub);max-width:620px;margin:20px auto 0}
-.ats-lp-hero-cta{display:flex;flex-direction:column;align-items:center;gap:9px;margin-top:30px}
-.ats-lp-cta-lg{padding:14px 26px;font-size:15.5px;gap:9px}
-.ats-lp-cta-note{font-size:12.5px;color:var(--muted)}
-.ats-lp-metrics{display:flex;justify-content:center;gap:44px;margin-top:48px;flex-wrap:wrap}
-.ats-lp-metrics b{display:block;font-family:'Bricolage Grotesque';font-weight:700;font-size:34px;color:var(--petrol)}
-.ats-lp-metrics span{font-size:12.5px;color:var(--muted)}
-.ats-lp-sec{padding:56px 0}
-.ats-lp-sec-head{text-align:center;max-width:600px;margin:0 auto 36px}
-.ats-lp-sec-head h2{font-family:'Bricolage Grotesque';font-weight:700;font-size:34px;letter-spacing:-.02em}
-.ats-lp-sec-head p{font-size:16px;color:var(--sub);margin-top:10px}
-.ats-lp-prob-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.ats-lp-prob-col{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px}
-.ats-lp-prob-col.is-good{border-color:var(--petrol);box-shadow:0 20px 50px -30px rgba(12,92,82,.5)}
-.ats-lp-prob-h{display:flex;align-items:center;gap:8px;font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;margin-bottom:14px}
-.ats-lp-prob-h.is-bad{color:var(--brick)}.ats-lp-prob-h.is-ok{color:var(--petrol)}
-.ats-lp-prob-col ul{display:flex;flex-direction:column;gap:11px}
-.ats-lp-prob-col li{display:flex;align-items:flex-start;gap:9px;font-size:14.5px;color:var(--ink)}
-.ats-lp-prob-col.is-good li svg{color:var(--petrol);flex-shrink:0;margin-top:2px}
-.ats-lp-prob-col li svg{color:var(--muted);flex-shrink:0;margin-top:2px}
-.ats-lp-features{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.ats-lp-feat{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px;transition:transform .15s,box-shadow .15s}
-.ats-lp-feat:hover{transform:translateY(-3px);box-shadow:0 16px 40px -24px rgba(0,0,0,.35)}
-.ats-lp-feat-ic{width:44px;height:44px;border-radius:12px;background:var(--petrol-soft);color:var(--petrol);display:grid;place-items:center;margin-bottom:14px}
-.ats-lp-feat b{font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;display:block;margin-bottom:7px}
-.ats-lp-feat p{font-size:13.5px;line-height:1.6;color:var(--sub)}
-.ats-lp-trust{background:var(--surface);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-.ats-lp-badges{display:flex;flex-wrap:wrap;gap:9px;justify-content:center;max-width:820px;margin:0 auto}
-.ats-lp-cbadge{display:inline-flex;align-items:center;gap:7px;background:var(--paper2);border:1px solid var(--line);border-radius:9px;padding:9px 13px;font-size:12.5px;font-weight:600;color:var(--sub)}
-.ats-lp-cbadge svg{color:var(--petrol)}
-.ats-lp-trust-note{text-align:center;font-size:12px;color:var(--muted);max-width:600px;margin:22px auto 0;line-height:1.6}
-.ats-lp-plans{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:stretch}
-.ats-lp-plan{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px;display:flex;flex-direction:column;position:relative}
-.ats-lp-plan.is-featured{border-color:var(--petrol);box-shadow:0 24px 60px -32px rgba(12,92,82,.55)}
-.ats-lp-plan-tag{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:var(--petrol);color:#fff;font-size:11px;font-weight:600;padding:4px 12px;border-radius:20px}
-.ats-lp-plan-name{font-family:'Bricolage Grotesque';font-weight:600;font-size:17px}
-.ats-lp-plan-price{margin:10px 0 16px}
-.ats-lp-plan-price b{font-family:'Bricolage Grotesque';font-weight:700;font-size:32px}
-.ats-lp-plan-price span{font-size:14px;color:var(--muted);margin-left:4px}
-.ats-lp-plan ul{display:flex;flex-direction:column;gap:9px;flex:1;margin-bottom:18px}
-.ats-lp-plan li{display:flex;align-items:center;gap:8px;font-size:13.5px}
-.ats-lp-plan li svg{color:var(--petrol);flex-shrink:0}
-.ats-lp-plan>button{justify-content:center;width:100%}
-.ats-lp-faq{max-width:760px}
-.ats-lp-final{padding:64px 22px;text-align:center;background:linear-gradient(135deg,var(--petrol) 0%,var(--petrol-deep) 100%);color:#fff;margin:0 22px 56px;border-radius:24px}
-.ats-lp-final h2{font-family:'Bricolage Grotesque';font-weight:700;font-size:34px}
-.ats-lp-final p{font-size:16px;opacity:.9;margin:12px 0 26px}
-.ats-lp-final .ats-btn-primary{background:#fff;color:var(--petrol-deep)}
-.ats-lp-final .ats-btn-primary:hover{background:#f0ede6;transform:translateY(-1px)}
-.ats-lp-foot{border-top:1px solid var(--line);padding:26px 0}
-.ats-lp-foot-in{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
-.ats-lp-foot span{font-size:12.5px;color:var(--muted)}
+.ats-lp{background:var(--paper);color:var(--ink)}.ats-lp-prob-h.is-ok{color:var(--petrol)}
 @media(max-width:820px){.ats-lp-hero h1{font-size:36px}.ats-lp-hero p{font-size:16px}.ats-lp-sec-head h2{font-size:27px}.ats-lp-prob-grid,.ats-lp-features,.ats-lp-plans{grid-template-columns:1fr}.ats-lp-metrics{gap:30px}}
 .ats-btn-danger{display:inline-flex;align-items:center;gap:7px;padding:10px 16px;border-radius:10px;background:var(--brick);color:#fff;font-weight:600;font-size:13.5px;transition:.15s}
 .ats-btn-danger:hover:not(:disabled){background:#8a3423}
@@ -3364,387 +3328,452 @@ function Style() {
 .ats-sa-plan span{font-size:11.5px;color:var(--muted)}
 .ats-susp-meta{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin:8px 0 14px;font-family:'IBM Plex Mono'}
 
+
+/* ---- Bas ---- */
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  .ats-rv{opacity:1 !important;transform:none !important}
+}
+.ats-lp *:focus-visible,.ats-jp *:focus-visible{outline:2px solid var(--petrol);outline-offset:3px;border-radius:6px}
+/* Sektionsentre */
+.ats-rv{opacity:0;transform:translateY(18px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+.ats-rv.is-in{opacity:1;transform:none}
 /* ============ PUBLIKA SIDOR ============ */
-.ats-lp,.ats-jp{background:var(--paper);color:var(--ink);min-height:100vh;overflow-x:hidden}
-.ats-lp-wrap{max-width:1120px;margin:0 auto;padding:0 24px}
-.ats-lp-eyebrow{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--petrol);margin-bottom:14px}
-.ats-lp-eyebrow.is-dark{color:var(--petrol)}
-.ats-lp-h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(26px,3.4vw,40px);line-height:1.15;letter-spacing:-.02em;margin-bottom:36px;max-width:640px}
+.ats-lp,.ats-jp{background:var(--paper);color:var(--ink);min-height:100vh;overflow-x:clip}
+.ats-lp-wrap{max-width:1240px;margin:0 auto;padding:0 32px}
+.ats-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.ats-lp-eyebrow{display:inline-block;font-size:13px;font-weight:600;letter-spacing:.02em;color:var(--petrol);margin-bottom:18px}
+.ats-lp-h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(30px,4vw,54px);line-height:1.08;letter-spacing:-.028em;margin-bottom:22px;max-width:16ch}
+.ats-lp-lead{font-size:19px;line-height:1.68;color:var(--sub);max-width:660px;margin-bottom:44px}
 
-/* Nav */
-.ats-lp-nav{position:sticky;top:0;z-index:50;background:rgba(237,235,229,.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
-.ats-lp-nav-in{max-width:1120px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:28px}
-.ats-lp-brand{display:flex;align-items:center;gap:9px;font-family:'Bricolage Grotesque';font-weight:600;font-size:17px}
-.ats-lp-links{display:flex;gap:26px;margin-left:12px}
-.ats-lp-links button{font-size:13.5px;font-weight:500;color:var(--sub);transition:color .14s}
+/* --- Navigation --- */
+.ats-lp-nav{position:sticky;top:0;z-index:50;height:72px;display:flex;align-items:center;transition:background .25s var(--ease),border-color .25s var(--ease),backdrop-filter .25s}
+.ats-lp-nav.is-stuck{background:rgba(244,240,232,.82);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--line)}
+.ats-lp-nav-in{max-width:1240px;width:100%;margin:0 auto;padding:0 32px;display:flex;align-items:center;gap:32px}
+.ats-lp-brand{display:flex;align-items:center;gap:10px;font-family:'Bricolage Grotesque';font-weight:600;font-size:19px;letter-spacing:-.01em;color:var(--ink)}
+.ats-lp-links{display:flex;gap:30px;margin-left:16px}
+.ats-lp-links button{position:relative;font-size:14.5px;font-weight:500;color:var(--sub);padding:6px 0;transition:color .16s}
+.ats-lp-links button::after{content:"";position:absolute;left:0;right:100%;bottom:0;height:1.5px;background:var(--petrol);transition:right .26s var(--ease)}
 .ats-lp-links button:hover{color:var(--ink)}
-.ats-lp-nav-r{margin-left:auto;display:flex;align-items:center;gap:10px}
-.ats-lp-login{font-size:13.5px;font-weight:600;color:var(--ink);padding:9px 14px;border-radius:9px}
-.ats-lp-login:hover{background:rgba(0,0,0,.05)}
-.ats-lp-cta{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--petrol);color:#fff;font-weight:600;font-size:14px;padding:11px 20px;border-radius:11px;transition:background .15s,transform .12s;min-height:44px}
-.ats-lp-cta:hover{background:var(--petrol-deep);transform:translateY(-1px)}
-.ats-lp-cta.is-lg{font-size:15.5px;padding:15px 26px;min-height:52px}
+.ats-lp-links button:hover::after{right:0}
+.ats-lp-nav-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.ats-lp-login{font-size:14.5px;font-weight:600;color:var(--ink);padding:11px 16px;border-radius:var(--r-sm);transition:background .15s}
+.ats-lp-login:hover{background:rgba(16,32,28,.06)}
+.ats-lp-cta{display:inline-flex;align-items:center;justify-content:center;gap:9px;background:var(--petrol);color:#fff;font-weight:600;font-size:15px;padding:13px 22px;border-radius:var(--r-md);min-height:46px;box-shadow:0 1px 2px rgba(6,61,55,.2);transition:background .18s var(--ease),transform .18s var(--ease),box-shadow .18s var(--ease)}
+.ats-lp-cta:hover{background:var(--petrol-deep);transform:translateY(-2px);box-shadow:0 10px 22px -10px rgba(6,61,55,.5)}
+.ats-lp-cta:active{transform:translateY(0)}
+.ats-lp-cta.is-lg{font-size:16.5px;padding:17px 30px;min-height:58px}
 .ats-lp-cta.is-block{width:100%}
-.ats-lp-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line2);background:var(--surface);color:var(--ink);font-weight:600;font-size:14.5px;padding:14px 22px;border-radius:11px;transition:border-color .15s;min-height:48px}
-.ats-lp-ghost:hover{border-color:var(--petrol)}
-.ats-lp-ghost.is-block{width:100%}
-.ats-lp-burger{display:none;margin-left:auto;padding:8px;border-radius:9px}
-.ats-lp-mob{display:none;flex-direction:column;gap:4px;padding:12px 24px 20px;border-top:1px solid var(--line)}
-.ats-lp-mob button{text-align:left;padding:12px 4px;font-size:15px;font-weight:600;color:var(--ink);min-height:46px}
-.ats-lp-mob .ats-lp-cta,.ats-lp-mob .ats-lp-login{text-align:center;margin-top:6px}
+.ats-lp-ghost{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1.5px solid var(--line);background:transparent;color:var(--ink);font-weight:600;font-size:16px;padding:16px 26px;border-radius:var(--r-md);min-height:58px;transition:border-color .18s,background .18s}
+.ats-lp-ghost:hover{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-lp-ghost.is-block{width:100%;min-height:50px;font-size:15px}
+.ats-lp-burger{display:none;margin-left:auto;padding:10px;border-radius:var(--r-sm);color:var(--ink)}
+.ats-lp-mob{display:none;flex-direction:column;position:absolute;top:72px;left:0;right:0;background:var(--surface);border-bottom:1px solid var(--line);padding:12px 24px 22px;box-shadow:0 18px 40px -22px rgba(16,32,28,.28);animation:mobin .22s var(--ease)}
+@keyframes mobin{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.ats-lp-mob>button{text-align:left;padding:15px 4px;font-size:16.5px;font-weight:600;color:var(--ink);border-bottom:1px solid var(--line)}
+.ats-lp-mob-acts{display:flex;flex-direction:column;gap:9px;margin-top:16px}
 
-/* Hero */
-.ats-lp-hero{max-width:1120px;margin:0 auto;padding:80px 24px 72px;display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
-.ats-lp-hero h1{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(34px,4.6vw,58px);line-height:1.06;letter-spacing:-.03em;margin-bottom:20px}
+/* --- Hero --- */
+.ats-lp-hero{padding:76px 0 104px}
+.ats-lp-hero-in{max-width:1240px;margin:0 auto;padding:0 32px;display:grid;grid-template-columns:1.02fr .98fr;gap:64px;align-items:center}
+.ats-lp-hero h1{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(44px,5.4vw,80px);line-height:1.02;letter-spacing:-.038em;margin-bottom:26px}
 .ats-lp-hero h1 em{font-style:normal;color:var(--petrol)}
-.ats-lp-sub{font-size:17px;line-height:1.65;color:var(--sub);max-width:520px;margin-bottom:30px}
-.ats-lp-hero-acts{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:26px}
-.ats-lp-trust{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
-.ats-lp-trust span{display:inline-flex;align-items:center;gap:6px}
+.ats-lp-sub{font-size:19px;line-height:1.65;color:var(--sub);max-width:540px;margin-bottom:36px}
+.ats-lp-hero-acts{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:34px}
+.ats-lp-trust{display:flex;gap:24px;flex-wrap:wrap}
+.ats-lp-trust li{display:inline-flex;align-items:center;gap:7px;font-size:14px;color:var(--sub)}
 .ats-lp-trust svg{color:var(--petrol)}
 
 /* Produktvisual */
-.ats-lp-shot{background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 70px -34px rgba(20,18,14,.34);overflow:hidden}
-.ats-lp-shot-bar{display:flex;align-items:center;gap:6px;padding:11px 15px;background:var(--paper2);border-bottom:1px solid var(--line)}
-.ats-lp-shot-bar span{width:9px;height:9px;border-radius:50%;background:var(--line2)}
-.ats-lp-shot-bar b{margin-left:12px;font-family:'IBM Plex Mono';font-size:11px;color:var(--muted);font-weight:400}
-.ats-lp-shot-body{padding:20px;position:relative}
-.ats-lp-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:17px;position:relative;z-index:3;box-shadow:0 10px 26px -18px rgba(0,0,0,.28)}
-.ats-lp-card-top{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:15px}
-.ats-lp-card-top b{display:block;font-family:'Bricolage Grotesque';font-size:16px}
-.ats-lp-card-top span{font-size:12px;color:var(--muted);font-family:'IBM Plex Mono'}
-.ats-lp-bars{display:flex;flex-direction:column;gap:9px}
-.ats-lp-bar{display:grid;grid-template-columns:1fr auto;gap:3px 10px;align-items:center}
-.ats-lp-bar span{font-size:12.5px;color:var(--sub)}
-.ats-lp-bar b{font-family:'IBM Plex Mono';font-size:12px;color:var(--petrol);grid-row:span 2}
-.ats-lp-bar i{grid-column:1;height:5px;border-radius:3px;background:var(--petrol);display:block}
-.ats-lp-bar.is-weak i{background:var(--amber)}
-.ats-lp-bar.is-weak b{color:var(--amber)}
-.ats-lp-rec{display:flex;align-items:center;gap:7px;margin-top:15px;padding:10px 12px;background:var(--petrol-soft);color:var(--petrol-deep);border-radius:9px;font-size:12.5px}
-.ats-lp-deck{position:absolute;left:20px;right:20px;top:24px;z-index:1}
-.ats-lp-deck-c{position:absolute;left:8px;right:8px;height:60px;background:var(--surface);border:1px solid var(--line);border-radius:14px;top:8px;opacity:.6}
-.ats-lp-deck-c:last-child{left:16px;right:16px;top:16px;opacity:.35}
-.ats-lp-swipe{display:flex;justify-content:space-between;gap:8px;margin-top:16px}
-.ats-lp-swipe span{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:9px;border-radius:9px;font-size:11.5px;font-weight:600;background:var(--paper2);color:var(--muted)}
-.ats-lp-swipe .is-mid{background:var(--amber-soft);color:var(--gold)}
+.ats-lp-shot{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:0 40px 80px -40px rgba(16,32,28,.4),0 2px 8px rgba(16,32,28,.05);overflow:hidden;transform:perspective(1400px) rotateY(-3deg) rotateX(1deg)}
+.ats-lp-shot-bar{display:flex;align-items:center;gap:7px;padding:13px 17px;background:var(--paper2);border-bottom:1px solid var(--line)}
+.ats-lp-shot-bar span{width:10px;height:10px;border-radius:50%;background:var(--line)}
+.ats-lp-shot-bar b{margin-left:14px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);font-weight:400}
+.ats-lp-shot-body{padding:22px}
+.ats-lp-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:19px}
+.ats-lp-card-top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+.ats-lp-card-top b{display:block;font-family:'Bricolage Grotesque';font-size:17px}
+.ats-lp-card-top span{font-size:13px;color:var(--muted)}
+.ats-lp-bars{display:flex;flex-direction:column;gap:11px}
+.ats-lp-bar{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center}
+.ats-lp-bar span{font-size:13.5px;color:var(--sub)}
+.ats-lp-bar b{font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--petrol);grid-row:span 2}
+.ats-lp-bar i{grid-column:1;height:6px;border-radius:3px;background:var(--petrol);display:block}
+.ats-lp-bar.is-weak i{background:var(--accent)}
+.ats-lp-bar.is-weak b{color:var(--accent)}
+.ats-lp-rec{display:flex;align-items:center;gap:8px;margin-top:18px;padding:12px 14px;background:var(--petrol-soft);color:var(--petrol-deep);border-radius:var(--r-sm);font-size:13.5px}
+.ats-lp-swipe{display:flex;gap:9px;margin-top:16px}
+.ats-lp-swipe span{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:11px;border-radius:var(--r-sm);font-size:12.5px;font-weight:600;background:var(--paper2);color:var(--muted)}
+.ats-lp-swipe .is-mid{background:var(--accent-soft);color:var(--accent)}
 .ats-lp-swipe .is-ok{background:var(--petrol-soft);color:var(--petrol)}
 
-/* Problem */
-.ats-lp-problem{background:var(--ink);color:#F3F0EA;padding:76px 0}
-.ats-lp-problem .ats-lp-wrap{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:start}
-.ats-lp-problem h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(25px,3vw,36px);line-height:1.18;letter-spacing:-.02em}
-.ats-lp-prob-r p{font-size:16px;line-height:1.75;color:rgba(243,240,234,.72);margin-bottom:16px}
-.ats-lp-prob-r p:last-child{margin-bottom:0}
+/* --- Problem (mörk redaktionell) --- */
+.ats-lp-problem{background:var(--ink);color:#EDEAE2;padding:110px 0}
+.ats-lp-problem-in{display:grid;grid-template-columns:1.15fr .85fr;gap:72px;align-items:start}
+.ats-lp-problem h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(30px,3.8vw,50px);line-height:1.1;letter-spacing:-.028em}
+.ats-lp-problem-r p{font-size:18px;line-height:1.75;color:rgba(237,234,226,.68);margin-bottom:20px}
+.ats-lp-problem-r p:last-child{margin-bottom:0}
 
-/* Sektioner */
-.ats-lp-sec{padding:84px 0}
-.ats-lp-sec.is-tight{padding:64px 0}
-.ats-lp-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:14px;overflow:hidden}
-.ats-lp-flow-i{background:var(--surface);padding:26px 22px}
-.ats-lp-flow-n{font-family:'IBM Plex Mono';font-size:12px;color:var(--petrol);display:block;margin-bottom:12px}
-.ats-lp-flow-i h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;margin-bottom:8px}
-.ats-lp-flow-i p{font-size:13.5px;line-height:1.62;color:var(--sub)}
-
-/* Split-sektioner */
-.ats-lp-split{padding:76px 0;border-top:1px solid var(--line)}
-.ats-lp-split-in{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center}
-.ats-lp-split.is-flip{background:var(--paper2)}
-.ats-lp-split-t h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(24px,2.8vw,34px);line-height:1.18;letter-spacing:-.02em;margin-bottom:16px}
-.ats-lp-split-t p{font-size:15.5px;line-height:1.7;color:var(--sub);margin-bottom:20px}
-.ats-lp-checks{display:flex;flex-direction:column;gap:11px}
-.ats-lp-checks li{display:flex;align-items:center;gap:10px;font-size:14.5px;color:var(--ink)}
+/* --- Sektioner --- */
+.ats-lp-sec{padding:120px 0}
+.ats-lp-sec.is-tight{padding:96px 0}
+.ats-lp-split{padding:120px 0}
+.ats-lp-split.is-flip{background:var(--paper2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.ats-lp-split-in{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center}
+.ats-lp-split-t h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(28px,3.4vw,46px);line-height:1.1;letter-spacing:-.026em;margin-bottom:20px}
+.ats-lp-split-t p{font-size:18px;line-height:1.7;color:var(--sub);margin-bottom:26px;max-width:520px}
+.ats-lp-checks{display:flex;flex-direction:column;gap:13px}
+.ats-lp-checks li{display:flex;align-items:center;gap:11px;font-size:16px;color:var(--ink)}
 .ats-lp-checks svg{color:var(--petrol);flex-shrink:0}
-.ats-lp-mini{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 20px 48px -30px rgba(0,0,0,.28)}
-.ats-lp-mini-h{display:flex;align-items:center;gap:8px;font-family:'IBM Plex Mono';font-size:11.5px;color:var(--muted);padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--line)}
-.ats-lp-fields{display:flex;flex-direction:column;gap:8px}
-.ats-lp-field{display:flex;align-items:center;gap:9px;padding:13px 14px;border:1px solid var(--line);border-radius:10px;font-size:13.5px}
-.ats-lp-field.is-sel{border-color:var(--petrol);background:var(--petrol-soft)}
-.ats-lp-field svg{color:var(--muted);flex-shrink:0}
+.ats-lp-mini{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:22px;box-shadow:0 30px 60px -40px rgba(16,32,28,.35)}
+.ats-lp-mini-h{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:600;color:var(--muted);padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+.ats-lp-fields{display:flex;flex-direction:column;gap:9px}
+.ats-lp-field{display:flex;align-items:center;gap:10px;padding:15px 16px;border:1px solid var(--line);border-radius:var(--r-sm);font-size:14.5px;background:var(--surface)}
+.ats-lp-field.is-sel{border-color:var(--petrol);background:var(--petrol-soft);box-shadow:0 0 0 3px rgba(11,92,82,.08)}
+.ats-lp-field>svg{color:var(--muted);flex-shrink:0}
 .ats-lp-field span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ats-lp-field em{font-style:normal;font-family:'IBM Plex Mono';font-size:11px;color:var(--petrol);background:var(--petrol-soft);padding:3px 7px;border-radius:6px;flex-shrink:0}
+.ats-lp-field em{font-style:normal;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--petrol);background:rgba(11,92,82,.09);padding:4px 8px;border-radius:6px;flex-shrink:0}
 .ats-lp-field em.is-ko{color:var(--brick);background:var(--brick-soft)}
-.ats-lp-jobmini{padding:4px 2px}
-.ats-lp-jm-title{font-family:'Bricolage Grotesque';font-weight:600;font-size:19px;margin-bottom:10px}
-.ats-lp-jm-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
-.ats-lp-jm-chips span{font-size:11.5px;padding:4px 10px;border-radius:20px;background:var(--paper2);color:var(--sub)}
-.ats-lp-jm-line{height:8px;border-radius:4px;background:var(--line);margin-bottom:8px}
-.ats-lp-jm-line.is-s{width:62%;margin-bottom:18px}
-.ats-lp-jm-btn{background:var(--petrol);color:#fff;text-align:center;padding:12px;border-radius:10px;font-size:13.5px;font-weight:600}
+.ats-lp-jm-kicker{font-size:12.5px;font-weight:600;color:var(--petrol);margin-bottom:8px}
+.ats-lp-jm-title{font-family:'Bricolage Grotesque';font-weight:600;font-size:24px;letter-spacing:-.02em;margin-bottom:16px}
+.ats-lp-jm-line{height:9px;border-radius:5px;background:var(--line2);margin-bottom:9px}
+.ats-lp-jm-line.is-s{width:64%;margin-bottom:20px}
+.ats-lp-jm-btn{background:var(--petrol);color:#fff;text-align:center;padding:14px;border-radius:var(--r-sm);font-size:14.5px;font-weight:600}
+.ats-lp-jm-prog{margin-top:18px}
+.ats-lp-jm-prog span{display:block;font-size:12px;color:var(--muted);margin-bottom:7px}
+.ats-lp-jm-prog i{display:block;height:5px;background:var(--line2);border-radius:3px;overflow:hidden}
+.ats-lp-jm-prog b{display:block;width:50%;height:100%;background:var(--petrol);border-radius:3px}
 
-/* Strip */
-.ats-lp-strip{border-top:1px solid var(--line);padding:64px 0}
-.ats-lp-strip-in{display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
-.ats-lp-strip-i svg{color:var(--petrol);margin-bottom:12px}
-.ats-lp-strip-i h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;margin-bottom:7px}
-.ats-lp-strip-i p{font-size:14px;line-height:1.65;color:var(--sub)}
+/* --- Fullbredd: bedömning --- */
+.ats-lp-full{background:var(--petrol-soft);padding:120px 0;border-top:1px solid var(--line)}
+.ats-lp-explain{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.ats-lp-ex{background:var(--surface);padding:26px 22px;border-top:3px solid transparent}
+.ats-lp-ex.is-ok{border-top-color:var(--petrol)}
+.ats-lp-ex.is-warn{border-top-color:var(--accent)}
+.ats-lp-ex.is-ko{border-top-color:var(--brick)}
+.ats-lp-ex.is-rec{border-top-color:var(--gold)}
+.ats-lp-ex b{display:block;font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;margin-bottom:9px}
+.ats-lp-ex span{font-size:14.5px;line-height:1.62;color:var(--sub)}
 
-/* Trygghet */
-.ats-lp-safe{background:var(--petrol-deep);color:#EAF2F0;padding:80px 0}
-.ats-lp-safe-in{display:grid;grid-template-columns:.9fr 1.1fr;gap:56px;align-items:start}
-.ats-lp-safe h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(24px,2.8vw,34px);line-height:1.18;margin-bottom:14px}
-.ats-lp-safe p{font-size:15.5px;line-height:1.7;color:rgba(234,242,240,.74)}
-.ats-lp-safe .ats-lp-eyebrow{color:#8FC9BE}
-.ats-lp-safe-list{display:flex;flex-direction:column;gap:2px}
-.ats-lp-safe-i{display:flex;gap:13px;padding:15px 0;border-bottom:1px solid rgba(255,255,255,.1)}
+/* --- Tidslinje --- */
+.ats-lp-timeline{display:flex;flex-direction:column}
+.ats-lp-timeline li{display:grid;grid-template-columns:78px 1fr;gap:28px;padding:30px 0;border-top:1px solid var(--line);align-items:start}
+.ats-lp-timeline li:last-child{border-bottom:1px solid var(--line)}
+.ats-lp-timeline span{font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--petrol);padding-top:4px}
+.ats-lp-timeline b{display:block;font-family:'Bricolage Grotesque';font-weight:600;font-size:21px;letter-spacing:-.015em;margin-bottom:7px}
+.ats-lp-timeline p{font-size:16.5px;line-height:1.65;color:var(--sub);max-width:620px}
+
+/* --- Trygghet --- */
+.ats-lp-safe{background:var(--petrol-deep);color:#E4EFEC;padding:120px 0}
+.ats-lp-safe-in{display:grid;grid-template-columns:.85fr 1.15fr;gap:76px;align-items:start}
+.ats-lp-safe h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(28px,3.4vw,46px);line-height:1.1;letter-spacing:-.026em;margin-bottom:18px}
+.ats-lp-safe p{font-size:17px;line-height:1.7;color:rgba(228,239,236,.72)}
+.ats-lp-safe .ats-lp-eyebrow{color:#7FC0B4}
+.ats-lp-safe-list{display:flex;flex-direction:column}
+.ats-lp-safe-i{display:flex;gap:15px;padding:19px 0;border-bottom:1px solid rgba(255,255,255,.1)}
+.ats-lp-safe-i:first-child{padding-top:0}
 .ats-lp-safe-i:last-child{border-bottom:0}
-.ats-lp-safe-i svg{color:#8FC9BE;flex-shrink:0;margin-top:2px}
-.ats-lp-safe-i b{display:block;font-family:'Bricolage Grotesque';font-size:15px;margin-bottom:3px}
-.ats-lp-safe-i span{font-size:13.5px;line-height:1.6;color:rgba(234,242,240,.66)}
+.ats-lp-safe-i svg{color:#7FC0B4;flex-shrink:0;margin-top:2px}
+.ats-lp-safe-i b{display:block;font-family:'Bricolage Grotesque';font-weight:600;font-size:16.5px;margin-bottom:4px}
+.ats-lp-safe-i span{font-size:14.5px;line-height:1.6;color:rgba(228,239,236,.64)}
 
-/* Priser */
-.ats-lp-plans{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:stretch}
-.ats-lp-plan{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px 24px;display:flex;flex-direction:column}
-.ats-lp-plan.is-hot{border-color:var(--petrol);box-shadow:0 20px 50px -30px rgba(12,92,82,.5)}
-.ats-lp-plan-tag{position:absolute;top:-11px;left:24px;background:var(--petrol);color:#fff;font-size:11px;font-weight:700;padding:4px 11px;border-radius:20px}
-.ats-lp-plan h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:18px;margin-bottom:12px}
-.ats-lp-price{display:flex;align-items:baseline;gap:7px;margin-bottom:10px}
-.ats-lp-price b{font-family:'Bricolage Grotesque';font-weight:600;font-size:32px;letter-spacing:-.02em}
-.ats-lp-price span{font-size:12.5px;color:var(--muted)}
-.ats-lp-plan-d{font-size:13.5px;color:var(--sub);line-height:1.6;margin-bottom:20px}
-.ats-lp-plan ul{display:flex;flex-direction:column;gap:10px;margin-bottom:24px;flex:1}
-.ats-lp-plan li{display:flex;align-items:flex-start;gap:9px;font-size:13.5px;color:var(--ink);line-height:1.5}
+/* --- Priser --- */
+.ats-lp-plans{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;align-items:stretch}
+.ats-lp-plan{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:32px 28px;display:flex;flex-direction:column;transition:transform .2s var(--ease),box-shadow .2s var(--ease)}
+.ats-lp-plan:hover{transform:translateY(-3px);box-shadow:0 22px 44px -30px rgba(16,32,28,.3)}
+.ats-lp-plan.is-hot{border-color:var(--petrol);box-shadow:0 24px 56px -34px rgba(11,92,82,.5)}
+.ats-lp-plan-tag{position:absolute;top:-12px;left:28px;background:var(--petrol);color:#fff;font-size:11.5px;font-weight:700;padding:5px 12px;border-radius:20px}
+.ats-lp-plan h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:20px;margin-bottom:14px}
+.ats-lp-price{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}
+.ats-lp-price b{font-family:'Bricolage Grotesque';font-weight:600;font-size:38px;letter-spacing:-.03em}
+.ats-lp-price span{font-size:13px;color:var(--muted)}
+.ats-lp-plan-d{font-size:14.5px;color:var(--sub);line-height:1.6;margin-bottom:24px}
+.ats-lp-plan ul{display:flex;flex-direction:column;gap:12px;margin-bottom:28px;flex:1}
+.ats-lp-plan li{display:flex;align-items:flex-start;gap:10px;font-size:14.5px;color:var(--ink);line-height:1.5}
 .ats-lp-plan li svg{color:var(--petrol);flex-shrink:0;margin-top:2px}
-.ats-lp-plans-note{text-align:center;font-size:12.5px;color:var(--muted);margin-top:20px}
+.ats-lp-plans-note{text-align:center;font-size:13.5px;color:var(--muted);margin-top:26px}
 
-/* FAQ */
-.ats-lp-faqwrap{max-width:820px}
-.ats-lp-faq{display:flex;flex-direction:column}
+/* --- FAQ --- */
+.ats-lp-faqwrap{max-width:860px}
 .ats-lp-faq-i{border-bottom:1px solid var(--line)}
-.ats-lp-faq-i button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:16px;text-align:left;padding:22px 0;font-family:'Bricolage Grotesque';font-weight:600;font-size:16.5px;color:var(--ink);min-height:56px}
-.ats-lp-faq-i svg{color:var(--muted);flex-shrink:0;transition:transform .2s}
+.ats-lp-faq-i>button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:20px;text-align:left;padding:26px 0;font-family:'Bricolage Grotesque';font-weight:600;font-size:19px;letter-spacing:-.01em;color:var(--ink);min-height:64px}
+.ats-lp-faq-i svg{color:var(--muted);flex-shrink:0;transition:transform .28s var(--ease)}
 .ats-lp-faq-i.is-on svg{transform:rotate(180deg);color:var(--petrol)}
-.ats-lp-faq-i p{font-size:15px;line-height:1.72;color:var(--sub);padding-bottom:22px;max-width:680px}
+.ats-lp-faq-a{overflow:hidden;transition:max-height .34s var(--ease)}
+.ats-lp-faq-a p{font-size:17px;line-height:1.72;color:var(--sub);padding-bottom:26px;max-width:700px}
 
-/* Slut-CTA */
-.ats-lp-final{border-top:1px solid var(--line);padding:96px 0}
-.ats-lp-final-in{text-align:center;max-width:660px;margin:0 auto}
-.ats-lp-final h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(26px,3.4vw,40px);line-height:1.16;letter-spacing:-.02em;margin-bottom:14px}
-.ats-lp-final p{font-size:16px;color:var(--sub);margin-bottom:28px}
-.ats-lp-final-note{display:block;margin-top:16px;font-size:12.5px;color:var(--muted)}
+/* --- Slut-CTA --- */
+.ats-lp-final{padding:130px 0;border-top:1px solid var(--line)}
+.ats-lp-final-in{text-align:center;max-width:720px;margin:0 auto}
+.ats-lp-final h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(30px,4vw,54px);line-height:1.08;letter-spacing:-.03em;margin-bottom:18px}
+.ats-lp-final p{font-size:18px;color:var(--sub);margin-bottom:34px}
+.ats-lp-final-note{display:block;margin-top:18px;font-size:13.5px;color:var(--muted)}
 
-/* Footer */
-.ats-lp-foot{background:var(--ink);color:#E9E5DD;padding:64px 0 0}
-.ats-lp-foot-in{display:grid;grid-template-columns:1.2fr 2fr;gap:48px;padding-bottom:48px}
-.ats-lp-foot-brand p{font-size:13.5px;line-height:1.65;color:rgba(233,229,221,.6);margin-top:14px;max-width:280px}
+/* --- Footer --- */
+.ats-lp-foot{background:var(--ink);color:#E5E1D8;padding:80px 0 0}
+.ats-lp-foot-in{display:grid;grid-template-columns:1.1fr 2fr;gap:64px;padding-bottom:60px}
+.ats-lp-foot-brand p{font-size:14.5px;line-height:1.66;color:rgba(229,225,216,.56);margin-top:16px;max-width:300px}
 .ats-lp-foot .ats-lp-brand{color:#fff}
-.ats-lp-foot-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:32px}
-.ats-lp-foot-cols h4{font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:rgba(233,229,221,.45);margin-bottom:14px}
-.ats-lp-foot-cols button,.ats-lp-foot-cols span{display:block;text-align:left;font-size:13.5px;color:rgba(233,229,221,.75);padding:6px 0;transition:color .14s}
+.ats-lp-foot-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
+.ats-lp-foot-cols h4{font-size:12.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(229,225,216,.42);margin-bottom:16px}
+.ats-lp-foot-cols button,.ats-lp-foot-cols span{display:block;text-align:left;font-size:14.5px;color:rgba(229,225,216,.72);padding:7px 0;transition:color .15s}
 .ats-lp-foot-cols button:hover{color:#fff}
-.ats-lp-foot-bot{max-width:1120px;margin:0 auto;padding:22px 24px;border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;font-family:'IBM Plex Mono';font-size:11.5px;color:rgba(233,229,221,.45)}
+.ats-lp-foot-bot{max-width:1240px;margin:0 auto;padding:24px 32px;border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;font-size:13px;color:rgba(229,225,216,.42)}
 
 /* ============ JOBBANNONS ============ */
-.ats-jp-nav{position:sticky;top:0;z-index:40;background:rgba(237,235,229,.9);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
-.ats-jp-nav-in{max-width:1160px;margin:0 auto;padding:13px 24px;display:flex;align-items:center;gap:16px}
-.ats-jp-brand{display:flex;align-items:center;gap:10px;min-width:0}
-.ats-jp-mark{width:32px;height:32px;border-radius:9px;background:var(--petrol);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;flex-shrink:0}
-.ats-jp-mark.is-lg{width:44px;height:44px;border-radius:12px;font-size:19px}
-.ats-jp-co{font-family:'Bricolage Grotesque';font-weight:600;font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ats-jp-nav-r{margin-left:auto;display:flex;align-items:center;gap:9px}
-.ats-jp-share{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;color:var(--sub);padding:10px 14px;border-radius:9px;min-height:42px}
-.ats-jp-share:hover{background:rgba(0,0,0,.05);color:var(--ink)}
-.ats-jp-cta{display:inline-flex;align-items:center;justify-content:center;gap:9px;background:var(--petrol);color:#fff;font-weight:600;font-size:15px;padding:15px 26px;border-radius:12px;min-height:52px;transition:background .15s,transform .12s}
-.ats-jp-cta:hover{background:var(--petrol-deep);transform:translateY(-1px)}
-.ats-jp-cta.is-sm{font-size:13.5px;padding:10px 18px;min-height:42px;border-radius:10px}
-.ats-jp-cta.is-block{width:100%;margin-top:16px}
+.ats-jp-nav{position:sticky;top:0;z-index:40;height:72px;display:flex;align-items:center;transition:background .25s var(--ease),border-color .25s}
+.ats-jp-nav.is-stuck{background:rgba(244,240,232,.85);backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--line)}
+.ats-jp-nav-in{max-width:1280px;width:100%;margin:0 auto;padding:0 32px;display:flex;align-items:center;gap:16px}
+.ats-jp-brand{display:flex;align-items:center;gap:12px;min-width:0}
+.ats-jp-mark{width:38px;height:38px;border-radius:11px;background:var(--petrol);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;flex-shrink:0}
+.ats-jp-co{font-family:'Bricolage Grotesque';font-weight:600;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ats-jp-nav-r{margin-left:auto;display:flex;align-items:center;gap:8px}
+.ats-jp-share{display:inline-flex;align-items:center;gap:8px;font-size:14.5px;font-weight:600;color:var(--sub);padding:12px 16px;border-radius:var(--r-sm);min-height:46px;transition:background .15s,color .15s}
+.ats-jp-share:hover{background:rgba(16,32,28,.06);color:var(--ink)}
+.ats-jp-cta{display:inline-flex;align-items:center;justify-content:center;gap:10px;background:var(--petrol);color:#fff;font-weight:600;font-size:16px;padding:16px 28px;border-radius:var(--r-md);min-height:54px;box-shadow:0 1px 2px rgba(6,61,55,.2);transition:background .18s var(--ease),transform .18s var(--ease),box-shadow .18s var(--ease)}
+.ats-jp-cta:hover{background:var(--petrol-deep);transform:translateY(-2px);box-shadow:0 10px 22px -10px rgba(6,61,55,.5)}
+.ats-jp-cta.is-lg{font-size:17px;padding:18px 32px;min-height:60px}
+.ats-jp-cta.is-sm{font-size:14.5px;padding:11px 20px;min-height:46px;border-radius:var(--r-sm)}
+.ats-jp-cta.is-block{width:100%;margin-top:20px}
 
-.ats-jp-hero{border-bottom:1px solid var(--line);background:linear-gradient(180deg,var(--paper2),var(--paper))}
-.ats-jp-hero-in{max-width:1160px;margin:0 auto;padding:60px 24px 56px;display:grid;grid-template-columns:1.3fr .7fr;gap:52px;align-items:center}
-.ats-jp-kicker{font-family:'IBM Plex Mono';font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--petrol);margin-bottom:16px}
-.ats-jp-hero h1{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(30px,4.2vw,50px);line-height:1.08;letter-spacing:-.025em;margin-bottom:18px;overflow-wrap:break-word}
-.ats-jp-pitch{font-size:17px;line-height:1.65;color:var(--sub);max-width:560px;margin-bottom:28px}
-.ats-jp-hero-acts{display:flex;align-items:center;gap:18px;flex-wrap:wrap}
-.ats-jp-deadline{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);font-family:'IBM Plex Mono'}
-.ats-jp-hero-card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 24px 56px -34px rgba(20,18,14,.3)}
-.ats-jp-hc-top{display:flex;align-items:center;gap:13px;padding-bottom:18px;margin-bottom:18px;border-bottom:1px solid var(--line)}
-.ats-jp-hc-top b{display:block;font-family:'Bricolage Grotesque';font-size:16px}
-.ats-jp-hc-top span{font-size:12.5px;color:var(--muted)}
-.ats-jp-hc-meta{display:flex;flex-direction:column;gap:13px}
-.ats-jp-hc-meta div{display:flex;flex-direction:column;gap:3px}
-.ats-jp-hc-meta dt,.ats-jp-facts dt{display:flex;align-items:center;gap:7px;font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.ats-jp-hc-meta dd,.ats-jp-facts dd{font-size:14px;color:var(--ink);font-weight:500;padding-left:20px}
+/* Jobbhero */
+.ats-jp-hero{border-bottom:1px solid var(--line)}
+.ats-jp-hero-in{max-width:1280px;margin:0 auto;padding:72px 32px 80px;display:grid;grid-template-columns:1.45fr .55fr;gap:64px;align-items:center}
+.ats-jp-kicker{font-size:14.5px;font-weight:600;color:var(--petrol);margin-bottom:20px}
+.ats-jp-hero h1{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(38px,5vw,66px);line-height:1.03;letter-spacing:-.035em;margin-bottom:24px;overflow-wrap:break-word;hyphens:auto}
+.ats-jp-pitch{font-size:19px;line-height:1.66;color:var(--sub);max-width:620px;margin-bottom:36px}
+.ats-jp-hero-acts{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.ats-jp-deadline{display:inline-flex;align-items:center;gap:8px;font-size:14.5px;color:var(--sub)}
+.ats-jp-deadline svg{color:var(--accent)}
+/* Varumärkesyta (ingen fejkad bild) */
+.ats-jp-brandwall{position:relative;aspect-ratio:1/1.08;border-radius:var(--r-lg);background:linear-gradient(155deg,var(--petrol) 0%,var(--petrol-deep) 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;overflow:hidden;box-shadow:0 40px 80px -44px rgba(6,61,55,.6)}
+.ats-jp-bw-mark{width:88px;height:88px;border-radius:24px;background:rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:600;font-size:40px;backdrop-filter:blur(2px)}
+.ats-jp-bw-co{font-family:'Bricolage Grotesque';font-weight:600;font-size:22px;color:#fff;text-align:center;padding:0 22px;letter-spacing:-.01em}
+.ats-jp-bw-grid{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;pointer-events:none;opacity:.16}
+.ats-jp-bw-grid span{border-right:1px solid #fff;border-bottom:1px solid #fff}
+.ats-jp-bw-grid span:nth-child(2n){border-right:0}
+.ats-jp-bw-grid span:nth-child(n+3){border-bottom:0}
 
-.ats-jp-main{max-width:1160px;margin:0 auto;padding:64px 24px 40px;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:64px;align-items:start}
-.ats-jp-article{max-width:720px;min-width:0}
-.ats-jp-sec{margin-bottom:48px}
-.ats-jp-sec:last-child{margin-bottom:0}
-.ats-jp-sec h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:25px;letter-spacing:-.015em;margin-bottom:18px}
-.ats-jp-lead{font-size:16.5px;line-height:1.8;color:var(--sub);white-space:pre-wrap;overflow-wrap:break-word}
-.ats-jp-list{display:flex;flex-direction:column;gap:13px}
-.ats-jp-list li{display:flex;align-items:flex-start;gap:12px;font-size:16px;line-height:1.62;color:var(--ink)}
+/* Artikel + sidokolumn */
+.ats-jp-main{max-width:1280px;margin:0 auto;padding:80px 32px 48px;display:grid;grid-template-columns:minmax(0,760px) 300px;gap:72px;justify-content:center;align-items:start}
+.ats-jp-article{min-width:0}
+.ats-jp-sec{margin-bottom:56px}
+.ats-jp-sec h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:30px;letter-spacing:-.022em;margin-bottom:22px}
+.ats-jp-lead{font-size:18px;line-height:1.78;color:var(--sub);white-space:pre-wrap;overflow-wrap:break-word}
+.ats-jp-list{display:flex;flex-direction:column;gap:15px}
+.ats-jp-list li{display:flex;align-items:flex-start;gap:13px;font-size:17px;line-height:1.62;color:var(--ink)}
 .ats-jp-list svg{color:var(--petrol);flex-shrink:0;margin-top:4px}
-.ats-jp-list.is-soft svg{color:var(--gold)}
-.ats-jp-benefits{display:flex;flex-wrap:wrap;gap:9px}
-.ats-jp-benefit{display:inline-flex;align-items:center;gap:8px;padding:11px 15px;background:var(--surface);border:1px solid var(--line);border-radius:11px;font-size:14px}
-.ats-jp-benefit svg{color:var(--gold)}
-.ats-jp-steps{display:flex;flex-direction:column;gap:2px}
-.ats-jp-steps li{display:flex;gap:16px;padding:15px 0;border-bottom:1px solid var(--line);align-items:center}
+.ats-jp-list.is-soft svg{color:var(--accent)}
+.ats-jp-benefits{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ats-jp-benefit{display:flex;align-items:center;gap:10px;padding:16px 18px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);font-size:15.5px}
+.ats-jp-benefit svg{color:var(--accent);flex-shrink:0}
+.ats-jp-steps{display:flex;flex-direction:column}
+.ats-jp-steps li{display:flex;gap:18px;padding:18px 0;border-bottom:1px solid var(--line);align-items:center}
+.ats-jp-steps li:first-child{padding-top:0}
 .ats-jp-steps li:last-child{border-bottom:0}
-.ats-jp-steps span{width:30px;height:30px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol-deep);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:12.5px;font-weight:600;flex-shrink:0}
-.ats-jp-steps div{font-size:15.5px;color:var(--ink)}
+.ats-jp-steps span{width:34px;height:34px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol-deep);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;flex-shrink:0}
+.ats-jp-steps div{font-size:16.5px;color:var(--ink)}
 .ats-jp-faq details{border-bottom:1px solid var(--line)}
-.ats-jp-faq summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 0;cursor:pointer;font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;list-style:none;min-height:54px}
+.ats-jp-faq summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 0;cursor:pointer;font-family:'Bricolage Grotesque';font-weight:600;font-size:17.5px;list-style:none;min-height:60px}
 .ats-jp-faq summary::-webkit-details-marker{display:none}
-.ats-jp-faq summary svg{color:var(--muted);transition:transform .2s;flex-shrink:0}
+.ats-jp-faq summary svg{color:var(--muted);transition:transform .26s var(--ease);flex-shrink:0}
 .ats-jp-faq details[open] summary svg{transform:rotate(180deg);color:var(--petrol)}
-.ats-jp-faq p{font-size:15px;line-height:1.72;color:var(--sub);padding-bottom:18px}
+.ats-jp-faq p{font-size:16.5px;line-height:1.72;color:var(--sub);padding-bottom:20px}
+/* Upprepad CTA */
+.ats-jp-midcta{display:flex;align-items:center;justify-content:space-between;gap:28px;padding:34px 36px;background:var(--petrol-soft);border-radius:var(--r-lg);margin-top:64px;flex-wrap:wrap}
+.ats-jp-midcta h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:24px;letter-spacing:-.018em;margin-bottom:6px}
+.ats-jp-midcta p{font-size:15.5px;color:var(--sub)}
 
-.ats-jp-side{position:sticky;top:78px;display:flex;flex-direction:column;gap:14px}
-.ats-jp-sidecard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px}
-.ats-jp-sidecard.is-quiet{background:transparent;border-style:dashed}
-.ats-jp-sidecard h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;margin-bottom:16px}
-.ats-jp-sidecard p{font-size:13.5px;line-height:1.65;color:var(--sub)}
-.ats-jp-facts{display:flex;flex-direction:column;gap:14px}
-.ats-jp-facts div{display:flex;flex-direction:column;gap:3px}
-.ats-jp-contact{display:flex;align-items:center;gap:12px}
-.ats-jp-avatar{width:42px;height:42px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol-deep);display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;flex-shrink:0}
-.ats-jp-contact b{display:block;font-size:14.5px;font-family:'Bricolage Grotesque'}
-.ats-jp-contact a{font-size:13px;color:var(--petrol);word-break:break-all}
+.ats-jp-side{position:sticky;top:96px;display:flex;flex-direction:column;gap:16px}
+.ats-jp-sidecard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);padding:24px}
+.ats-jp-sidecard h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;margin-bottom:18px}
+.ats-jp-facts{display:flex;flex-direction:column;gap:16px}
+.ats-jp-facts div{display:flex;flex-direction:column;gap:4px}
+.ats-jp-facts dt{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.ats-jp-facts dd{font-size:15px;color:var(--ink);font-weight:500;padding-left:22px}
+.ats-jp-sideshare{width:100%;display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-top:9px;padding:12px;border-radius:var(--r-sm);font-size:14px;font-weight:600;color:var(--sub);min-height:46px;transition:background .15s}
+.ats-jp-sideshare:hover{background:var(--paper2);color:var(--ink)}
+.ats-jp-contact{display:flex;align-items:flex-start;gap:14px}
+.ats-jp-avatar{width:48px;height:48px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol-deep);display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque';font-weight:600;font-size:19px;flex-shrink:0}
+.ats-jp-contact>div{min-width:0}
+.ats-jp-contact b{display:block;font-size:15.5px;font-family:'Bricolage Grotesque'}
+.ats-jp-contact>div>span{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px}
+.ats-jp-contact a{font-size:14px;color:var(--petrol);word-break:break-word;line-height:1.4}
 .ats-jp-contact a:hover{text-decoration:underline}
 
-.ats-jp-apply{border-top:1px solid var(--line);background:var(--paper2);padding:72px 0 88px}
-.ats-jp-apply-in{max-width:820px;margin:0 auto;padding:0 24px}
+.ats-jp-apply{border-top:1px solid var(--line);background:var(--paper2);padding:96px 0 112px}
+.ats-jp-apply-in{max-width:884px;margin:0 auto;padding:0 32px}
 .ats-jp-foot{border-top:1px solid var(--line);background:var(--surface)}
-.ats-jp-foot-in{max-width:1160px;margin:0 auto;padding:26px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.ats-jp-foot-note{font-family:'IBM Plex Mono';font-size:11.5px;color:var(--muted)}
-.ats-jp-mobar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:45;background:var(--surface);border-top:1px solid var(--line);padding:11px 16px;align-items:center;gap:14px;box-shadow:0 -8px 26px -14px rgba(0,0,0,.22)}
-.ats-jp-mobar div{min-width:0;flex:1}
-.ats-jp-mobar b{display:block;font-family:'Bricolage Grotesque';font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ats-jp-mobar span{font-size:11.5px;color:var(--muted)}
+.ats-jp-foot-in{max-width:1280px;margin:0 auto;padding:32px;display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.ats-jp-foot-note{font-size:13.5px;color:var(--muted)}
+.ats-jp-mobar{display:none;position:fixed;left:0;right:0;bottom:0;z-index:44;background:var(--surface);border-top:1px solid var(--line);padding:12px 18px;align-items:center;gap:16px;box-shadow:0 -10px 30px -16px rgba(16,32,28,.24);animation:mobarin .3s var(--ease)}
+@keyframes mobarin{from{transform:translateY(100%)}to{transform:none}}
+.ats-jp-mobar>div{min-width:0;flex:1}
+.ats-jp-mobar b{display:block;font-family:'Bricolage Grotesque';font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ats-jp-mobar span{font-size:12.5px;color:var(--muted)}
 
 /* ============ ANSOKNINGSFORMULAR ============ */
-.ats-af{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:40px}
-.ats-af-head{margin-bottom:30px}
-.ats-af-eyebrow{font-family:'IBM Plex Mono';font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--petrol)}
-.ats-af-head h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(24px,3vw,32px);line-height:1.15;letter-spacing:-.02em;margin:10px 0 10px}
-.ats-af-head p{font-size:15px;line-height:1.65;color:var(--sub);max-width:540px}
-.ats-af-prog{margin-bottom:32px}
-.ats-af-bar{height:4px;border-radius:3px;background:var(--line);overflow:hidden;margin-bottom:16px}
-.ats-af-bar-fill{height:100%;background:var(--petrol);border-radius:3px;transition:width .35s cubic-bezier(.4,0,.2,1)}
-.ats-af-steps{display:flex;gap:8px;flex-wrap:wrap}
-.ats-af-step{display:inline-flex;align-items:center;gap:8px;padding:7px 12px 7px 7px;border-radius:22px;background:var(--paper2);font-size:12.5px;font-weight:600;color:var(--muted);transition:.15s}
-.ats-af-step:not(:disabled){cursor:pointer}
-.ats-af-step.is-done{background:var(--petrol-soft);color:var(--petrol-deep)}
-.ats-af-step.is-on{background:var(--petrol);color:#fff}
-.ats-af-dot{width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.07);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:11px;flex-shrink:0}
-.ats-af-step.is-on .ats-af-dot{background:rgba(255,255,255,.22)}
-.ats-af-step.is-done .ats-af-dot{background:var(--petrol);color:#fff}
-.ats-af-body{min-height:220px;margin-bottom:34px;animation:affade .26s ease}
-@keyframes affade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-.ats-af-fields{display:flex;flex-direction:column;gap:24px}
-.ats-af-f{display:flex;flex-direction:column;gap:8px}
-.ats-af-l{font-size:14.5px;font-weight:600;color:var(--ink)}
-.ats-af-l i{font-style:normal;color:var(--brick);margin-left:1px}
-.ats-af-help{font-size:12.5px;color:var(--muted);line-height:1.5}
-.ats-af-help.is-top{margin-top:-2px;margin-bottom:2px}
-.ats-af-err{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--brick);font-weight:500}
-.ats-af .ats-inp{width:100%;min-height:50px;padding:13px 16px;border:1px solid var(--line2);border-radius:11px;background:var(--surface);font-size:15.5px;font-family:inherit;color:var(--ink);transition:border-color .14s,box-shadow .14s}
+.ats-af{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:48px}
+.ats-af-head{margin-bottom:36px}
+.ats-af-head h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(27px,3vw,36px);line-height:1.12;letter-spacing:-.026em;margin-bottom:12px}
+.ats-af-head p{font-size:17px;line-height:1.6;color:var(--sub)}
+.ats-af-prog{margin-bottom:38px}
+.ats-af-prog-t{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:12px}
+.ats-af-stepno{font-size:13.5px;font-weight:600;color:var(--petrol)}
+.ats-af-nextlbl{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55%}
+.ats-af-bar{height:6px;border-radius:4px;background:var(--line2);overflow:hidden}
+.ats-af-bar-fill{height:100%;background:var(--petrol);border-radius:4px;transition:width .45s var(--ease)}
+.ats-af-curstep{font-family:'Bricolage Grotesque';font-weight:600;font-size:21px;letter-spacing:-.015em;margin-top:18px}
+.ats-af-body{margin-bottom:40px;animation:affade .32s var(--ease)}
+@keyframes affade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.ats-af-fields{display:flex;flex-direction:column;gap:26px}
+.ats-af-f{display:flex;flex-direction:column;gap:9px}
+.ats-af-l{font-size:15px;font-weight:600;color:var(--ink);line-height:1.4}
+.ats-af-l i{font-style:normal;color:var(--brick);margin-left:2px}
+.ats-af-help{font-size:13.5px;color:var(--muted);line-height:1.5}
+.ats-af-help.is-top{margin-top:-3px}
+.ats-af-err{display:flex;align-items:center;gap:7px;font-size:13.5px;color:var(--brick);font-weight:600}
+.ats-af .ats-inp{width:100%;min-height:54px;padding:15px 18px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);font-size:16px;font-family:inherit;color:var(--ink);transition:border-color .16s,box-shadow .16s}
 .ats-af .ats-inp:hover{border-color:var(--muted)}
-.ats-af .ats-inp:focus{outline:none;border-color:var(--petrol);box-shadow:0 0 0 3px var(--petrol-soft)}
-.ats-af .ats-inp.is-err{border-color:var(--brick);box-shadow:0 0 0 3px var(--brick-soft)}
-.ats-af textarea.ats-inp{min-height:120px;resize:vertical;line-height:1.6}
-.ats-af .ats-chipset{display:flex;flex-wrap:wrap;gap:9px}
-.ats-af .ats-selchip{min-height:48px;padding:13px 18px;border:1px solid var(--line2);border-radius:11px;background:var(--surface);font-size:14.5px;font-weight:500;color:var(--ink);transition:.14s}
+.ats-af .ats-inp:focus{outline:none;border-color:var(--petrol);box-shadow:0 0 0 4px rgba(11,92,82,.12)}
+.ats-af .ats-inp.is-err{border-color:var(--brick);box-shadow:0 0 0 4px rgba(194,81,58,.1)}
+.ats-af textarea.ats-inp{min-height:140px;resize:vertical;line-height:1.62}
+.ats-af .ats-chipset{display:flex;flex-wrap:wrap;gap:10px}
+.ats-af .ats-selchip{min-height:54px;padding:15px 20px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);font-size:15.5px;font-weight:500;color:var(--ink);transition:.16s var(--ease);text-align:left}
 .ats-af .ats-selchip:hover{border-color:var(--petrol);background:var(--petrol-soft)}
 .ats-af .ats-selchip.is-on{background:var(--petrol);border-color:var(--petrol);color:#fff}
-.ats-af .ats-selchip:focus-visible{outline:2px solid var(--petrol);outline-offset:2px}
 .ats-af .ats-mustdot{display:none}
-.ats-af .ats-yn{display:flex;gap:10px}
-.ats-af .ats-yn button{flex:1;min-height:52px;border:1px solid var(--line2);border-radius:12px;background:var(--surface);font-size:15px;font-weight:600;color:var(--sub);transition:.14s}
-.ats-af .ats-yn button:hover{border-color:var(--petrol)}
-.ats-af .ats-yn button.is-on{background:var(--petrol);border-color:var(--petrol);color:#fff}
-.ats-af .ats-filedrop{min-height:110px;border:1.5px dashed var(--line2);border-radius:13px;background:var(--paper2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:22px;font-size:14px;color:var(--sub);transition:.15s;cursor:pointer;text-align:center}
-.ats-af .ats-filedrop:hover{border-color:var(--petrol);background:var(--petrol-soft)}
-.ats-af-review{background:var(--paper2);border-radius:13px;padding:20px 22px}
-.ats-af-review h3,.ats-af-gdpr h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;margin-bottom:14px}
-.ats-af-rrow{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
-.ats-af-rrow:last-child{border-bottom:0}
+.ats-af .ats-yn{display:flex;gap:0;border:1.5px solid var(--line);border-radius:12px;overflow:hidden}
+.ats-af .ats-yn button{flex:1;min-height:56px;border:0;border-right:1.5px solid var(--line);background:var(--surface);font-size:16px;font-weight:600;color:var(--sub);transition:.16s}
+.ats-af .ats-yn button:last-child{border-right:0}
+.ats-af .ats-yn button:hover{background:var(--petrol-soft);color:var(--petrol-deep)}
+.ats-af .ats-yn button.is-on{background:var(--petrol);color:#fff}
+.ats-af .ats-filedrop{min-height:128px;border:2px dashed var(--line);border-radius:14px;background:var(--paper2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:26px;font-size:15px;color:var(--sub);transition:.18s var(--ease);cursor:pointer;text-align:center}
+.ats-af .ats-filedrop:hover{border-color:var(--petrol);background:var(--petrol-soft);color:var(--petrol-deep)}
+.ats-af-review{background:var(--paper2);border-radius:14px;padding:24px 26px;position:relative}
+.ats-af-review h3,.ats-af-gdpr h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:18px;margin-bottom:16px}
+.ats-af-rrow{display:flex;justify-content:space-between;gap:18px;padding:11px 0;border-bottom:1px solid var(--line);font-size:15px}
+.ats-af-rrow:last-of-type{border-bottom:0}
 .ats-af-rrow span{color:var(--muted)}
 .ats-af-rrow b{color:var(--ink);text-align:right;overflow-wrap:anywhere}
-.ats-af-gdpr ul{display:flex;flex-direction:column;gap:9px;margin-bottom:20px}
-.ats-af-gdpr li{position:relative;padding-left:20px;font-size:14.5px;line-height:1.6;color:var(--sub)}
-.ats-af-gdpr li:before{content:"";position:absolute;left:0;top:9px;width:6px;height:6px;border-radius:50%;background:var(--petrol)}
-.ats-af-consent{display:flex;align-items:flex-start;gap:12px;padding:16px 18px;border:1px solid var(--line2);border-radius:12px;background:var(--surface);cursor:pointer;transition:.14s;min-height:56px}
+.ats-af-edit{position:absolute;top:22px;right:24px;font-size:13.5px;font-weight:600;color:var(--petrol);padding:6px 10px;border-radius:8px;min-height:36px}
+.ats-af-edit:hover{background:var(--petrol-soft)}
+.ats-af-gdpr ul{display:flex;flex-direction:column;gap:11px;margin-bottom:24px}
+.ats-af-gdpr li{position:relative;padding-left:22px;font-size:15.5px;line-height:1.62;color:var(--sub)}
+.ats-af-gdpr li::before{content:"";position:absolute;left:0;top:10px;width:7px;height:7px;border-radius:50%;background:var(--petrol)}
+.ats-af-consent{display:flex;align-items:flex-start;gap:14px;padding:18px 20px;border:1.5px solid var(--line);border-radius:12px;background:var(--surface);cursor:pointer;transition:.16s;min-height:62px}
 .ats-af-consent:hover{border-color:var(--petrol)}
+.ats-af-consent:focus-within{border-color:var(--petrol);box-shadow:0 0 0 4px rgba(11,92,82,.12)}
 .ats-af-consent.is-err{border-color:var(--brick);background:var(--brick-soft)}
-.ats-af-consent input{width:20px;height:20px;margin-top:1px;accent-color:var(--petrol);flex-shrink:0;cursor:pointer}
-.ats-af-consent span{font-size:14.5px;line-height:1.55;color:var(--ink)}
-.ats-af-nav{display:flex;align-items:center;justify-content:space-between;gap:14px;padding-top:26px;border-top:1px solid var(--line)}
-.ats-af-back{display:inline-flex;align-items:center;gap:7px;min-height:50px;padding:13px 20px;border-radius:11px;font-size:14.5px;font-weight:600;color:var(--sub)}
+.ats-af-consent input{width:22px;height:22px;margin-top:1px;accent-color:var(--petrol);flex-shrink:0;cursor:pointer}
+.ats-af-consent span{font-size:15.5px;line-height:1.55;color:var(--ink)}
+.ats-af-gdpr-foot{margin-top:16px;font-size:13.5px;color:var(--muted)}
+.ats-af-gdpr-foot a{color:var(--petrol)}
+.ats-af-gdpr-foot a:hover{text-decoration:underline}
+.ats-af-nav{display:flex;align-items:center;gap:14px;padding-top:30px;border-top:1px solid var(--line)}
+.ats-af-back{display:inline-flex;align-items:center;gap:8px;min-height:54px;padding:15px 22px;border-radius:12px;font-size:15.5px;font-weight:600;color:var(--sub);transition:background .15s,color .15s}
 .ats-af-back:hover{background:var(--paper2);color:var(--ink)}
-.ats-af-next,.ats-af-submit{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:52px;padding:14px 28px;border-radius:12px;background:var(--petrol);color:#fff;font-size:15px;font-weight:600;transition:background .15s,transform .12s;margin-left:auto}
-.ats-af-next:hover,.ats-af-submit:hover{background:var(--petrol-deep);transform:translateY(-1px)}
-.ats-af-submit{background:var(--ink);padding:15px 32px}
-.ats-af-submit:hover{background:#000}
-.ats-af-done{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:48px 40px;text-align:center}
-.ats-af-done-mark{width:64px;height:64px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol);display:flex;align-items:center;justify-content:center;margin:0 auto 22px}
-.ats-af-done h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(23px,2.8vw,30px);line-height:1.2;letter-spacing:-.02em;margin-bottom:12px}
-.ats-af-done > p{font-size:15.5px;line-height:1.7;color:var(--sub);max-width:480px;margin:0 auto 32px}
-.ats-af-nextup{text-align:left;max-width:440px;margin:0 auto}
-.ats-af-nextup h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;margin-bottom:16px;text-align:left}
-.ats-af-nextup ol{display:flex;flex-direction:column;gap:14px;text-align:left;max-width:440px;margin:0 auto}
-.ats-af-nextup li{display:flex;gap:13px;align-items:flex-start}
-.ats-af-nextup li span{width:26px;height:26px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol-deep);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-size:12px;font-weight:600;flex-shrink:0}
-.ats-af-nextup li b{display:block;font-size:14.5px;margin-bottom:2px}
-.ats-af-nextup li small{font-size:13px;color:var(--muted);line-height:1.5}
-.ats-af-done-foot{margin-top:30px;font-size:13.5px;color:var(--muted)}
-.ats-af-done-foot a{color:var(--petrol)}
-.ats-af-done-foot a:hover{text-decoration:underline}
+.ats-af-next,.ats-af-submit{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:56px;padding:16px 32px;border-radius:12px;background:var(--petrol);color:#fff;font-size:16px;font-weight:600;margin-left:auto;box-shadow:0 1px 2px rgba(6,61,55,.2);transition:background .18s var(--ease),transform .18s var(--ease),box-shadow .18s var(--ease)}
+.ats-af-next:hover,.ats-af-submit:hover{background:var(--petrol-deep);transform:translateY(-2px);box-shadow:0 10px 22px -10px rgba(6,61,55,.5)}
+.ats-af-submit{background:var(--ink);padding:17px 36px}
+.ats-af-submit:hover{background:#05100E}
+.ats-af-done{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:60px 48px;text-align:center;animation:afdone .5s var(--ease)}
+@keyframes afdone{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+.ats-af-done-mark{width:76px;height:76px;border-radius:50%;background:var(--petrol);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 26px;box-shadow:0 16px 34px -16px rgba(11,92,82,.6)}
+.ats-af-done h2{font-family:'Bricolage Grotesque';font-weight:600;font-size:clamp(26px,3vw,36px);line-height:1.15;letter-spacing:-.026em;margin-bottom:14px}
+.ats-af-done>p{font-size:17px;line-height:1.7;color:var(--sub);max-width:520px;margin:0 auto 40px}
+.ats-af-nextup{text-align:left;max-width:460px;margin:0 auto}
+.ats-af-nextup h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:16px;margin-bottom:18px}
+.ats-af-nextup ol{display:flex;flex-direction:column;gap:16px}
+.ats-af-nextup li{display:flex;gap:14px;align-items:flex-start}
+.ats-af-nextup li span{width:28px;height:28px;border-radius:50%;background:var(--petrol-soft);color:var(--petrol-deep);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:600;flex-shrink:0}
+.ats-af-nextup li b{display:block;font-size:15.5px;margin-bottom:3px}
+.ats-af-nextup li small{font-size:14px;color:var(--muted);line-height:1.5}
+.ats-af-done-acts{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:40px;padding-top:28px;border-top:1px solid var(--line)}
+.ats-af-mail{display:inline-flex;align-items:center;gap:8px;font-size:14.5px;font-weight:600;color:var(--petrol);padding:14px 20px;border-radius:12px;min-height:50px;transition:background .15s}
+.ats-af-mail:hover{background:var(--petrol-soft)}
 
-/* ---- Responsivt: publika sidor ---- */
+/* ---- Responsivt ---- */
+@media (max-width:1180px){
+  .ats-jp-main{grid-template-columns:minmax(0,1fr) 290px;gap:52px}
+}
 @media (max-width:1024px){
-  .ats-lp-hero{grid-template-columns:1fr;gap:44px;padding:56px 24px 60px}
-  .ats-lp-problem .ats-lp-wrap,.ats-lp-split-in,.ats-lp-safe-in{grid-template-columns:1fr;gap:34px}
+  .ats-lp-wrap,.ats-lp-nav-in,.ats-lp-hero-in,.ats-lp-foot-bot{padding-left:26px;padding-right:26px}
+  .ats-lp-hero{padding:56px 0 76px}
+  .ats-lp-hero-in{grid-template-columns:1fr;gap:52px}
+  .ats-lp-shot{transform:none}
+  .ats-lp-problem-in,.ats-lp-split-in,.ats-lp-safe-in{grid-template-columns:1fr;gap:40px}
   .ats-lp-split.is-flip .ats-lp-split-v{order:2}
-  .ats-lp-flow{grid-template-columns:repeat(2,1fr)}
-  .ats-lp-strip-in{grid-template-columns:1fr;gap:28px}
-  .ats-lp-plans{grid-template-columns:1fr;max-width:460px;margin:0 auto}
-  .ats-jp-hero-in{grid-template-columns:1fr;gap:34px;padding:44px 24px 44px}
-  .ats-jp-main{grid-template-columns:1fr;gap:44px;padding:48px 24px 32px}
+  .ats-lp-explain{grid-template-columns:1fr 1fr}
+  .ats-lp-plans{grid-template-columns:1fr;max-width:480px;margin:0 auto}
+  .ats-lp-sec,.ats-lp-split,.ats-lp-full,.ats-lp-problem,.ats-lp-safe{padding:88px 0}
+  .ats-lp-final{padding:96px 0}
+  .ats-jp-hero-in{grid-template-columns:1fr;gap:44px;padding:52px 26px 56px}
+  .ats-jp-brandwall{aspect-ratio:16/7;max-height:220px}
+  .ats-jp-bw-mark{width:64px;height:64px;border-radius:18px;font-size:30px}
+  .ats-jp-main{grid-template-columns:1fr;gap:52px;padding:56px 26px 40px;max-width:820px}
   .ats-jp-side{position:static;flex-direction:row;flex-wrap:wrap}
-  .ats-jp-sidecard{flex:1;min-width:240px}
-  .ats-jp-article{max-width:100%}
+  .ats-jp-sidecard{flex:1;min-width:260px}
 }
 @media (max-width:860px){
   .ats-lp-links,.ats-lp-nav-r{display:none}
   .ats-lp-burger{display:flex}
   .ats-lp-mob{display:flex}
-  .ats-lp-foot-in{grid-template-columns:1fr;gap:34px}
+  .ats-lp-foot-in{grid-template-columns:1fr;gap:40px}
   .ats-jp-mobar{display:flex}
-  .ats-jp-apply{padding-bottom:120px}
+  .ats-jp-apply{padding-bottom:150px}
   .ats-jp-nav .ats-jp-cta.is-sm{display:none}
+  .ats-jp-benefits{grid-template-columns:1fr}
 }
 @media (max-width:640px){
-  .ats-lp-wrap,.ats-lp-nav-in,.ats-lp-hero,.ats-jp-nav-in,.ats-jp-hero-in,.ats-jp-main,.ats-jp-apply-in,.ats-jp-foot-in{padding-left:18px;padding-right:18px}
-  .ats-lp-hero{padding-top:44px;padding-bottom:48px}
-  .ats-lp-sec,.ats-lp-split,.ats-lp-problem,.ats-lp-safe,.ats-lp-strip{padding-top:56px;padding-bottom:56px}
-  .ats-lp-final{padding:68px 0}
-  .ats-lp-flow{grid-template-columns:1fr}
-  .ats-lp-hero-acts,.ats-lp-hero-acts button{width:100%}
-  .ats-lp-foot-cols{grid-template-columns:1fr 1fr;gap:24px}
-  .ats-lp-foot-bot{flex-direction:column;gap:6px;text-align:center}
+  .ats-lp-wrap,.ats-lp-nav-in,.ats-lp-hero-in,.ats-lp-foot-bot,.ats-jp-nav-in,.ats-jp-hero-in,.ats-jp-main,.ats-jp-apply-in,.ats-jp-foot-in{padding-left:20px;padding-right:20px}
+  .ats-lp-hero{padding:40px 0 60px}
+  .ats-lp-hero h1{font-size:clamp(38px,10vw,48px);letter-spacing:-.03em}
+  .ats-lp-sub,.ats-lp-lead{font-size:17px}
+  .ats-lp-sec,.ats-lp-split,.ats-lp-full,.ats-lp-problem,.ats-lp-safe{padding:68px 0}
+  .ats-lp-final{padding:76px 0}
+  .ats-lp-hero-acts{flex-direction:column;align-items:stretch;width:100%}
+  .ats-lp-hero-acts button{width:100%}
+  .ats-lp-explain{grid-template-columns:1fr}
+  .ats-lp-timeline li{grid-template-columns:1fr;gap:8px;padding:22px 0}
+  .ats-lp-timeline b{font-size:19px}
+  .ats-lp-foot-cols{grid-template-columns:1fr 1fr;gap:26px}
+  .ats-lp-foot-bot{flex-direction:column;gap:8px;text-align:center}
+  .ats-lp-faq-i>button{font-size:17px;padding:22px 0}
+  .ats-jp-hero-in{padding-top:36px;padding-bottom:44px}
+  .ats-jp-hero h1{font-size:clamp(32px,9vw,42px)}
+  .ats-jp-pitch{font-size:17px}
+  .ats-jp-hero-acts{flex-direction:column;align-items:stretch}
+  .ats-jp-hero-acts .ats-jp-cta{width:100%}
   .ats-jp-side{flex-direction:column}
   .ats-jp-sidecard{min-width:0}
-  .ats-jp-hero-acts>.ats-jp-cta{width:100%}
-  .ats-jp-apply{padding-top:48px}
-  .ats-af{padding:26px 20px;border-radius:16px}
-  .ats-af-done{padding:36px 22px}
-  .ats-af-slabel{display:none}
-  .ats-af-step{padding:7px}
-  .ats-af-nav{gap:10px}
-  .ats-af-next,.ats-af-submit{padding:14px 20px;flex:1}
-  .ats-af-back{padding:13px 14px}
+  .ats-jp-sec h2{font-size:25px}
+  .ats-jp-midcta{flex-direction:column;align-items:stretch;text-align:left;padding:26px 24px;gap:20px}
+  .ats-jp-midcta .ats-jp-cta{width:100%}
+  .ats-jp-apply{padding-top:56px}
+  .ats-af{padding:28px 22px;border-radius:16px}
+  .ats-af-done{padding:40px 24px}
+  .ats-af-curstep{font-size:19px}
+  .ats-af .ats-selchip{width:100%}
   .ats-af .ats-yn{flex-direction:column}
-  .ats-jp-sec h2{font-size:22px}
+  .ats-af .ats-yn button{border-right:0;border-bottom:1.5px solid var(--line)}
+  .ats-af .ats-yn button:last-child{border-bottom:0}
+  .ats-af-nav{gap:10px}
+  .ats-af-next,.ats-af-submit{flex:1;padding:16px 20px;margin-left:0}
+  .ats-af-back{padding:15px 16px}
+  .ats-af-done-acts{flex-direction:column;align-items:stretch}
 }
 @media (max-width:400px){
-  .ats-lp-wrap,.ats-lp-nav-in,.ats-lp-hero,.ats-jp-nav-in,.ats-jp-hero-in,.ats-jp-main,.ats-jp-apply-in{padding-left:15px;padding-right:15px}
+  .ats-lp-wrap,.ats-lp-nav-in,.ats-lp-hero-in,.ats-jp-nav-in,.ats-jp-hero-in,.ats-jp-main,.ats-jp-apply-in{padding-left:16px;padding-right:16px}
   .ats-lp-foot-cols{grid-template-columns:1fr}
   .ats-jp-share span{display:none}
-  .ats-af{padding:22px 16px}
-  .ats-lp-trust{gap:12px;font-size:12px}
+  .ats-jp-share{padding:12px}
+  .ats-af{padding:24px 18px}
+  .ats-af-nextlbl{display:none}
+  .ats-lp-trust{gap:14px}
 }
-
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
 @media(max-width:720px){
