@@ -33,6 +33,13 @@ function sbSetUploadOrg(o) { SB_UPLOAD_ORG = o || null; }
 async function sbDelete(table, filter) { if (!sbEnabled) return false; try { const r = await sbFetch(SB_URL + "/rest/v1/" + table + "?" + filter, "DELETE", () => ({ ...sbHead(), Prefer: "return=minimal" }), undefined); return r.ok; } catch (e) { return false; } }
 async function sbDeleteFile(bucket, path) { if (!sbEnabled || !path) return false; try { const r = await fetch(SB_URL + "/storage/v1/object/" + bucket + "/" + path.split("/").map(encodeURIComponent).join("/"), { method: "DELETE", headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_TOKEN } }); return r.ok; } catch (e) { return false; } }
 function cvPathFromUrl(url) { if (!url) return null; const m = String(url).split("/object/public/cv/")[1]; return m ? m.split("/").map(decodeURIComponent).join("/") : null; }
+function downloadCSV(rows, name) {
+  const esc = (v) => { const t = String(v == null ? "" : v); return /[",;\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const csv = "\uFEFF" + rows.map((r) => r.map(esc).join(";")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a"); a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 function downloadJSON(filename, obj) { try { const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); } catch (e) {} }
 async function eraseCandidate(c, D) { try { if (String(c.id).indexOf("sb_") === 0) await sbDelete("applications", "id=eq." + c.id.slice(3)); const files = Object.values(c.answers || {}).filter((v) => v && typeof v === "object" && v.url).map((v) => cvPathFromUrl(v.url)).filter(Boolean); for (const p of files) await sbDeleteFile("cv", p); } catch (e) {} D({ type: "REMOVE_CANDIDATE", id: c.id }); }
 function jobRow(job, org, published) { return { slug: job.slug, title: job.title, company: org.companyName, org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version, annons: job.annons, team: job.team }, published, org_id: SB_ORG }; }
@@ -262,7 +269,11 @@ const JOB_STATUS = { open: "Öppen", paused: "Pausad", closed: "Tillsatt", archi
 function makeJob(id, title, team, slug, tmplId, extra = {}) {
   return {
     id, title, team, slug, company: extra.company || "Nordpuls AB",
-    status: "open", published: false, createdAt: Date.now(),
+    publicTitle: title, ref: "REK-" + String(id).slice(-4).toUpperCase(),
+    unit: "", extent: "Heltid", category: "", priority: "normal",
+    ownerId: null, managerId: null, teamIds: [], tags: [], internal: false,
+    _m: 2, status: "draft", published: false, createdAt: Date.now(), updatedAt: Date.now(),
+    publishedAt: null, closedAt: null, closedReason: "", hiredId: null, activity: [],
     criteria: TEMPLATES.find((t) => t.id === tmplId).build(),
     profiles: [{ id: "std", name: "Standard", weights: {} }, ...(extra.profiles || [])], activeProfileId: "std",
     rules: extra.rules || [], autoRules: extra.autoRules || [], autoRejectBelow: extra.autoRejectBelow ?? 40,
@@ -303,7 +314,7 @@ function statusLabel(s) { return STAGES.find((x) => x.id === s)?.label || s; }
 function timeAgo(ts) { const h = Math.round((Date.now() - ts) / 3600000); if (h < 1) return "nyss"; if (h < 24) return h + " h sedan"; return Math.round(h / 24) + " d sedan"; }
 function initials(name) { return (name || "?").split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase(); }
 function tierOf(c) { return c.knockout ? "ko" : c.total >= 78 ? "high" : c.total >= 55 ? "mid" : "low"; }
-function can(role, what) { const R = { recruiter: ["decide", "edit", "comment", "export", "message", "vote"], admin: ["decide", "edit", "comment", "export", "message", "vote", "settings"], manager: ["vote", "comment", "export", "message", "decide"], viewer: ["export"] }; return (R[role] || []).includes(what); }
+function can(role, what) { const R = { recruiter: ["decide", "edit", "comment", "export", "message", "vote", "publish", "tags"], admin: ["decide", "edit", "comment", "export", "message", "vote", "settings", "publish", "approve", "tags", "delete_job"], manager: ["vote", "comment", "export", "message", "decide", "approve"], viewer: ["export"] }; return (R[role] || []).includes(what); }
 const TL_LABEL = { application_received: "Ansökan mottagen", score_computed: "Matchning beräknad", knockout: "Diskvalificerad", status_change: "Status ändrad", message_sent: "Mejl köat", message_delivered: "Mejl skickat", interview_booked: "Intervju bokad", interview_cancelled: "Intervju avbokad", note: "Kommentar", completion_requested: "Komplettering begärd", auto_rule: "Auto-regel", vote: "Team review", hired: "Anställd" };
 const validEmail = (e) => !!e && /.+@.+\..+/.test(e);
 const MSG_LABEL = { queued: "Köad", sending: "Skickar…", sent: "Skickad", failed: "Fel" };
@@ -431,6 +442,41 @@ function reducer(state, ac) {
       const s2 = mapCand(state, ac.id, (c) => addTL(c, ac.trigger === "completion" ? "completion_requested" : "message_sent", `${msg.subject}${msg.status === "failed" ? " · FEL" : " · köad"}`, who));
       return { ...s2, messages: [msg, ...state.messages], log: withLog(s2, "Mejl", `${msg.trigger} · ${cand.name}`) };
     }
+    case "JOB_PATCH": { const jj = state.jobs.find((j) => j.id === ac.id); if (!jj || isReadonly(jj)) return state; const s2 = { ...state, jobs: state.jobs.map((j) => j.id === ac.id ? jlog({ ...j, ...ac.patch }, ac.kind || "edited", ac.note || "", who) : j) }; return { ...s2, log: withLog(s2, JOB_ACT[ac.kind || "edited"], jj.title) }; }
+    case "JOB_STATUS": {
+      const jj = state.jobs.find((j) => j.id === ac.id); if (!jj) return state;
+      if (!canMove(jj.status, ac.status)) return state;
+      const L = JOB_LIFE[ac.status];
+      const patch = { status: ac.status };
+      if (ac.status === "published") { patch.publishedAt = jj.publishedAt || Date.now(); patch.published = true; }
+      if (!L.public) patch.published = false;
+      if (["closed", "filled", "cancelled"].includes(ac.status)) patch.closedAt = Date.now();
+      if (L.reason || ac.reason) patch.closedReason = ac.reason || "";
+      if (ac.status === "filled" && ac.hiredId) patch.hiredId = ac.hiredId;
+      const note = JOB_LIFE[jj.status].label + " → " + L.label + (ac.reason ? " · " + ac.reason : "");
+      const s2 = { ...state, jobs: state.jobs.map((j) => j.id === ac.id ? jlog({ ...j, ...patch }, "status", note, who) : j) };
+      return { ...s2, log: withLog(s2, "Jobbstatus", jj.title + " · " + L.label) };
+    }
+    case "JOB_BULK": {
+      const ids = new Set(ac.ids);
+      const jobs = state.jobs.map((j) => {
+        if (!ids.has(j.id)) return j;
+        if (isReadonly(j) && ac.op !== "restore") return j;
+        if (ac.op === "status") { if (!canMove(j.status, ac.value)) return j; const L = JOB_LIFE[ac.value]; return jlog({ ...j, status: ac.value, published: !!L.public, ...(ac.value === "published" ? { publishedAt: j.publishedAt || Date.now() } : {}) }, "bulk", "Status → " + L.label, who); }
+        if (ac.op === "owner") return jlog({ ...j, ownerId: ac.value || null }, "bulk", "Ansvarig ändrad", who);
+        if (ac.op === "tag_add") return j.tags.includes(ac.value) ? j : jlog({ ...j, tags: [...j.tags, ac.value] }, "bulk", "Tagg tillagd", who);
+        if (ac.op === "tag_del") return jlog({ ...j, tags: j.tags.filter((t) => t !== ac.value) }, "bulk", "Tagg borttagen", who);
+        if (ac.op === "restore") return jlog({ ...j, status: "draft", published: false }, "restored", "Återställd från arkivet", who);
+        return j;
+      });
+      const s2 = { ...state, jobs };
+      return { ...s2, log: withLog(s2, "Bulkåtgärd", ac.ids.length + " tjänster") };
+    }
+    case "TAG_ADD": { const n = normTag(ac.name); if (!n || state.tags.some((t) => normTag(t.name) === n)) return state; return { ...state, tags: [...state.tags, { id: "t" + uid(), name: ac.name.trim(), color: ac.color || TAG_COLORS[state.tags.length % TAG_COLORS.length], archived: false }] }; }
+    case "TAG_SET": return { ...state, tags: state.tags.map((t) => t.id === ac.id ? { ...t, ...ac.patch } : t) };
+    case "TAG_DEL": return { ...state, tags: state.tags.filter((t) => t.id !== ac.id), jobs: state.jobs.map((j) => ({ ...j, tags: j.tags.filter((x) => x !== ac.id) })) };
+    case "VIEW_ADD": return { ...state, jobViews: [...state.jobViews, { id: "v" + uid(), name: ac.name, f: ac.f }] };
+    case "VIEW_DEL": return { ...state, jobViews: state.jobViews.filter((v) => v.id !== ac.id) };
     case "SET_INTERVIEW": {
       const cand = state.candidates.find((c) => c.id === ac.id); if (!cand) return state;
       const job = state.jobs.find((j) => j.id === cand.jobId); if (!job) return state;
@@ -474,7 +520,19 @@ function reducer(state, ac) {
     case "SET_ACTIVE_JOB": return { ...state, activeJobId: ac.id };
     case "SET_JOB_STATUS": { const jj = state.jobs.find((j) => j.id === ac.jobId); const s2 = { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? { ...j, status: ac.status } : j) }; return { ...s2, log: withLog(s2, "Tjänst: " + (JOB_STATUS[ac.status] || ac.status), jj ? jj.title : "") }; }
     case "SET_JOB_PUBLISHED": return { ...state, jobs: state.jobs.map((j) => j.id === ac.jobId ? { ...j, published: ac.published } : j) };
-    case "DUPLICATE_JOB": { const src = state.jobs.find((j) => j.id === ac.jobId); if (!src) return state; const nid = "j" + uid(); const nslug = (src.title || "tjanst").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 22) + "-" + Math.random().toString(36).slice(2, 6); const who2 = state.team.find((r) => r.id === who)?.name || "—"; const clone = { ...JSON.parse(JSON.stringify(src)), id: nid, slug: nslug, title: src.title + " (kopia)", status: "open", published: false, createdAt: Date.now(), stats: { started: 0, submitted: 0 }, version: 1, versions: [{ v: 1, at: Date.now(), by: who2, note: "Duplicerad från " + src.title }] }; const s2 = { ...state, jobs: [...state.jobs, clone] }; return { ...s2, log: withLog(s2, "Tjänst duplicerad", clone.title) }; }
+    case "DUPLICATE_JOB": { const src = state.jobs.find((j) => j.id === ac.jobId); if (!src) return state; const o = ac.opts || {}; const nid = "j" + uid(); const nslug = (src.title || "tjanst").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 22) + "-" + Math.random().toString(36).slice(2, 6); const who2 = state.team.find((r) => r.id === who)?.name || "—"; const c0 = JSON.parse(JSON.stringify(src));
+            const clone = migrateJob({ ...c0, id: nid, slug: nslug, title: (ac.name || src.title + " (kopia)"), publicTitle: (ac.name || src.title + " (kopia)"), ref: "REK-" + nid.slice(-4).toUpperCase(),
+              status: "draft", published: false, createdAt: Date.now(), updatedAt: Date.now(), publishedAt: null, closedAt: null, closedReason: "", hiredId: null,
+              stats: { started: 0, submitted: 0 }, version: 1, versions: [{ v: 1, at: Date.now(), by: who2, note: "Duplicerad från " + src.title }],
+              activity: [{ id: "a" + uid(), at: Date.now(), kind: "duplicated", note: "Duplicerad från " + src.title, by: who2, byId: who }],
+              annons: o.annons === false ? { ...c0.annons, description: "", requirements: [], meriter: [], faq: [] } : c0.annons,
+              criteria: o.form === false ? [] : c0.criteria,
+              profiles: o.scoring === false ? [{ id: "std", name: "Standard", weights: {} }] : c0.profiles,
+              rules: o.knockout === false ? [] : c0.rules,
+              autoRules: o.automations === false ? [] : c0.autoRules,
+              tags: o.tags === false ? [] : c0.tags,
+              ownerId: o.team === false ? null : c0.ownerId, managerId: o.team === false ? null : c0.managerId, teamIds: o.team === false ? [] : (c0.teamIds || []),
+            }); const s2 = { ...state, jobs: [...state.jobs, clone] }; return { ...s2, log: withLog(s2, "Tjänst duplicerad", clone.title) }; }
     case "DELETE_JOB": { const jj = state.jobs.find((j) => j.id === ac.jobId); const jobs = state.jobs.filter((j) => j.id !== ac.jobId); const candidates = state.candidates.filter((c) => c.jobId !== ac.jobId); const activeJobId = state.activeJobId === ac.jobId ? (jobs[0] ? jobs[0].id : null) : state.activeJobId; const s2 = { ...state, jobs, candidates, activeJobId }; return { ...s2, log: withLog(s2, "Tjänst raderad (GDPR)", jj ? jj.title : "") }; }
     case "SET_USER": return { ...state, currentUserId: ac.id };
     case "SET_ME": { const has = state.team.some((m) => m.id === ac.id); const team = has ? state.team.map((m) => m.id === ac.id ? { ...m, role: ac.role || m.role, email: ac.email || m.email, name: m.name || ac.email } : m) : [...state.team, { id: ac.id, name: ac.name || (ac.email ? ac.email.split("@")[0] : "Jag"), email: ac.email, role: ac.role || "admin", initials: (((ac.name || ac.email || "J")[0]) || "J").toUpperCase() }]; return { ...state, currentUserId: ac.id, team }; }
@@ -512,7 +570,7 @@ function reducer(state, ac) {
     case "UPDATE_TEMPLATE": return { ...state, templates: state.templates.map((t) => t.id === ac.id ? { ...t, ...ac.patch } : t) };
     case "REMOVE_TEMPLATE": return { ...state, templates: state.templates.filter((t) => t.id !== ac.id) };
     case "SET_ORG": return { ...state, org: { ...state.org, ...ac.patch } };
-    case "LOAD_STATE": { const d = ac.data || {}; const tpl = d.templates ? [...d.templates, ...DEFAULT_TEMPLATES.filter((t) => !d.templates.some((x) => x.trigger === t.trigger))] : state.templates; return { ...state, career: d.career || null, jobs: d.jobs || [], candidates: d.candidates || [], org: d.org || state.org, templates: tpl, messages: d.messages || [], log: d.log || state.log, team: d.team || state.team, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
+    case "LOAD_STATE": { const d = ac.data || {}; const tpl = d.templates ? [...d.templates, ...DEFAULT_TEMPLATES.filter((t) => !d.templates.some((x) => x.trigger === t.trigger))] : state.templates; return { ...state, career: d.career || null, tags: d.tags || [], jobViews: d.jobViews || [], jobs: (d.jobs || []).map(migrateJob), candidates: d.candidates || [], org: d.org || state.org, templates: tpl, messages: d.messages || [], log: d.log || state.log, team: d.team || state.team, activeJobId: d.activeJobId || (d.jobs && d.jobs[0] && d.jobs[0].id) || null }; }
     case "SYNC_APPLICATIONS": { const job = state.jobs.find((j) => j.slug === ac.slug); if (!job) return state; const existing = new Set(state.candidates.map((c) => c.id)); const add = (ac.rows || []).filter((r) => !existing.has("sb_" + r.id)).map((r) => ({ id: "sb_" + r.id, jobId: job.id, name: r.name || "Namnlös", email: r.email || null, phone: r.phone || null, answers: r.answers || {}, source: r.source || "Länk", status: "new", managerStatus: null, starred: false, rating: 0, comments: [], reviews: {}, reason: null, interviewTime: null, consentAt: r.consent_at ? new Date(r.consent_at).getTime() : null, formVersion: job.version, appliedAt: r.created_at ? new Date(r.created_at).getTime() : Date.now(), timeline: [{ id: uid(), kind: "application_received", detail: "Ansökan mottagen via " + (r.source || "länk"), at: Date.now(), actor: "System" }] })); if (!add.length) return state; return { ...state, candidates: [...add, ...state.candidates], jobs: state.jobs.map((j) => j.id === job.id ? { ...j, stats: { started: j.stats.started + add.length, submitted: j.stats.submitted + add.length } } : j) }; }
     default: return state;
   }
@@ -520,7 +578,7 @@ function reducer(state, ac) {
 const INITIAL = {
   jobs: JOBS0.map((j) => ({ ...j, autopilotOn: false })), activeJobId: null, candidates: CANDIDATES0, team: [], currentUserId: null,
   history: [], templates: DEFAULT_TEMPLATES, messages: [],
-  career: null,
+  career: null, tags: [], jobViews: [],
   org: { companyName: "Nordpuls AB", hrName: "Mona Berg", hrEmail: "mona.berg@nordpuls.se", fromEmail: "noreply@nordpuls.se", appUrl: "https://rekyl.app", defaultInterviewTime: "onsdag 14:00" },
   log: [{ id: uid(), at: Date.now() - 3600e3, who: "System", action: "Tjänst öppnad", detail: "Account Manager · B2B" }],
 };
@@ -885,6 +943,8 @@ function PublicApply({ slug, localJobs, localOrg }) {
   };
   const initial = (company || "R").trim()[0].toUpperCase();
   const hasBody = !!(a.description || (a.requirements && a.requirements.length) || (a.meriter && a.meriter.length));
+  const pubStatus = (remote && remote.form && remote.form.status) || "published";
+  const open = pubStatus === "published";
 
   return <div className="ats-root"><Style /><div className="ats-jp">
     <header className={"ats-jp-nav" + (scrolled ? " is-stuck" : "")}>
@@ -905,7 +965,7 @@ function PublicApply({ slug, localJobs, localOrg }) {
           <h1>{job.title}</h1>
           {a.pitch && <p className="ats-jp-pitch">{a.pitch}</p>}
           <div className="ats-jp-hero-acts">
-            <button className="ats-jp-cta is-lg" onClick={scrollForm}>Ansök till tjänsten <ArrowRight size={18} /></button>
+            {open ? <button className="ats-jp-cta is-lg" onClick={scrollForm}>Ansök till tjänsten <ArrowRight size={18} /></button> : <span className="ats-jp-closed"><PauseCircle size={16} /> Tar inte emot fler ansökningar</span>}
             {a.deadline && <span className="ats-jp-deadline"><Bell size={15} /> Sök senast {a.deadline}</span>}
           </div>
         </div>
@@ -986,7 +1046,8 @@ function PublicApply({ slug, localJobs, localOrg }) {
 
     <section className="ats-jp-apply" id="apply">
       <div className="ats-jp-apply-in">
-        <ApplyForm job={job} org={{ ...org, companyName: company }} onSubmit={submitFn} source={source} annons={a} site={site} />
+        {!open ? <div className="ats-af-done"><div className="ats-af-done-mark" style={{ background: "var(--muted)" }}><PauseCircle size={30} /></div><h2>Tjänsten tar inte emot fler ansökningar</h2><p>Ansökningstiden är pausad eller avslutad. Titta gärna in igen, eller se våra andra lediga tjänster.</p>{site && <div className="ats-af-done-acts"><button className="ats-lp-cta" onClick={() => navTo("/karriar/" + site.slug + "/jobb")}>Se andra lediga jobb <ArrowRight size={16} /></button></div>}</div>
+        : <ApplyForm job={job} org={{ ...org, companyName: company }} onSubmit={submitFn} source={source} annons={a} site={site} />}
       </div>
     </section>
 
@@ -1000,7 +1061,7 @@ function PublicApply({ slug, localJobs, localOrg }) {
       </div>
     </footer>
 
-    {!atForm && <div className="ats-jp-mobar">
+    {!atForm && open && <div className="ats-jp-mobar">
       <div><b>{job.title}</b><span>{a.location || company}</span></div>
       <button className="ats-jp-cta is-sm" onClick={scrollForm}>Ansök</button>
     </div>}
@@ -1205,6 +1266,69 @@ function NewJobModal({ onClose, onCreate }) { const [title, setTitle] = useState
 function ReasonModal({ onClose, onPick }) { return <Modal title="Anledning till avslag" onClose={onClose}><div className="ats-reasons">{REASONS.map((r) => <button key={r} className="ats-reason" onClick={() => onPick(r)}>{r}</button>)}</div><p className="ats-reason-note">Anledningen sparas i kandidatens timeline och i statistiken, och används i avslagsmejlet ({"{{rejectionReason}}"}).</p></Modal>; }
 function PrintModal({ doc, onClose }) { return <div className="ats-printwrap"><div className="ats-print-toolbar"><span>{doc.title}</span><div><button className="ats-ghost" onClick={() => window.print()}><Download size={15} /> Skriv ut / PDF</button><button className="ats-ghost" onClick={onClose}><X size={15} /> Stäng</button></div></div><div className="ats-printdoc">{doc.node}</div></div>; }
 
+/* Publiceringskontroll — blockerar publicering om obligatoriska uppgifter saknas. */
+function publishBlockers(job) {
+  const a = job.annons || {};
+  const out = [];
+  if (!job.title || job.title.trim().length < 2) out.push("Titel saknas");
+  if (!a.description || a.description.trim().length < 20) out.push("Om rollen saknas (minst 20 tecken)");
+  if (!a.location && !a.workmode) out.push("Plats eller arbetsform måste anges");
+  if (!a.employment) out.push("Anställningsform saknas");
+  if (!job.criteria || job.criteria.length === 0) out.push("Ansökningsformuläret är tomt");
+  if (!getPages(job).length) out.push("Formuläret saknar steg");
+  if (!a.contact || !validEmail(a.contact.email || "")) out.push("Kontaktperson med giltig e-post saknas");
+  if (!a.deadline) out.push("Sista ansökningsdag saknas");
+  return out;
+}
+/* ===================== JOBBLIVSCYKEL ===================== */
+/* Varje status har: innebörd, om jobbet syns publikt, om det tar emot ansökningar,
+ * tillåtna nästa steg, vilken behörighet som krävs och om anledning måste anges. */
+const JOB_LIFE = {
+  draft:     { label: "Utkast",                tone: "muted",  public: false, accepts: false, next: ["pending", "published", "cancelled", "archived"], perm: "edit" },
+  pending:   { label: "Väntar på godkännande", tone: "amber",  public: false, accepts: false, next: ["approved", "draft", "cancelled"], perm: "edit" },
+  approved:  { label: "Godkänd",               tone: "blue",   public: false, accepts: false, next: ["scheduled", "published", "draft"], perm: "approve" },
+  scheduled: { label: "Schemalagd",            tone: "blue",   public: false, accepts: false, next: ["published", "paused", "cancelled"], perm: "publish" },
+  published: { label: "Publicerad",            tone: "petrol", public: true,  accepts: true,  next: ["paused", "closed", "filled", "cancelled"], perm: "publish" },
+  paused:    { label: "Pausad",                tone: "amber",  public: true,  accepts: false, next: ["published", "closed", "cancelled"], perm: "publish" },
+  closed:    { label: "Stängd",                tone: "muted",  public: false, accepts: false, next: ["published", "filled", "archived"], perm: "publish" },
+  filled:    { label: "Tillsatt",              tone: "gold",   public: false, accepts: false, next: ["archived", "closed"], perm: "decide" },
+  cancelled: { label: "Avbruten",              tone: "brick",  public: false, accepts: false, next: ["draft", "archived"], perm: "edit", reason: true },
+  archived:  { label: "Arkiverad",             tone: "muted",  public: false, accepts: false, next: ["draft"], perm: "edit", readonly: true },
+};
+const JOB_PRIO = { low: "Låg", normal: "Normal", high: "Hög", urgent: "Brådskande" };
+const canMove = (from, to) => !!(JOB_LIFE[from] && JOB_LIFE[from].next.includes(to));
+const isReadonly = (j) => !!(JOB_LIFE[j.status] && JOB_LIFE[j.status].readonly);
+const acceptsApps = (j) => !!(JOB_LIFE[j.status] && JOB_LIFE[j.status].accepts) && !j.internal;
+const isPublic = (j) => !!(JOB_LIFE[j.status] && JOB_LIFE[j.status].public) && !j.internal;
+
+/* Aktivitetslogg per jobb — överlever pipeline- och konfigurationsändringar. */
+const JOB_ACT = { created: "Jobb skapat", edited: "Uppgifter ändrade", status: "Status ändrad", published: "Publicerad", paused: "Pausad", form: "Formulär ändrat", annons: "Jobbannons ändrad", scoring: "Scoring ändrad", duplicated: "Duplicerad", archived: "Arkiverad", restored: "Återställd", bulk: "Bulkåtgärd", owner: "Ansvarig ändrad", tags: "Taggar ändrade", hired: "Kandidat anställd" };
+function jlog(job, kind, note, who) {
+  const e = { id: "a" + uid(), at: Date.now(), kind, note: note || "", by: (_TEAM.find((m) => m.id === who) || {}).name || "System", byId: who || null };
+  return { ...job, updatedAt: Date.now(), activity: [e, ...(job.activity || [])].slice(0, 200) };
+}
+
+/* Migrering: gamla jobb (open/paused/closed/archived) får full modell utan dataförlust. */
+const OLD_STATUS = { open: "published", paused: "paused", closed: "filled", archived: "archived" };
+function migrateJob(j) {
+  /* _m = modellversion. Utan den är jobbet skapat före livscykeln och måste mappas om:
+   * gamla "closed" betydde Tillsatt, medan nya "closed" betyder Stängd. */
+  const legacy = !(j._m >= 2);
+  const status = legacy ? (OLD_STATUS[j.status] || (JOB_LIFE[j.status] ? j.status : "draft")) : (JOB_LIFE[j.status] ? j.status : "draft");
+  return {
+    publicTitle: "", ref: "", unit: "", extent: "", category: "", priority: "normal",
+    ownerId: null, managerId: null, teamIds: [], tags: [], internal: false,
+    publishedAt: null, closedAt: null, closedReason: "", hiredId: null, activity: [],
+    updatedAt: j.createdAt || Date.now(),
+    ...j,
+    _m: 2,
+    status,
+    publicTitle: j.publicTitle || j.title,
+    ref: j.ref || "REK-" + String(j.id || uid()).slice(-4).toUpperCase(),
+  };
+}
+const TAG_COLORS = ["#0B5C52", "#D96F4B", "#B8763A", "#2C5F86", "#7A3E8C", "#C2513A", "#5E655F"];
+const normTag = (v) => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
 /* ===================== KARRIARSIDOR ===================== *//* ---- Karriärsidebyggare (i appen) ---- */
 function BlockEditor({ b, pageId, D }) {
   const set = (patch) => D({ type: "CAREER_BLOCK_SET", pageId, id: b.id, patch });
@@ -2441,68 +2565,301 @@ function CalendarView({ state, D, me, showToast, setDetailId }) {
 }
 /* ===================== TJANSTER ===================== */
 function JobsView({ state, D, me, showToast, setView, allScored, setNewJob }) {
-  const [filter, setFilter] = useState("all");
+  const [tab, setTab] = useState("active");
   const [q, setQ] = useState("");
+  const [f, setF] = useState({ status: "", tag: "", owner: "", loc: "", dep: "", prio: "" });
+  const [sort, setSort] = useState("updated");
+  const [mode, setMode] = useState("list");
+  const [sel, setSel] = useState([]);
+  const [bulk, setBulk] = useState(null);
+  const [bulkRes, setBulkRes] = useState(null);
+  const [dup, setDup] = useState(null);
+  const [dupOpts, setDupOpts] = useState({ annons: true, form: true, scoring: true, knockout: true, automations: true, team: true, tags: true });
+  const [statusFor, setStatusFor] = useState(null);
+  const [reason, setReason] = useState("");
+  const [nextStatus, setNextStatus] = useState("");
+  const [settingsFor, setSettingsFor] = useState(null);
+  const [actFor, setActFor] = useState(null);
+  const [actFilter, setActFilter] = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
+  const [viewName, setViewName] = useState("");
+  const [tagPanel, setTagPanel] = useState(false);
+  const [newTag, setNewTag] = useState("");
+
   const canEdit = can(me.role, "edit");
-  const isAdmin = me.role === "admin";
+  const canPub = can(me.role, "publish");
+  const canDel = can(me.role, "delete_job");
+  const canTags = can(me.role, "tags");
   const now = Date.now();
   const byId = useMemo(() => { const m = {}; allScored.forEach(({ job, list }) => { m[job.id] = list; }); return m; }, [allScored]);
-  const jobs = state.jobs.map((j) => {
+  const nameOf = (id) => (state.team.find((m) => m.id === id) || {}).name || null;
+  const tagOf = (id) => state.tags.find((t) => t.id === id);
+
+  const jobs = state.jobs.map(migrateJob).map((j) => {
     const list = byId[j.id] || [];
-    const created = j.createdAt || (j.versions && j.versions[0] && j.versions[0].at) || null;
-    return { ...j, status: j.status || "open", _n: list.length, _new: list.filter((c) => c.status === "new").length, _avg: list.length ? Math.round(list.reduce((x, c) => x + (c.total || 0), 0) / list.length) : 0, _hired: list.filter((c) => c.status === "hired").length, _days: created ? Math.max(0, Math.round((now - created) / 864e5)) : null };
+    return { ...j, _n: list.length, _new: list.filter((c) => c.status === "new").length,
+      _avg: list.length ? Math.round(list.reduce((x, c) => x + (c.total || 0), 0) / list.length) : 0,
+      _hired: list.filter((c) => c.status === "hired").length,
+      _days: j.createdAt ? Math.max(0, Math.round((now - j.createdAt) / 864e5)) : null,
+      _stage: STAGES.reduce((m, st) => ({ ...m, [st.id]: list.filter((c) => c.status === st.id).length }), {}) };
   });
-  const counts = { all: jobs.length }; ["open", "paused", "closed", "archived"].forEach((st) => counts[st] = jobs.filter((j) => j.status === st).length);
-  const shown = jobs
-    .filter((j) => filter === "all" ? true : j.status === filter)
-    .filter((j) => q.trim() ? j.title.toLowerCase().includes(q.toLowerCase()) : true)
-    .sort((a, b) => ((a.status === "archived" ? 1 : 0) - (b.status === "archived" ? 1 : 0)) || (b._new - a._new) || ((b._days || 0) - (a._days || 0)));
-  const openJob = (j, dest) => { D({ type: "SET_ACTIVE_JOB", id: j.id }); setView(dest || "dashboard"); };
-  const setStatus = (j, status) => { D({ type: "SET_JOB_STATUS", jobId: j.id, status }); showToast({ kind: "ok", msg: j.title + " · " + JOB_STATUS[status].toLowerCase() }); };
-  const togglePub = async (j, pub) => { D({ type: "SET_JOB_PUBLISHED", jobId: j.id, published: pub }); if (sbEnabled) { const ok = await sbUpsert("jobs", jobRow(j, state.org, pub)); showToast({ kind: ok ? "ok" : "warn", msg: ok ? (pub ? "Publicerad · länken är live" : "Avpublicerad · länken är nedtagen") : "Molnet svarar inte" }); } else showToast({ kind: "ok", msg: pub ? "Publicerad" : "Avpublicerad" }); };
-  const dupJob = (j) => { D({ type: "DUPLICATE_JOB", jobId: j.id }); showToast({ kind: "ok", msg: "Tjänst duplicerad" }); };
-  const doDelete = async (j) => { setConfirmDel(null); await deleteJobFull(j, state.candidates, D); showToast({ kind: "ok", msg: "Tjänsten och dess kandidater raderades" }); };
+  const inArchive = (j) => j.status === "archived";
+  const pool = jobs.filter((j) => (tab === "archive" ? inArchive(j) : !inArchive(j)));
+  const uniq = (k) => [...new Set(jobs.map((j) => j[k]).filter(Boolean))].sort();
+  const shown = pool
+    .filter((j) => !q.trim() || (j.title + " " + j.ref + " " + (j.team || "")).toLowerCase().includes(q.toLowerCase()))
+    .filter((j) => !f.status || j.status === f.status)
+    .filter((j) => !f.tag || j.tags.includes(f.tag))
+    .filter((j) => !f.owner || (f.owner === "none" ? !j.ownerId : j.ownerId === f.owner))
+    .filter((j) => !f.loc || (j.annons && j.annons.location) === f.loc)
+    .filter((j) => !f.dep || j.team === f.dep)
+    .filter((j) => !f.prio || j.priority === f.prio)
+    .sort((a, b) => sort === "updated" ? (b.updatedAt || 0) - (a.updatedAt || 0) : sort === "new" ? b._new - a._new : sort === "title" ? a.title.localeCompare(b.title, "sv") : (b._n - a._n));
+  const activeF = Object.entries(f).filter(([, v]) => v);
+  const clearF = () => { setF({ status: "", tag: "", owner: "", loc: "", dep: "", prio: "" }); setQ(""); };
+
+  const toggle = (id) => setSel((s2) => s2.includes(id) ? s2.filter((x) => x !== id) : [...s2, id]);
+  const allSel = shown.length > 0 && shown.every((j) => sel.includes(j.id));
+
+  const runBulk = (op, value) => {
+    const targets = jobs.filter((j) => sel.includes(j.id));
+    const blocked = targets.filter((j) => (isReadonly(j) && op !== "restore") || (op === "status" && !canMove(j.status, value)));
+    const okIds = targets.filter((j) => !blocked.includes(j)).map((j) => j.id);
+    if (okIds.length) D({ type: "JOB_BULK", ids: okIds, op, value });
+    setBulk(null);
+    setBulkRes({ ok: okIds.length, blocked: blocked.map((j) => ({ title: j.title, why: isReadonly(j) ? "Arkiverad — återställ först" : "Övergången " + JOB_LIFE[j.status].label + " → " + (JOB_LIFE[value] || {}).label + " är inte tillåten" })) });
+    setSel([]);
+  };
+  const doStatus = (j, st) => {
+    if (JOB_LIFE[st].reason && !reason.trim()) return;
+    D({ type: "JOB_STATUS", id: j.id, status: st, reason: reason.trim() });
+    setStatusFor(null); setReason(""); setNextStatus("");
+    showToast({ kind: "ok", msg: j.title + " · " + JOB_LIFE[st].label });
+  };
+  const doDup = () => { D({ type: "DUPLICATE_JOB", jobId: dup.id, opts: dupOpts }); setDup(null); showToast({ kind: "ok", msg: "Duplicerad som utkast" }); };
+  const openJob = (j, dest) => { D({ type: "SET_ACTIVE_JOB", id: j.id }); setView(dest); };
+  const exportSel = () => {
+    const rows = [["Referens", "Titel", "Status", "Avdelning", "Plats", "Ansvarig", "Kandidater", "Nya", "Snitt", "Anställda"]];
+    jobs.filter((j) => sel.includes(j.id)).forEach((j) => rows.push([j.ref, j.title, JOB_LIFE[j.status].label, j.team || "", (j.annons && j.annons.location) || "", nameOf(j.ownerId) || "", j._n, j._new, j._avg + "%", j._hired]));
+    downloadCSV(rows, "tjanster.csv");
+    showToast({ kind: "ok", msg: sel.length + " tjänster exporterade" });
+  };
+
+  const Badge = ({ j }) => <span className={"ats-jobbadge is-" + JOB_LIFE[j.status].tone}>{JOB_LIFE[j.status].label}</span>;
+  const Tags = ({ j }) => <>{j.tags.map((id) => { const t = tagOf(id); return t ? <span key={id} className="ats-jtag" style={{ background: t.color + "1f", color: t.color }}>{t.name}</span> : null; })}</>;
+  const Sel = ({ v, on, opts, ph }) => <select className="ats-select is-sm" value={v} onChange={(e) => on(e.target.value)} aria-label={ph}><option value="">{ph}</option>{opts.map((o) => <option key={o.v || o} value={o.v || o}>{o.l || o}</option>)}</select>;
+
+  const Menu2 = ({ j }) => <Menu align="right" trigger={<button className="ats-ghost is-sm ats-jobcard-more" aria-label="Fler åtgärder"><Settings2 size={15} /></button>}>
+    <button className="ats-menu-item" onClick={() => setSettingsFor(j)}><SlidersHorizontal size={14} /> Inställningar</button>
+    <button className="ats-menu-item" onClick={() => setActFor(j)}><History size={14} /> Aktivitet</button>
+    <div className="ats-menu-sep" />
+    {canPub && <div className="ats-menu-label">Byt status</div>}
+    {canPub && JOB_LIFE[j.status].next.map((st) => <button key={st} className="ats-menu-item" onClick={() => { setStatusFor(j); setNextStatus(st); setReason(""); }}>{JOB_LIFE[st].label}</button>)}
+    <div className="ats-menu-sep" />
+    {canEdit && <button className="ats-menu-item" onClick={() => { setDup(j); setDupOpts({ annons: true, form: true, scoring: true, knockout: true, automations: true, team: true, tags: true }); }}><Copy size={14} /> Duplicera</button>}
+    {canDel && <button className="ats-menu-item is-danger" onClick={() => setConfirmDel(j)}><Trash2 size={14} /> Radera</button>}
+  </Menu>;
+
   return (
     <div className="ats-view">
-      <PageHeader title="Tjänster" meta={<><span>{jobs.length} totalt</span><Dot /><span>{counts.open} öppna</span></>} right={canEdit && <button className="ats-btn-primary is-sm" onClick={() => setNewJob(true)}><Plus size={15} /> Ny tjänst</button>} />
-      <div className="ats-tabs">{[["all", "Alla"], ["open", "Öppna"], ["paused", "Pausade"], ["closed", "Tillsatta"], ["archived", "Arkiverade"]].map(([id, label]) => <button key={id} className={"ats-tab" + (filter === id ? " is-on" : "")} onClick={() => setFilter(id)}>{label}<span className="ats-tab-n">{counts[id] || 0}</span></button>)}</div>
-      <div className="ats-jobs-tools"><div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sök tjänst…" /></div></div>
-      {shown.length === 0 ? <div className="ats-col-empty" style={{ padding: 40 }}>Inga tjänster i denna vy.{filter === "all" && canEdit && <> Skapa din första med <b>Ny tjänst</b>.</>}</div>
-        : <div className="ats-joblist">{shown.map((j) => <div key={j.id} className={"ats-jobcard is-" + j.status}>
-          <div className="ats-jobcard-main">
-            <div className="ats-jobcard-top">
-              <button className="ats-jobcard-title" onClick={() => openJob(j, "queue")}>{j.title}</button>
-              <span className={"ats-jobbadge is-" + j.status}>{JOB_STATUS[j.status]}</span>
-              {j.published ? <span className="ats-jobbadge is-pub"><Globe size={11} /> Publicerad</span> : <span className="ats-jobbadge is-unpub">Ej publicerad</span>}
+      <PageHeader title="Tjänster" meta={<><span>{jobs.filter((j) => !inArchive(j)).length} aktiva</span><Dot /><span>{jobs.filter(inArchive).length} arkiverade</span></>}
+        right={<>{canTags && <button className="ats-ghost is-sm" onClick={() => setTagPanel(true)}><Tag size={15} /> Taggar</button>}
+          {canEdit && <button className="ats-btn-primary is-sm" onClick={() => setNewJob(true)}><Plus size={15} /> Ny tjänst</button>}</>} />
+
+      <div className="ats-tabs">
+        <button className={"ats-tab" + (tab === "active" ? " is-on" : "")} onClick={() => { setTab("active"); setSel([]); }}>Aktiva<span className="ats-tab-n">{jobs.filter((j) => !inArchive(j)).length}</span></button>
+        <button className={"ats-tab" + (tab === "archive" ? " is-on" : "")} onClick={() => { setTab("archive"); setSel([]); }}>Arkiv<span className="ats-tab-n">{jobs.filter(inArchive).length}</span></button>
+      </div>
+
+      <div className="ats-jfilters">
+        <div className="ats-search"><Search size={15} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Sök titel eller referens…" /></div>
+        <Sel v={f.status} on={(v) => setF({ ...f, status: v })} opts={Object.keys(JOB_LIFE).filter((k) => tab === "archive" ? k === "archived" : k !== "archived").map((k) => ({ v: k, l: JOB_LIFE[k].label }))} ph="Alla statusar" />
+        {state.tags.length > 0 && <Sel v={f.tag} on={(v) => setF({ ...f, tag: v })} opts={state.tags.filter((t) => !t.archived).map((t) => ({ v: t.id, l: t.name }))} ph="Alla taggar" />}
+        <Sel v={f.owner} on={(v) => setF({ ...f, owner: v })} opts={[{ v: "none", l: "Utan ansvarig" }, ...state.team.map((m) => ({ v: m.id, l: m.name }))]} ph="Alla ansvariga" />
+        {uniq("team").length > 0 && <Sel v={f.dep} on={(v) => setF({ ...f, dep: v })} opts={uniq("team")} ph="Alla avdelningar" />}
+        <Sel v={f.prio} on={(v) => setF({ ...f, prio: v })} opts={Object.entries(JOB_PRIO).map(([v, l]) => ({ v, l }))} ph="Alla prioriteter" />
+        <select className="ats-select is-sm" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sortering">
+          <option value="updated">Senast ändrad</option><option value="new">Flest i kö</option><option value="cands">Flest kandidater</option><option value="title">Titel</option>
+        </select>
+        <div className="ats-jmode">
+          <button className={mode === "list" ? "is-on" : ""} onClick={() => setMode("list")} aria-label="Listvy"><Layers size={14} /></button>
+          <button className={mode === "table" ? "is-on" : ""} onClick={() => setMode("table")} aria-label="Tabellvy"><ListChecks size={14} /></button>
+        </div>
+      </div>
+
+      {(activeF.length > 0 || q.trim()) && <div className="ats-cs-meta">
+        <span>{shown.length} träffar</span>
+        <div className="ats-cs-active">
+          {q.trim() && <button className="ats-cs-tag" onClick={() => setQ("")}>{q} <X size={13} /></button>}
+          {activeF.map(([k, v]) => <button key={k} className="ats-cs-tag" onClick={() => setF({ ...f, [k]: "" })}>{k === "tag" ? (tagOf(v) || {}).name : k === "owner" ? (v === "none" ? "Utan ansvarig" : nameOf(v)) : k === "status" ? JOB_LIFE[v].label : k === "prio" ? JOB_PRIO[v] : v} <X size={13} /></button>)}
+          <button className="ats-cs-clear" onClick={clearF}>Rensa alla</button>
+          {canEdit && <div className="ats-jsave"><input className="ats-inp" value={viewName} onChange={(e) => setViewName(e.target.value)} placeholder="Spara som vy…" />
+            <button className="ats-ghost is-sm" disabled={!viewName.trim()} onClick={() => { D({ type: "VIEW_ADD", name: viewName.trim(), f: { ...f, q } }); setViewName(""); showToast({ kind: "ok", msg: "Vy sparad" }); }}><Plus size={13} /></button></div>}
+        </div>
+      </div>}
+
+      {state.jobViews.length > 0 && <div className="ats-jviews">{state.jobViews.map((v) => <span key={v.id} className="ats-jview">
+        <button onClick={() => { setF({ status: v.f.status || "", tag: v.f.tag || "", owner: v.f.owner || "", loc: v.f.loc || "", dep: v.f.dep || "", prio: v.f.prio || "" }); setQ(v.f.q || ""); }}>{v.name}</button>
+        {canEdit && <button className="ats-jview-x" onClick={() => D({ type: "VIEW_DEL", id: v.id })} aria-label="Ta bort vy"><X size={12} /></button>}
+      </span>)}</div>}
+
+      {sel.length > 0 && <div className="ats-bulkbar">
+        <b>{sel.length} valda</b>
+        {canPub && <button className="ats-ghost is-sm" onClick={() => setBulk("status")}><RotateCw size={13} /> Byt status</button>}
+        {canEdit && <button className="ats-ghost is-sm" onClick={() => setBulk("owner")}><UserCheck size={13} /> Ansvarig</button>}
+        {canTags && state.tags.length > 0 && <button className="ats-ghost is-sm" onClick={() => setBulk("tag_add")}><Tag size={13} /> Tagga</button>}
+        {tab === "archive" && canEdit && <button className="ats-ghost is-sm" onClick={() => runBulk("restore")}><RotateCcw size={13} /> Återställ</button>}
+        <button className="ats-ghost is-sm" onClick={exportSel}><Download size={13} /> Exportera</button>
+        <button className="ats-ghost is-sm" onClick={() => setSel([])}>Avmarkera</button>
+      </div>}
+
+      {shown.length === 0
+        ? <div className="ats-col-empty" style={{ padding: 44 }}>{tab === "archive" ? "Inga arkiverade tjänster." : (activeF.length || q.trim()) ? "Ingen tjänst matchar filtren." : canEdit ? "Inga tjänster än. Skapa din första med Ny tjänst." : "Inga tjänster."}
+          {(activeF.length > 0 || q.trim()) && <div style={{ marginTop: 16 }}><button className="ats-ghost" onClick={clearF}>Rensa filter</button></div>}</div>
+        : mode === "table"
+          ? <div className="ats-jtablewrap"><table className="ats-jtable">
+            <thead><tr>
+              <th><input type="checkbox" checked={allSel} onChange={() => setSel(allSel ? [] : shown.map((j) => j.id))} aria-label="Välj alla" /></th>
+              <th>Referens</th><th>Titel</th><th>Status</th><th>Avdelning</th><th>Ansvarig</th><th>Kandidater</th><th>I kö</th><th>Snitt</th><th /></tr></thead>
+            <tbody>{shown.map((j) => <tr key={j.id} className={sel.includes(j.id) ? "is-sel" : ""}>
+              <td><input type="checkbox" checked={sel.includes(j.id)} onChange={() => toggle(j.id)} aria-label={"Välj " + j.title} /></td>
+              <td className="ats-mono">{j.ref}</td>
+              <td><button className="ats-jobcard-title" onClick={() => openJob(j, "queue")}>{j.title}</button>{j.internal && <span className="ats-jobbadge is-blue">Intern</span>}</td>
+              <td><Badge j={j} /></td><td>{j.team || "—"}</td><td>{nameOf(j.ownerId) || <span className="ats-muted">Ingen</span>}</td>
+              <td>{j._n}</td><td>{j._new}</td><td>{j._avg}%</td>
+              <td><Menu2 j={j} /></td>
+            </tr>)}</tbody>
+          </table></div>
+          : <div className="ats-joblist">{shown.map((j) => <div key={j.id} className={"ats-jobcard is-" + j.status + (sel.includes(j.id) ? " is-sel" : "")}>
+            {canEdit && <input className="ats-jcheck" type="checkbox" checked={sel.includes(j.id)} onChange={() => toggle(j.id)} aria-label={"Välj " + j.title} />}
+            <div className="ats-jobcard-main">
+              <div className="ats-jobcard-top">
+                <button className="ats-jobcard-title" onClick={() => openJob(j, "queue")}>{j.title}</button>
+                <Badge j={j} />
+                {j.internal && <span className="ats-jobbadge is-blue">Intern</span>}
+                {j.priority !== "normal" && <span className={"ats-jobbadge is-" + (j.priority === "urgent" ? "brick" : j.priority === "high" ? "amber" : "muted")}>{JOB_PRIO[j.priority]}</span>}
+                <Tags j={j} />
+              </div>
+              <div className="ats-jobcard-meta">{j.ref} · {j.team || "Ingen avdelning"}{(j.annons && j.annons.location) ? " · " + j.annons.location : ""} · {nameOf(j.ownerId) || "Ingen ansvarig"}{j._days != null ? " · " + (j._days === 0 ? "skapad idag" : j._days + " d") : ""}</div>
+              <div className="ats-jobcard-stats"><span><b>{j._n}</b> ansökningar</span><span><b>{j._new}</b> i kö</span><span><b>{j._avg}%</b> snitt</span>{j._hired > 0 && <span className="is-hired"><BadgeCheck size={12} /> {j._hired} anställd</span>}</div>
             </div>
-            <div className="ats-jobcard-meta">{j.company}{j._days != null ? " · " + (j._days === 0 ? "skapad idag" : "öppen " + j._days + " d") : ""}{j.team ? " · " + j.team : ""}</div>
-            <div className="ats-jobcard-stats"><span><b>{j._n}</b> ansökningar</span><span><b>{j._new}</b> i kö</span><span><b>{j._avg}%</b> snitt</span>{j._hired > 0 && <span className="is-hired"><BadgeCheck size={12} /> {j._hired} anställd</span>}</div>
-          </div>
-          <div className="ats-jobcard-acts">
-            <button className="ats-ghost is-sm" onClick={() => openJob(j, "queue")}><Layers size={13} /> Kö{j._new > 0 && <span className="ats-jobcard-qn">{j._new}</span>}</button>
-            <button className="ats-ghost is-sm" onClick={() => openJob(j, "form")}><Blocks size={13} /> Formulär</button>
-            {canEdit && <Menu align="right" trigger={<button className="ats-ghost is-sm ats-jobcard-more"><Settings2 size={14} /></button>}>
-              {j.published ? <button className="ats-menu-item" onClick={() => togglePub(j, false)}><EyeOff size={14} /> Avpublicera</button> : <button className="ats-menu-item" onClick={() => togglePub(j, true)}><Globe size={14} /> Publicera</button>}
-              <div className="ats-menu-sep" />
-              {j.status === "open" && <button className="ats-menu-item" onClick={() => setStatus(j, "paused")}><PauseCircle size={14} /> Pausa</button>}
-              {j.status !== "open" && <button className="ats-menu-item" onClick={() => setStatus(j, "open")}><RotateCcw size={14} /> Återöppna</button>}
-              {j.status !== "closed" && <button className="ats-menu-item" onClick={() => setStatus(j, "closed")}><BadgeCheck size={14} /> Markera tillsatt</button>}
-              {j.status !== "archived" ? <button className="ats-menu-item" onClick={() => setStatus(j, "archived")}><Layers size={14} /> Arkivera</button> : null}
-              <div className="ats-menu-sep" />
-              <button className="ats-menu-item" onClick={() => dupJob(j)}><Copy size={14} /> Duplicera</button>
-              {isAdmin && <button className="ats-menu-item is-danger" onClick={() => setConfirmDel(j)}><Trash2 size={14} /> Radera</button>}
-            </Menu>}
-          </div>
-        </div>)}</div>}
+            <div className="ats-jobcard-acts">
+              <button className="ats-ghost is-sm" onClick={() => openJob(j, "queue")}><Layers size={13} /> Kö{j._new > 0 && <span className="ats-jobcard-qn">{j._new}</span>}</button>
+              <button className="ats-ghost is-sm" onClick={() => openJob(j, "form")}><Blocks size={13} /> Formulär</button>
+              <Menu2 j={j} />
+            </div>
+          </div>)}</div>}
+
+      {/* Statusövergång */}
+      {statusFor && nextStatus && <Modal title={"Byt status till " + JOB_LIFE[nextStatus].label} onClose={() => { setStatusFor(null); setNextStatus(""); }}><div className="ats-erase">
+        <p><b>{statusFor.title}</b> går från <b>{JOB_LIFE[statusFor.status].label}</b> till <b>{JOB_LIFE[nextStatus].label}</b>.</p>
+        <div className="ats-erase-note"><Info size={14} /> {JOB_LIFE[nextStatus].public ? "Tjänsten blir synlig publikt" : "Tjänsten syns inte publikt"} · {JOB_LIFE[nextStatus].accepts ? "tar emot nya ansökningar" : "tar inte emot nya ansökningar"}{JOB_LIFE[nextStatus].readonly ? " · skrivskyddad tills den återställs" : ""}.</div>
+        {JOB_LIFE[nextStatus].reason && <label className="ats-field"><span className="ats-field-l">Anledning (krävs)</span><input className="ats-inp" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Varför avbryts rekryteringen?" /></label>}
+        <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => { setStatusFor(null); setNextStatus(""); }}>Avbryt</button>
+          <button className="ats-btn-primary" disabled={JOB_LIFE[nextStatus].reason && !reason.trim()} onClick={() => doStatus(statusFor, nextStatus)}>Bekräfta</button></div>
+      </div></Modal>}
+
+      {/* Duplicering */}
+      {dup && <Modal title="Duplicera tjänsten" onClose={() => setDup(null)}><div className="ats-erase">
+        <p>Kopian skapas som <b>utkast</b>. Kandidater, intervjuer, meddelanden, historik, länkar och statistik kopieras aldrig.</p>
+        <div className="ats-dupgrid">{[["annons", "Jobbannons"], ["form", "Ansökningsformulär"], ["scoring", "Scoringprofiler"], ["knockout", "Knockoutregler"], ["automations", "Automatiseringar"], ["team", "Rekryteringsteam"], ["tags", "Taggar"]].map(([k, l]) =>
+          <label key={k} className="ats-cb-check"><input type="checkbox" checked={dupOpts[k]} onChange={(e) => setDupOpts({ ...dupOpts, [k]: e.target.checked })} /> {l}</label>)}</div>
+        <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setDup(null)}>Avbryt</button><button className="ats-btn-primary" onClick={doDup}><Copy size={15} /> Duplicera</button></div>
+      </div></Modal>}
+
+      {/* Bulk */}
+      {bulk && <Modal title="Bulkåtgärd" onClose={() => setBulk(null)}><div className="ats-erase">
+        <p>{sel.length} tjänster är valda.</p>
+        {bulk === "status" && <div className="ats-bulkopts">{Object.entries(JOB_LIFE).map(([k, v]) => <button key={k} className="ats-ghost" onClick={() => runBulk("status", k)}>{v.label}</button>)}</div>}
+        {bulk === "owner" && <div className="ats-bulkopts">{state.team.map((m) => <button key={m.id} className="ats-ghost" onClick={() => runBulk("owner", m.id)}>{m.name}</button>)}<button className="ats-ghost" onClick={() => runBulk("owner", "")}>Ingen ansvarig</button></div>}
+        {bulk === "tag_add" && <div className="ats-bulkopts">{state.tags.filter((t) => !t.archived).map((t) => <button key={t.id} className="ats-ghost" onClick={() => runBulk("tag_add", t.id)}>{t.name}</button>)}</div>}
+      </div></Modal>}
+      {bulkRes && <Modal title="Resultat" onClose={() => setBulkRes(null)}><div className="ats-erase">
+        <p><b>{bulkRes.ok}</b> tjänster uppdaterades.</p>
+        {bulkRes.blocked.length > 0 && <><div className="ats-erase-note"><AlertTriangle size={14} /> {bulkRes.blocked.length} kunde inte behandlas:</div>
+          <ul className="ats-blocked">{bulkRes.blocked.map((b, i) => <li key={i}><b>{b.title}</b><span>{b.why}</span></li>)}</ul></>}
+        <div className="ats-erase-actions"><button className="ats-btn-primary" onClick={() => setBulkRes(null)}>Stäng</button></div>
+      </div></Modal>}
+
+      {/* Inställningar */}
+      {settingsFor && <Modal title={"Inställningar — " + settingsFor.title} onClose={() => setSettingsFor(null)} wide>
+        <JobSettings j={jobs.find((x) => x.id === settingsFor.id) || settingsFor} state={state} D={D} canEdit={canEdit && !isReadonly(settingsFor)} onClose={() => setSettingsFor(null)} />
+      </Modal>}
+
+      {/* Aktivitet */}
+      {actFor && <Modal title={"Aktivitet — " + actFor.title} onClose={() => setActFor(null)} wide><div className="ats-jact">
+        <div className="ats-jact-f">
+          <select className="ats-select is-sm" value={actFilter} onChange={(e) => setActFilter(e.target.value)}><option value="">Alla händelser</option>{Object.entries(JOB_ACT).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+        </div>
+        {(() => { const acts = ((jobs.find((x) => x.id === actFor.id) || actFor).activity || []).filter((a) => !actFilter || a.kind === actFilter);
+          return acts.length === 0 ? <div className="ats-col-empty" style={{ padding: 30 }}>Ingen aktivitet registrerad.</div>
+            : <div className="ats-jact-list">{acts.map((a) => <div key={a.id} className="ats-jact-i">
+              <span className="ats-jact-k">{JOB_ACT[a.kind] || a.kind}</span>
+              <div><b>{a.note || "—"}</b><span>{a.by} · {timeAgo(a.at)}</span></div>
+            </div>)}</div>; })()}
+      </div></Modal>}
+
+      {/* Taggar */}
+      {tagPanel && <Modal title="Taggar" onClose={() => setTagPanel(false)}><div className="ats-erase">
+        <p>Taggar används för att gruppera och filtrera tjänster. De är interna och syns aldrig publikt.</p>
+        <div className="ats-tagadd">
+          <input className="ats-inp" value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Ny tagg…" onKeyDown={(e) => { if (e.key === "Enter" && newTag.trim()) { D({ type: "TAG_ADD", name: newTag }); setNewTag(""); } }} />
+          <button className="ats-btn-primary is-sm" disabled={!newTag.trim() || state.tags.some((t) => normTag(t.name) === normTag(newTag))} onClick={() => { D({ type: "TAG_ADD", name: newTag }); setNewTag(""); }}><Plus size={14} /></button>
+        </div>
+        {newTag.trim() && state.tags.some((t) => normTag(t.name) === normTag(newTag)) && <span className="ats-af-err"><CircleAlert size={13} /> Taggen finns redan.</span>}
+        <div className="ats-taglist">{state.tags.map((t) => <div key={t.id} className="ats-tagrow">
+          <span className="ats-jtag" style={{ background: t.color + "1f", color: t.color }}>{t.name}</span>
+          <div className="ats-tagcolors">{TAG_COLORS.map((c) => <button key={c} className={"ats-tagcolor" + (t.color === c ? " is-on" : "")} style={{ background: c }} onClick={() => D({ type: "TAG_SET", id: t.id, patch: { color: c } })} aria-label={"Färg " + c} />)}</div>
+          <span className="ats-muted">{jobs.filter((j) => j.tags.includes(t.id)).length} tjänster</span>
+          <button className="ats-ghost is-sm ats-cal-cancel" onClick={() => D({ type: "TAG_DEL", id: t.id })} aria-label="Ta bort tagg"><Trash2 size={13} /></button>
+        </div>)}</div>
+        {state.tags.length === 0 && <div className="ats-col-empty" style={{ padding: 24 }}>Inga taggar än.</div>}
+      </div></Modal>}
+
       {confirmDel && <Modal title="Radera tjänsten permanent?" onClose={() => setConfirmDel(null)}><div className="ats-erase">
         <p><b>{confirmDel.title}</b> och alla dess kandidater, ansökningar och bilagor raderas permanent från både appen och molnet. Detta går inte att ångra.</p>
         <div className="ats-erase-note"><ShieldCheck size={14} /> Uppfyller rätt att bli glömd (GDPR) — all kandidatdata för tjänsten tas bort.</div>
-        <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setConfirmDel(null)}>Avbryt</button><button className="ats-btn-danger" onClick={() => doDelete(confirmDel)}><Trash2 size={15} /> Radera permanent</button></div>
+        <div className="ats-erase-actions"><button className="ats-ghost" onClick={() => setConfirmDel(null)}>Avbryt</button><button className="ats-btn-danger" onClick={async () => { const j = confirmDel; setConfirmDel(null); await deleteJobFull(j, state.candidates, D); showToast({ kind: "ok", msg: "Tjänsten raderades" }); }}><Trash2 size={15} /> Radera permanent</button></div>
       </div></Modal>}
     </div>
   );
 }
+
+function JobSettings({ j, state, D, canEdit, onClose }) {
+  const set = (patch, kind) => D({ type: "JOB_PATCH", id: j.id, patch, kind: kind || "edited" });
+  const F = ({ l, k, ph, type }) => <label className="ats-field"><span className="ats-field-l">{l}</span><input className="ats-inp" type={type || "text"} value={j[k] || ""} disabled={!canEdit} onChange={(e) => set({ [k]: e.target.value })} placeholder={ph} /></label>;
+  const A = ({ l, k, ph }) => <label className="ats-field"><span className="ats-field-l">{l}</span><input className="ats-inp" value={(j.annons || {})[k] || ""} disabled={!canEdit} onChange={(e) => set({ annons: { ...j.annons, [k]: e.target.value } }, "annons")} placeholder={ph} /></label>;
+  return <div className="ats-jset">
+    {!canEdit && <div className="ats-erase-note"><Lock size={14} /> {isReadonly(j) ? "Arkiverade tjänster är skrivskyddade. Återställ tjänsten för att kunna ändra." : "Du har inte behörighet att ändra tjänsten."}</div>}
+    <h3>Grunduppgifter</h3>
+    <div className="ats-tpl-two"><F l="Intern titel" k="title" /><F l="Publik titel" k="publicTitle" ph="Visas i annonsen" /></div>
+    <div className="ats-tpl-two"><F l="Referensnummer" k="ref" /><label className="ats-field"><span className="ats-field-l">Prioritet</span><select className="ats-inp" value={j.priority} disabled={!canEdit} onChange={(e) => set({ priority: e.target.value })}>{Object.entries(JOB_PRIO).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
+    <div className="ats-tpl-two"><F l="Avdelning" k="team" ph="Sälj" /><F l="Team" k="unit" ph="Nykund" /></div>
+    <h3>Anställningsvillkor</h3>
+    <div className="ats-tpl-two"><A l="Plats" k="location" ph="Växjö" /><A l="Arbetsform" k="workmode" ph="Hybrid" /></div>
+    <div className="ats-tpl-two"><A l="Anställningsform" k="employment" ph="Tillsvidare" /><F l="Omfattning" k="extent" ph="Heltid" /></div>
+    <div className="ats-tpl-two"><A l="Lön" k="salary" ph="Enligt överenskommelse" /><A l="Startdatum" k="start" ph="Enligt överenskommelse" /></div>
+    <div className="ats-tpl-two"><A l="Sista ansökningsdag" k="deadline" ph="2026-08-31" /><F l="Publik jobbkategori" k="category" ph="Försäljning" /></div>
+    <h3>Rekryteringsteam</h3>
+    <div className="ats-tpl-two">
+      <label className="ats-field"><span className="ats-field-l">Ansvarig rekryterare</span><select className="ats-inp" value={j.ownerId || ""} disabled={!canEdit} onChange={(e) => set({ ownerId: e.target.value || null }, "owner")}><option value="">Ingen</option>{state.team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+      <label className="ats-field"><span className="ats-field-l">Rekryterande chef</span><select className="ats-inp" value={j.managerId || ""} disabled={!canEdit} onChange={(e) => set({ managerId: e.target.value || null }, "owner")}><option value="">Ingen</option>{state.team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>
+    </div>
+    <label className="ats-field"><span className="ats-field-l">Rekryteringsteam</span><div className="ats-chipset">{state.team.map((m) => {
+      const on = (j.teamIds || []).includes(m.id);
+      return <button key={m.id} className={"ats-selchip" + (on ? " is-on" : "")} disabled={!canEdit} onClick={() => set({ teamIds: on ? j.teamIds.filter((x) => x !== m.id) : [...(j.teamIds || []), m.id] }, "owner")}>{m.name}</button>;
+    })}</div></label>
+    <h3>Taggar och synlighet</h3>
+    {state.tags.length > 0 && <label className="ats-field"><span className="ats-field-l">Interna taggar</span><div className="ats-chipset">{state.tags.filter((t) => !t.archived).map((t) => {
+      const on = j.tags.includes(t.id);
+      return <button key={t.id} className={"ats-selchip" + (on ? " is-on" : "")} disabled={!canEdit} onClick={() => set({ tags: on ? j.tags.filter((x) => x !== t.id) : [...j.tags, t.id] }, "tags")}>{t.name}</button>;
+    })}</div></label>}
+    <label className="ats-cb-check"><input type="checkbox" checked={!!j.internal} disabled={!canEdit} onChange={(e) => set({ internal: e.target.checked })} /> Intern rekrytering — tjänsten publiceras aldrig publikt och nås inte via länk</label>
+    {j.internal && <div className="ats-erase-note"><ShieldAlert size={14} /> Interna tjänster laddas aldrig upp till den publika databasen. Även den som känner till adressen kan inte nå dem.</div>}
+    <div className="ats-erase-actions"><button className="ats-btn-primary" onClick={onClose}>Klar</button></div>
+  </div>;
+}
+
 /* ===================== OVERSIKT ===================== */
 function DashboardView({ allScored, state, D, cands, job, setView, setDetailId }) {
   const now = Date.now();
@@ -3035,7 +3392,15 @@ function FormView({ job, D, me, state, showToast }) {
   const addPage = () => { setPages([...pages, Math.max(1, ...pages) + 1]); };
   const A = job.annons || {};
   const setA = (patch) => { D({ type: "SET_FORM", patch: { annons: { ...(job.annons || {}), ...patch } } }); setDirty(true); };
-  const publish = () => { D({ type: "SET_FORM", patch: { published: true }, bump: true }); setDirty(false); if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1, annons: job.annons, team: job.team }, published: true, org_id: SB_ORG }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Molnet svarar inte — kontrollera anslutningen (ändringar sparas lokalt)" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); } };
+  const missingPub = publishBlockers(job);
+  const publish = () => {
+    if (missingPub.length) { showToast({ kind: "warn", msg: "Kan inte publiceras: " + missingPub[0] }); return; }
+    if (job.internal) { D({ type: "SET_FORM", patch: {}, bump: true }); D({ type: "JOB_STATUS", id: job.id, status: "published" }); setDirty(false); showToast({ kind: "ok", msg: "Intern tjänst — publiceras aldrig publikt" }); return; }
+    D({ type: "SET_FORM", patch: {}, bump: true });
+    D({ type: "JOB_STATUS", id: job.id, status: "published" });
+    setDirty(false);
+    if (sbEnabled) { sbUpsert("jobs", { slug: job.slug, title: job.publicTitle || job.title, company: state.org.companyName, org: state.org, form: { criteria: job.criteria, pages: getPages(job), pageLabels: job.pageLabels || {}, version: job.version + 1, annons: job.annons, team: job.team, status: "published" }, published: true, org_id: SB_ORG }).then((ok) => showToast({ kind: ok ? "ok" : "warn", msg: ok ? "Publicerat till molnet · länken funkar överallt nu" : "Molnet svarar inte — kontrollera anslutningen (ändringar sparas lokalt)" })); } else { showToast({ kind: "ok", msg: "Publicerat · v" + (job.version + 1) }); }
+  };
   const skills = job.criteria.find((c) => c.id === "skills");
   const scored = job.criteria.filter((c) => c.scored && c.type !== "text" && c.type !== "file");
   const link = (typeof window !== "undefined" ? window.location.origin : state.org.appUrl) + "/j/" + job.slug; const embed = `<iframe src="${link}/inbäddad" width="100%" height="720" style="border:0" title="${job.title}"></iframe>`;
@@ -5103,6 +5468,69 @@ section.ats-cs-cta p{font-size:17px;opacity:.9;margin-bottom:28px}
   .ats-cs-foot-in{flex-direction:column;align-items:flex-start;gap:20px}
   .ats-cs-contact{flex-direction:column;text-align:center}
   .ats-cb-picker{grid-template-columns:1fr 1fr}
+}
+
+/* ---- Tjänster 2.0 ---- */
+.ats-jfilters{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.ats-jmode{display:flex;gap:2px;margin-left:auto;background:var(--paper2);border-radius:9px;padding:3px}
+.ats-jmode button{padding:8px 11px;border-radius:7px;color:var(--muted);min-height:36px}
+.ats-jmode button.is-on{background:var(--surface);color:var(--petrol);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.ats-jsave{display:flex;gap:6px;align-items:center}
+.ats-jsave .ats-inp{min-height:34px;padding:6px 10px;font-size:12.5px;width:130px}
+.ats-jviews{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.ats-jview{display:inline-flex;align-items:center;background:var(--petrol-soft);border-radius:18px;overflow:hidden}
+.ats-jview>button:first-child{padding:7px 12px;font-size:12.5px;font-weight:600;color:var(--petrol-deep);min-height:34px}
+.ats-jview-x{padding:7px 9px 7px 2px;color:var(--petrol);min-height:34px}
+.ats-jview-x:hover{color:var(--brick)}
+.ats-jtag{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:12px;white-space:nowrap}
+.ats-jobbadge.is-petrol{background:var(--petrol-soft);color:var(--petrol-deep)}
+.ats-jobbadge.is-amber{background:var(--amber-soft);color:var(--amber)}
+.ats-jobbadge.is-blue{background:var(--blue-soft);color:var(--blue)}
+.ats-jobbadge.is-gold{background:var(--gold-soft);color:var(--gold)}
+.ats-jobbadge.is-brick{background:var(--brick-soft);color:var(--brick)}
+.ats-jobbadge.is-muted{background:var(--paper2);color:var(--muted)}
+.ats-jcheck{margin-right:14px;width:18px;height:18px;accent-color:var(--petrol);flex-shrink:0}
+.ats-jobcard.is-sel{border-color:var(--petrol);background:var(--petrol-soft)}
+.ats-jobcard.is-archived,.ats-jobcard.is-cancelled{opacity:.6}
+.ats-jobcard.is-draft{border-style:dashed}
+.ats-bulkbar{position:sticky;top:8px;z-index:20;display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:var(--ink);color:#fff;padding:11px 16px;border-radius:12px;margin-bottom:14px;box-shadow:0 12px 30px -14px rgba(0,0,0,.4)}
+.ats-bulkbar b{font-size:13.5px;margin-right:6px}
+.ats-bulkbar .ats-ghost{background:rgba(255,255,255,.12);color:#fff;border-color:transparent}
+.ats-bulkbar .ats-ghost:hover{background:rgba(255,255,255,.22)}
+.ats-bulkopts{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.ats-blocked{display:flex;flex-direction:column;gap:8px;margin:12px 0}
+.ats-blocked li{display:flex;flex-direction:column;gap:2px;padding:10px 12px;background:var(--brick-soft);border-radius:9px}
+.ats-blocked b{font-size:13.5px;color:var(--ink)}
+.ats-blocked span{font-size:12.5px;color:var(--brick)}
+.ats-dupgrid{display:grid;grid-template-columns:1fr 1fr;gap:2px 16px;margin:14px 0}
+.ats-jtablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.ats-jtable{width:100%;border-collapse:collapse;min-width:900px}
+.ats-jtable th{text-align:left;font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:13px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+.ats-jtable td{padding:13px 14px;border-bottom:1px solid var(--line);font-size:13.5px;vertical-align:middle}
+.ats-jtable tr:last-child td{border-bottom:0}
+.ats-jtable tr.is-sel td{background:var(--petrol-soft)}
+.ats-jtable input[type=checkbox]{width:17px;height:17px;accent-color:var(--petrol)}
+.ats-jset{display:flex;flex-direction:column;gap:12px;max-height:70vh;overflow-y:auto;padding-right:4px}
+.ats-jset h3{font-family:'Bricolage Grotesque';font-weight:600;font-size:15px;margin-top:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.ats-jset h3:first-of-type{margin-top:0}
+.ats-jact{display:flex;flex-direction:column;gap:12px}
+.ats-jact-list{display:flex;flex-direction:column;gap:2px;max-height:60vh;overflow-y:auto}
+.ats-jact-i{display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line)}
+.ats-jact-k{font-size:11px;font-weight:700;padding:3px 9px;border-radius:11px;background:var(--petrol-soft);color:var(--petrol-deep);white-space:nowrap;flex-shrink:0}
+.ats-jact-i b{display:block;font-size:13.5px;color:var(--ink)}
+.ats-jact-i span{font-size:12px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.ats-tagadd{display:flex;gap:8px;margin:12px 0}
+.ats-taglist{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.ats-tagrow{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--paper2);border-radius:9px}
+.ats-tagrow>span:last-of-type{margin-left:auto;font-size:12px}
+.ats-tagcolors{display:flex;gap:4px}
+.ats-tagcolor{width:18px;height:18px;border-radius:50%;border:2px solid transparent}
+.ats-tagcolor.is-on{border-color:var(--ink)}
+.ats-jp-closed{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:var(--muted);padding:16px 0}
+@media (max-width:640px){
+  .ats-jmode{margin-left:0}
+  .ats-dupgrid{grid-template-columns:1fr}
+  .ats-bulkbar{position:static}
 }
 /* Responsiv */
 @media(max-width:1080px){.ats-grid-2,.ats-grid-builder,.ats-tpl3{grid-template-columns:1fr}.ats-stats,.ats-quickgrid{grid-template-columns:repeat(2,1fr)}.ats-tplprev{position:static}}
