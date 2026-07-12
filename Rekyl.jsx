@@ -1164,10 +1164,23 @@ function PublicApply({ slug, localJobs, localOrg }) {
     </div>}
   </div></div>;
 }
+const TOUR_STEPS = [
+  { center: true, view: "dashboard", title: "Välkommen till Rekyl", body: "En snabb rundtur på under en minut genom de viktigaste funktionerna. Du kan hoppa över när som helst." },
+  { target: "nav-dashboard", view: "dashboard", side: "right", title: "Översikt", body: "Din startsida: kön att beta av, snittmatchning och portfölj över alla tjänster." },
+  { target: "nav-jobs", view: "jobs", side: "right", title: "Tjänster", body: "Alla tjänster på ett ställe — status, publicering, taggar, arkiv och bulkåtgärder." },
+  { target: "nav-pipeline", view: "pipeline", side: "right", title: "Pipeline", body: "Bygg din egen process, dra kandidater mellan steg och håll koll på deadlines med SLA." },
+  { target: "nav-queue", view: "queue", side: "right", title: "Kön", body: "Gå igenom nya ansökningar som en kortlek och swipa för beslut. Rätt mejl skickas automatiskt." },
+  { target: "nav-form", view: "form", side: "right", title: "Formulärbyggaren", body: "Dra och släpp fält för att bygga ansökningsformuläret. Formuläret är också din urvalsmotor — vikter, krav och villkor styr du här." },
+  { target: "nav-calendar", view: "calendar", side: "right", title: "Kalender", body: "Alla bokade intervjuer med krockvarning, ombokning och avbokning. Kandidaten får en riktig kalenderinbjudan." },
+  { target: "nav-team", view: "team", side: "right", title: "Team och roller", body: "Bjud in kollegor med roller. All aktivitet blir spårbar i aktivitetsloggen." },
+  { target: "new-job", side: "left", title: "Skapa en tjänst", body: "Här skapar du en ny tjänst från en färdig branschmall — formulär, scoring och pipeline förladdas automatiskt." },
+  { center: true, view: "dashboard", title: "Klart!", body: "Nu är du redo. Du hittar rundturen igen via hjälpknappen uppe till vänster." },
+];
 function ProductTour({ steps, onClose, setView }) {
+  const list = Array.isArray(steps) && steps.length ? steps : [];
   const [i, setI] = useState(0);
   const [rect, setRect] = useState(null);
-  const step = steps[i];
+  const step = list[Math.min(i, list.length - 1)] || { center: true, title: "Rundtur", body: "Inget att visa." };
   useEffect(() => {
     if (step.view) setView(step.view);
     let raf, t;
@@ -1184,7 +1197,7 @@ function ProductTour({ steps, onClose, setView }) {
     window.addEventListener("resize", onWin); window.addEventListener("scroll", onWin, true);
     return () => { clearTimeout(t); cancelAnimationFrame(raf); window.removeEventListener("resize", onWin); window.removeEventListener("scroll", onWin, true); };
   }, [i]);
-  const next = () => { if (i < steps.length - 1) setI(i + 1); else onClose(true); };
+  const next = () => { if (i < list.length - 1) setI(i + 1); else onClose(true); };
   const back = () => { if (i > 0) setI(i - 1); };
   const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
@@ -1205,13 +1218,13 @@ function ProductTour({ steps, onClose, setView }) {
   return <div className="ats-tour">
     {rect ? <div className="ats-tour-spot" style={{ top: rect.top - 8, left: rect.left - 8, width: rect.width + 16, height: rect.height + 16 }} /> : <div className="ats-tour-dim" />}
     <div className={"ats-tour-card" + (centered ? " is-centered" : "")} style={centered ? undefined : ttStyle}>
-      <div className="ats-tour-step">{i + 1} / {steps.length}</div>
+      <div className="ats-tour-step">{i + 1} / {list.length}</div>
       <h3>{step.title}</h3>
       <p>{step.body}</p>
-      <div className="ats-tour-dots">{steps.map((_, k) => <span key={k} className={k === i ? "is-on" : ""} />)}</div>
+      <div className="ats-tour-dots">{list.map((_, k) => <span key={k} className={k === i ? "is-on" : ""} />)}</div>
       <div className="ats-tour-actions">
         <button className="ats-tour-skip" onClick={() => onClose(true)}>Hoppa över</button>
-        <div className="ats-tour-nav">{i > 0 && <button className="ats-ghost is-sm" onClick={back}>Tillbaka</button>}<button className="ats-btn-primary is-sm" onClick={next}>{i < steps.length - 1 ? "Nästa" : "Klart"}</button></div>
+        <div className="ats-tour-nav">{i > 0 && <button className="ats-ghost is-sm" onClick={back}>Tillbaka</button>}<button className="ats-btn-primary is-sm" onClick={next}>{i < list.length - 1 ? "Nästa" : "Klart"}</button></div>
       </div>
     </div>
   </div>;
