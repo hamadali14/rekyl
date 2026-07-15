@@ -9,7 +9,7 @@ import {
   ShieldAlert, Pin, PinOff, Server, AtSign, Info, CheckCircle2, Settings, ThumbsUp, ThumbsDown,
   HelpCircle, BadgeCheck, PauseCircle, CalendarCheck, Menu as MenuIcon, PanelLeftClose,
   RotateCw, Rocket, GripVertical, Lock, MousePointerClick, Share2, MessageCircle, Globe, LogOut, UserPlus,
-  Video, CalendarX, Flag
+  Video, CalendarX, Flag, Ban, Scale, UserX, FileLock2, ScrollText
 } from "lucide-react";
 
 // ---- Supabase (via REST, inget paket krävs) ----
@@ -81,6 +81,25 @@ async function outboxPush(m, org) {
 }
 async function runRemindersNow() { try { const r = await sbFetch(MAIL_FN, "POST", () => ({ "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }), JSON.stringify({ action: "run-reminders" })); const d = await r.json().catch(() => ({})); if (!r.ok) return { ok: false, error: (d && d.error) || ("Fel (" + r.status + ")") }; return { ok: true, ...d }; } catch (e) { return { ok: false, error: "Ingen kontakt med utskickstjänsten." }; } }
 async function sendMail(payload) { try { const r = await sbFetch(MAIL_FN, "POST", () => ({ "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }), JSON.stringify(payload)); const d = await r.json().catch(() => ({})); if (!r.ok) return { ok: false, error: (d && d.error) || ("Utskicksfel (" + r.status + ")") }; return { ok: true, id: (d && d.id) || null }; } catch (e) { return { ok: false, error: "Ingen kontakt med utskickstjänsten." }; } }
+
+/* ---- Fas 3C: integritetsmotorn (server-verifierad) + RLS-skrivningar ---- */
+const PRIVACY_FN = "/.netlify/functions/privacy";
+async function privacyCall(action, args) {
+  try {
+    const r = await sbFetch(PRIVACY_FN, "POST", () => ({ "Content-Type": "application/json", Authorization: "Bearer " + SB_TOKEN }), JSON.stringify({ action, ...(args || {}) }));
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false, status: r.status, error: (d && d.error) || ("Fel (" + r.status + ")"), reasons: d && d.reasons, plan: d && d.plan };
+    return { ok: true, ...d };
+  } catch (e) { return { ok: false, error: "Ingen kontakt med integritetstjänsten." }; }
+}
+/* Villkorad PATCH mot en RLS-skyddad tabell (klient-token). Returnerar true/false. */
+async function sbPatch(table, filter, row) {
+  if (!sbEnabled) return false;
+  try { const r = await sbFetch(SB_URL + "/rest/v1/" + table + "?" + filter, "PATCH", () => ({ ...sbHead(), "Content-Type": "application/json", Prefer: "return=minimal" }), JSON.stringify(row)); return r.ok; }
+  catch (e) { return false; }
+}
+/* Åtkomstlogg-hjälp: logga känslig läsning via SECURITY DEFINER-RPC (kan ej förfalskas). */
+function logAccess(candId, action, resource, reason) { try { if (sbEnabled) sbRpc("privacy_log_access", { p_candidate: candId || null, p_action: action, p_resource: resource || null, p_result: "allowed", p_reason: reason || null }); } catch (e) {} }
 
 
 /* ================================================================== *
@@ -1110,6 +1129,7 @@ const NAV = [
   { id: "stats", label: "Statistik", icon: BarChart3 },
   { id: "sources", label: "Källkvalitet", icon: TrendingUp },
   { id: "team", label: "Team & logg", icon: Activity },
+  { id: "privacy", label: "Integritet", icon: ShieldCheck },
   { id: "settings", label: "Inställningar", icon: Settings },
 ];
 
@@ -1646,6 +1666,460 @@ function cloudHint(e) {
   if (e.status === 0) return "Ingen anslutning till molnet \u2014 kontrollera internet.";
   return "Molnfel (" + e.status + ")" + (e.msg ? ": " + e.msg.slice(0, 90) : "") + ".";
 }
+/* ===================== FAS 3C — GDPR-CENTER ===================== */
+const PRIV_MAP = {
+  view: ["admin", "recruiter", "manager"], view_sensitive: ["admin", "recruiter"], manage_consents: ["admin", "recruiter"],
+  edit_retention: ["admin"], manage_requests: ["admin", "recruiter"], verify_identity: ["admin", "recruiter"],
+  create_export: ["admin", "recruiter"], view_export: ["admin"], correct_data: ["admin", "recruiter"],
+  restrict: ["admin", "recruiter"], anonymize: ["admin"], delete: ["admin"], legal_hold: ["admin"], view_access_log: ["admin"],
+};
+const privCan = (role, action) => (PRIV_MAP[action] || []).includes(String(role || ""));
+
+const AREA_LABEL = { recruitment: "Rekryteringsprocess", future_jobs: "Framtida jobb", talent_pool: "Talangpool", marketing: "Marknadsföring", candidate_portal: "Kandidatportal", process_comms: "Processkommunikation" };
+const BASIS_LABEL = { consent: "Samtycke", contract: "Avtal", legal_obligation: "Rättslig skyldighet", legitimate_interest: "Berättigat intresse", vital_interest: "Grundläggande intresse", public_task: "Uppgift av allmänt intresse" };
+const REQ_TYPE = { access: "Registerutdrag", rectification: "Rättelse", erasure: "Radering", restriction: "Begränsning", portability: "Dataportabilitet", objection: "Invändning", consent_withdrawal: "Återkallat samtycke" };
+const REQ_STATUS = { received: "Mottaget", identity_pending: "Identitet krävs", in_progress: "Under behandling", awaiting_candidate: "Väntar på kandidat", approved: "Godkänt", partially_approved: "Delvis godkänt", rejected: "Avslaget", completed: "Genomfört", closed: "Stängt" };
+const REQ_STATUS_TONE = { received: "amber", identity_pending: "amber", in_progress: "petrol", awaiting_candidate: "amber", approved: "green", partially_approved: "green", rejected: "brick", completed: "green", closed: "neutral" };
+const CONSENT_STATUS = { given: "Lämnat", denied: "Nekat", withdrawn: "Återkallat", expired: "Utgånget" };
+const RET_DTYPE = { application_active: "Aktiv ansökan", application_closed: "Avslutad ansökan", application_rejected: "Avslagen kandidat", application_withdrawn: "Återkallad ansökan", hired: "Anställd", talent_pool: "Talangpool", communication: "Kommunikation", documents: "Dokument", audit: "Auditdata", legal_required: "Juridiskt nödvändig" };
+const RET_STATUS = { ok: "OK", warning: "Snart utgången", expired: "Utgången", paused: "Pausad", no_basis: "Saknar grund", manual_review: "Manuell granskning", hold: "Legal hold", failed: "Misslyckad" };
+const RET_STATUS_TONE = { ok: "neutral", warning: "amber", expired: "brick", paused: "amber", no_basis: "amber", manual_review: "petrol", hold: "petrol", failed: "brick" };
+const RET_ACTION = { request_consent: "Begär nytt samtycke", remove_from_pool: "Ta bort från talangpool", restrict: "Begränsa behandling", anonymize: "Anonymisera", delete: "Radera tillåtna data", manual_review: "Manuell granskning" };
+
+const gdprDate = (v) => { if (!v) return "—"; try { return new Date(v).toLocaleDateString("sv-SE") + " " + new Date(v).toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" }); } catch (e) { return "—"; } };
+const gdprDay = (v) => { if (!v) return "—"; try { return new Date(v).toLocaleDateString("sv-SE"); } catch (e) { return "—"; } };
+function GTag({ tone = "neutral", children }) { return <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 999, fontSize: 11, fontWeight: 600, background: "var(--" + (tone === "neutral" ? "line2" : tone === "green" ? "petrol-soft" : tone === "petrol" ? "petrol-soft" : tone === "amber" ? "accent-soft" : "accent-soft") + ")", color: "var(--" + (tone === "green" || tone === "petrol" ? "petrol-deep" : tone === "amber" ? "gold" : tone === "brick" ? "brick" : "sub") + ")" }}>{children}</span>; }
+
+/* Bekräftelsemodal — dubbel bekräftelse för permanenta åtgärder (skriv kandidatnamnet). */
+function GConfirm({ title, body, danger, confirmWord, confirmLabel, onCancel, onConfirm, busy }) {
+  const [txt, setTxt] = useState("");
+  const need = confirmWord != null;
+  const okToRun = !need || txt.trim() === String(confirmWord).trim();
+  return <div style={{ position: "fixed", inset: 0, background: "rgba(10,20,18,.42)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 90, padding: 16 }} onClick={onCancel}>
+    <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--surface)", borderRadius: "var(--r-lg)", border: "1px solid var(--line)", maxWidth: 460, width: "100%", padding: 22, boxShadow: "0 24px 60px rgba(10,20,18,.22)" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>{danger ? <AlertTriangle size={20} color="var(--brick)" /> : <ShieldCheck size={20} color="var(--petrol)" />}<h3 style={{ margin: 0, fontSize: 18 }}>{title}</h3></div>
+      <div style={{ fontSize: 14, color: "var(--sub)", lineHeight: 1.5, marginBottom: 14 }}>{body}</div>
+      {need && <label style={{ display: "block", marginBottom: 14 }}><span style={{ fontSize: 12, color: "var(--muted)" }}>Skriv <b>{confirmWord}</b> för att bekräfta</span><input value={txt} onChange={(e) => setTxt(e.target.value)} autoFocus style={{ width: "100%", marginTop: 4, padding: "10px 12px", borderRadius: "var(--r-sm)", border: "1px solid var(--line)", fontSize: 14 }} /></label>}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button className="ats-ghost" onClick={onCancel} disabled={busy}>Avbryt</button>
+        <button onClick={() => okToRun && onConfirm()} disabled={!okToRun || busy} style={{ padding: "9px 16px", borderRadius: "var(--r-sm)", border: "none", fontWeight: 600, fontSize: 14, cursor: okToRun && !busy ? "pointer" : "not-allowed", opacity: okToRun && !busy ? 1 : .5, background: danger ? "var(--brick)" : "var(--petrol)", color: "#fff" }}>{busy ? "Arbetar…" : (confirmLabel || "Bekräfta")}</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function GEmpty({ icon, text }) { const Ic = icon || Inbox; return <div style={{ textAlign: "center", padding: "42px 16px", color: "var(--muted)" }}><Ic size={28} strokeWidth={1.5} /><div style={{ marginTop: 8, fontSize: 14 }}>{text}</div></div>; }
+function GCard({ children }) { return <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r-md)", padding: 14 }}>{children}</div>; }
+
+function PrivacyView({ state, me, showToast }) {
+  const role = me.role;
+  const [tab, setTab] = useState("overview");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [d, setD] = useState({});
+  const [q, setQ] = useState({ text: "", type: "", status: "" });
+  const [modal, setModal] = useState(null); // {kind, ...}
+  const [nonce, setNonce] = useState(0);
+  const candName = (id) => { const c = (state.candidates || []).find((x) => String(x.id) === String(id)); return c ? (c.name || c.email || id) : (id || "—"); };
+  const cands = state.candidates || [];
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!sbEnabled || !SB_ORG) { setErr("Molnsynk krävs för integritetscentret."); return; }
+      setErr(""); setBusy(true);
+      const org = "org_id=eq." + SB_ORG;
+      try {
+        const [requests, consents, evals, holds, restr, policies, pvers, access, events, exps, anon, del] = await Promise.all([
+          sbGet("privacy_requests?" + org + "&select=*&order=received_at.desc&limit=400"),
+          sbGet("candidate_consents?" + org + "&select=*&order=created_at.desc&limit=600"),
+          sbGet("retention_evaluations?" + org + "&select=*&order=due_at.asc.nullslast&limit=600"),
+          sbGet("legal_holds?" + org + "&select=*&order=created_at.desc&limit=200"),
+          sbGet("processing_restrictions?" + org + "&select=*&order=created_at.desc&limit=200"),
+          sbGet("retention_policies?" + org + "&select=*&order=created_at.desc&limit=100"),
+          sbGet("retention_policy_versions?" + org + "&select=policy_id,version,retention_days,warn_before_days,start_point,action_on_expiry&order=version.desc&limit=400"),
+          privCan(role, "view_access_log") ? sbGet("sensitive_access_logs?" + org + "&select=*&order=at.desc&limit=300") : Promise.resolve([]),
+          sbGet("privacy_events?" + org + "&select=*&order=at.desc&limit=120"),
+          privCan(role, "view_export") ? sbGet("data_exports?" + org + "&select=*&order=created_at.desc&limit=200") : Promise.resolve([]),
+          privCan(role, "anonymize") ? sbGet("anonymization_jobs?" + org + "&select=*&order=created_at.desc&limit=200") : Promise.resolve([]),
+          privCan(role, "delete") ? sbGet("deletion_jobs?" + org + "&select=*&order=created_at.desc&limit=200") : Promise.resolve([]),
+        ]);
+        if (!alive) return;
+        setD({ requests: requests || [], consents: consents || [], evals: evals || [], holds: holds || [], restr: restr || [], policies: policies || [], pvers: pvers || [], access: access || [], events: events || [], exps: exps || [], anon: anon || [], del: del || [] });
+      } catch (e) { if (alive) setErr("Kunde inte läsa integritetsdata: " + (e && e.message)); }
+      if (alive) setBusy(false);
+    })();
+    return () => { alive = false; };
+  }, [nonce, role]);
+  const reload = () => setNonce((n) => n + 1);
+
+  if (!privCan(role, "view")) {
+    return <div><PageHeader title="Integritet & GDPR" meta="Datarättigheter, samtycken och retention" />
+      <GCard><GEmpty icon={Lock} text="Din roll (Insyn) har inte behörighet till integritetscentret." /></GCard></div>;
+  }
+
+  const openHolds = d.holds ? d.holds.filter((h) => h.status === "active") : [];
+  const openRestr = d.restr ? d.restr.filter((r) => r.active) : [];
+  const openReq = d.requests ? d.requests.filter((r) => !["completed", "closed", "rejected"].includes(r.status)) : [];
+  const nearDeadline = openReq.filter((r) => r.deadline && new Date(r.deadline).getTime() - Date.now() < 5 * 864e5);
+  const expiredRet = d.evals ? d.evals.filter((e) => (e.status === "expired" || e.status === "manual_review") && !e.resolved_at) : [];
+  const warnRet = d.evals ? d.evals.filter((e) => e.status === "warning" && !e.resolved_at) : [];
+  const failedJobs = [...(d.anon || []), ...(d.del || [])].filter((j) => j.status === "failed" || j.status === "partial");
+
+  const TABS = [
+    { id: "overview", label: "Översikt", icon: ShieldCheck },
+    { id: "requests", label: "Ärenden", icon: FileText, n: openReq.length },
+    { id: "consents", label: "Samtycken", icon: BadgeCheck },
+    { id: "retention", label: "Retention", icon: Clock, n: expiredRet.length + warnRet.length },
+    { id: "holds", label: "Legal hold & begränsning", icon: Scale, n: openHolds.length + openRestr.length },
+  ];
+  if (privCan(role, "view_access_log")) TABS.push({ id: "access", label: "Åtkomstlogg", icon: ScrollText });
+
+  return <div>
+    <PageHeader title="Integritet & GDPR" meta="Datarättigheter, samtycken, retention och audit" right={<button className="ats-ghost is-sm" onClick={reload}><RotateCw size={14} /> Uppdatera</button>} />
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16, borderBottom: "1px solid var(--line)", paddingBottom: 10 }}>
+      {TABS.map((t) => <button key={t.id} onClick={() => setTab(t.id)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 12px", borderRadius: "var(--r-sm)", border: "1px solid " + (tab === t.id ? "var(--petrol)" : "var(--line)"), background: tab === t.id ? "var(--petrol-soft)" : "var(--surface)", color: tab === t.id ? "var(--petrol-deep)" : "var(--sub)", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+        <t.icon size={15} /> {t.label}{t.n ? <span style={{ background: "var(--brick)", color: "#fff", borderRadius: 999, fontSize: 10, padding: "1px 6px", marginLeft: 2 }}>{t.n}</span> : null}</button>)}
+    </div>
+
+    {err && <div style={{ background: "var(--accent-soft)", color: "var(--brick)", padding: "10px 14px", borderRadius: "var(--r-sm)", marginBottom: 14, fontSize: 13 }}><AlertTriangle size={14} style={{ verticalAlign: -2 }} /> {err}</div>}
+    {busy && !d.requests && <GCard><GEmpty icon={Server} text="Laddar integritetsdata…" /></GCard>}
+
+    {tab === "overview" && <GOverview d={d} kpis={{ openReq, nearDeadline, expiredRet, warnRet, openHolds, openRestr, failedJobs }} candName={candName} setTab={setTab} />}
+    {tab === "requests" && <GRequests d={d} q={q} setQ={setQ} role={role} cands={cands} candName={candName} showToast={showToast} reload={reload} setModal={setModal} />}
+    {tab === "consents" && <GConsents d={d} role={role} cands={cands} candName={candName} showToast={showToast} reload={reload} setModal={setModal} />}
+    {tab === "retention" && <GRetention d={d} role={role} candName={candName} showToast={showToast} reload={reload} setModal={setModal} />}
+    {tab === "holds" && <GHolds d={d} role={role} cands={cands} candName={candName} showToast={showToast} reload={reload} setModal={setModal} />}
+    {tab === "access" && <GAccess d={d} candName={candName} />}
+
+    {modal && <PrivacyModals modal={modal} setModal={setModal} role={role} cands={cands} candName={candName} showToast={showToast} reload={reload} busy={busy} setBusy={setBusy} />}
+  </div>;
+}
+
+/* ---- Översikt ---- */
+function GOverview({ d, kpis, candName, setTab }) {
+  const tiles = [
+    { label: "Öppna ärenden", n: kpis.openReq.length, tone: "petrol", tab: "requests" },
+    { label: "Nära deadline", n: kpis.nearDeadline.length, tone: "amber", tab: "requests" },
+    { label: "Utgången retention", n: kpis.expiredRet.length, tone: "brick", tab: "retention" },
+    { label: "Snart utgången", n: kpis.warnRet.length, tone: "amber", tab: "retention" },
+    { label: "Aktiva legal holds", n: kpis.openHolds.length, tone: "petrol", tab: "holds" },
+    { label: "Begränsningar", n: kpis.openRestr.length, tone: "amber", tab: "holds" },
+    { label: "Misslyckade jobb", n: kpis.failedJobs.length, tone: "brick", tab: "retention" },
+  ];
+  return <div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12, marginBottom: 18 }}>
+      {tiles.map((t) => <button key={t.label} onClick={() => setTab(t.tab)} style={{ textAlign: "left", background: "var(--surface)", border: "1px solid var(--line)", borderLeft: "3px solid var(--" + (t.tone === "brick" ? "brick" : t.tone === "amber" ? "amber" : "petrol") + ")", borderRadius: "var(--r-md)", padding: 14, cursor: "pointer" }}>
+        <div style={{ fontSize: 30, fontWeight: 700, fontFamily: "var(--mono, monospace)", color: t.n ? "var(--ink)" : "var(--muted)" }}>{t.n}</div>
+        <div style={{ fontSize: 12.5, color: "var(--sub)", marginTop: 2 }}>{t.label}</div></button>)}
+    </div>
+    <h3 style={{ fontSize: 15, margin: "0 0 10px" }}>Senaste integritetshändelser</h3>
+    <GCard>{!d.events || !d.events.length ? <GEmpty icon={History} text="Inga händelser ännu." /> :
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>{d.events.slice(0, 25).map((e, i) => <div key={e.id} style={{ display: "flex", gap: 10, padding: "9px 2px", borderTop: i ? "1px solid var(--line2)" : "none", fontSize: 13 }}>
+        <span style={{ color: "var(--muted)", fontFamily: "monospace", fontSize: 11, minWidth: 116 }}>{gdprDate(e.at)}</span>
+        <span style={{ flex: 1 }}><b>{e.kind}</b>{e.candidate_id ? " · " + candName(e.candidate_id) : ""}{e.detail ? " — " + e.detail : ""}</span>
+        <span style={{ color: "var(--muted)", fontSize: 11 }}>{e.actor_email || ""}</span></div>)}</div>}</GCard>
+  </div>;
+}
+
+/* ---- Ärenden ---- */
+function GRequests({ d, q, setQ, role, cands, candName, showToast, reload, setModal }) {
+  const [open, setOpen] = useState(null);
+  const list = (d.requests || []).filter((r) =>
+    (!q.type || r.type === q.type) && (!q.status || r.status === q.status) &&
+    (!q.text || candName(r.candidate_id).toLowerCase().includes(q.text.toLowerCase())));
+  const cur = open ? (d.requests || []).find((r) => r.id === open) : null;
+  return <div>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+      <input placeholder="Sök kandidat…" value={q.text} onChange={(e) => setQ({ ...q, text: e.target.value })} style={inp(180)} />
+      <select value={q.type} onChange={(e) => setQ({ ...q, type: e.target.value })} style={inp(160)}><option value="">Alla typer</option>{Object.entries(REQ_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+      <select value={q.status} onChange={(e) => setQ({ ...q, status: e.target.value })} style={inp(160)}><option value="">Alla status</option>{Object.entries(REQ_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+      <div style={{ flex: 1 }} />
+      {privCan(role, "manage_requests") && <button className="ats-btn-primary" onClick={() => setModal({ kind: "new_request" })}><Plus size={15} /> Nytt ärende</button>}
+    </div>
+    {!list.length ? <GCard><GEmpty icon={FileText} text="Inga ärenden matchar." /></GCard> :
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map((r) => <button key={r.id} onClick={() => setOpen(r.id)} style={rowBtn}>
+        <div style={{ minWidth: 150, textAlign: "left" }}><b>{candName(r.candidate_id)}</b><div style={{ fontSize: 11.5, color: "var(--muted)" }}>{REQ_TYPE[r.type] || r.type}</div></div>
+        <GTag tone={REQ_STATUS_TONE[r.status]}>{REQ_STATUS[r.status] || r.status}</GTag>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 11.5, color: r.deadline && new Date(r.deadline) < Date.now() ? "var(--brick)" : "var(--muted)" }}><Clock size={12} style={{ verticalAlign: -2 }} /> {gdprDay(r.deadline)}</span>
+        <ChevronRight size={16} color="var(--muted)" /></button>)}</div>}
+    {cur && <GRequestDrawer req={cur} role={role} candName={candName} showToast={showToast} reload={reload} setModal={setModal} onClose={() => setOpen(null)} />}
+  </div>;
+}
+
+function GRequestDrawer({ req, role, candName, showToast, reload, setModal, onClose }) {
+  const [ev, setEv] = useState(null);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { let a = true; (async () => { const rows = await sbGet("privacy_request_events?request_id=eq." + req.id + "&select=*&order=at.desc&limit=100"); if (a) setEv(rows || []); })(); return () => { a = false; }; }, [req.id]);
+  const act = async (kind, detail, newStatus) => {
+    setSaving(true);
+    try { await sbRpc("privacy_request_event", { p_request: req.id, p_kind: kind, p_detail: detail || null, p_new_status: newStatus || null, p_meta: null }); showToast({ kind: "ok", msg: "Ärende uppdaterat" }); onClose(); reload(); }
+    catch (e) { showToast({ kind: "err", msg: e.message }); } setSaving(false);
+  };
+  const verifyId = async () => {
+    setSaving(true);
+    try { await sbInsert("identity_verifications", { org_id: SB_ORG, candidate_id: req.candidate_id, request_id: req.id, method: "manual", status: "verified", verified_at: new Date().toISOString() });
+      await sbRpc("privacy_request_event", { p_request: req.id, p_kind: "identity_verified", p_detail: "Identitet verifierad manuellt", p_new_status: "in_progress" });
+      showToast({ kind: "ok", msg: "Identitet verifierad" }); onClose(); reload(); } catch (e) { showToast({ kind: "err", msg: e.message }); } setSaving(false);
+  };
+  return <div style={drawerWrap} onClick={onClose}><div style={drawerPanel} onClick={(e) => e.stopPropagation()}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: 10 }}>
+      <div><h3 style={{ margin: 0 }}>{REQ_TYPE[req.type] || req.type}</h3><div style={{ color: "var(--sub)", fontSize: 13 }}>{candName(req.candidate_id)}</div></div>
+      <button className="ats-ghost is-sm" onClick={onClose}><X size={16} /></button>
+    </div>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+      <GTag tone={REQ_STATUS_TONE[req.status]}>{REQ_STATUS[req.status] || req.status}</GTag>
+      <GTag>{req.identity_verified ? "Identitet verifierad" : "Identitet ej verifierad"}</GTag>
+      <GTag tone={req.deadline && new Date(req.deadline) < Date.now() ? "brick" : "neutral"}>Deadline {gdprDay(req.deadline)}</GTag>
+    </div>
+    {req.internal_notes && <div style={{ fontSize: 13, color: "var(--sub)", marginBottom: 12 }}>{req.internal_notes}</div>}
+
+    {privCan(role, "manage_requests") && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14 }}>
+      {!req.identity_verified && privCan(role, "verify_identity") && <button className="ats-ghost is-sm" onClick={verifyId} disabled={saving}><UserCheck size={14} /> Verifiera identitet</button>}
+      <button className="ats-ghost is-sm" onClick={() => act("in_progress", "Påbörjad behandling", "in_progress")} disabled={saving}>Påbörja</button>
+      <button className="ats-ghost is-sm" onClick={() => act("awaiting", "Väntar på kandidat", "awaiting_candidate")} disabled={saving}>Väntar på kandidat</button>
+      {req.type === "access" && privCan(role, "create_export") && <button className="ats-ghost is-sm" onClick={() => setModal({ kind: "export", candId: req.candidate_id, requestId: req.id })}><Download size={14} /> Skapa registerutdrag</button>}
+      {req.type === "erasure" && privCan(role, "delete") && <button className="ats-ghost is-sm" onClick={() => setModal({ kind: "delete", candId: req.candidate_id, requestId: req.id })}><Trash2 size={14} /> Radera</button>}
+      {(req.type === "erasure" || req.type === "objection") && privCan(role, "anonymize") && <button className="ats-ghost is-sm" onClick={() => setModal({ kind: "anonymize", candId: req.candidate_id, requestId: req.id })}><UserX size={14} /> Anonymisera</button>}
+      {req.type === "restriction" && privCan(role, "restrict") && <button className="ats-ghost is-sm" onClick={() => setModal({ kind: "restrict", candId: req.candidate_id, requestId: req.id })}><Ban size={14} /> Begränsa</button>}
+      <button className="ats-ghost is-sm" onClick={() => act("approved", "Godkänt", "approved")} disabled={saving} style={{ color: "var(--petrol-deep)" }}>Godkänn</button>
+      <button className="ats-ghost is-sm" onClick={() => act("completed", "Genomfört", "completed")} disabled={saving} style={{ color: "var(--petrol-deep)" }}><Check size={14} /> Slutför</button>
+      <button className="ats-ghost is-sm" onClick={() => act("rejected", note || "Avslaget", "rejected")} disabled={saving} style={{ color: "var(--brick)" }}>Avslå</button>
+    </div>}
+    <label style={{ display: "block", fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>Intern anteckning till nästa åtgärd<input value={note} onChange={(e) => setNote(e.target.value)} style={{ ...inp(0), width: "100%", marginTop: 4 }} /></label>
+
+    <h4 style={{ fontSize: 13, margin: "0 0 8px" }}>Händelser</h4>
+    {ev == null ? <div style={{ color: "var(--muted)", fontSize: 13 }}>Laddar…</div> : !ev.length ? <div style={{ color: "var(--muted)", fontSize: 13 }}>Inga händelser.</div> :
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>{ev.map((e, i) => <div key={e.id} style={{ padding: "8px 0", borderTop: i ? "1px solid var(--line2)" : "none", fontSize: 12.5 }}>
+        <span style={{ fontFamily: "monospace", color: "var(--muted)", fontSize: 11 }}>{gdprDate(e.at)}</span> · <b>{e.kind}</b>{e.detail ? " — " + e.detail : ""} <span style={{ color: "var(--muted)" }}>{e.actor_email}</span></div>)}</div>}
+  </div></div>;
+}
+
+/* ---- Samtycken ---- */
+function GConsents({ d, role, cands, candName, showToast, reload, setModal }) {
+  const [filter, setFilter] = useState("");
+  const list = (d.consents || []).filter((c) => !filter || candName(c.candidate_id).toLowerCase().includes(filter.toLowerCase()));
+  const withdraw = async (c) => {
+    try { await sbRpc("privacy_withdraw_consent", { p_consent: c.id, p_reason: "Återkallat i integritetscentret" }); showToast({ kind: "ok", msg: "Samtycke återkallat" }); reload(); }
+    catch (e) { showToast({ kind: "err", msg: e.message }); }
+  };
+  return <div>
+    <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+      <input placeholder="Sök kandidat…" value={filter} onChange={(e) => setFilter(e.target.value)} style={inp(200)} />
+      <div style={{ flex: 1 }} />
+      {privCan(role, "manage_consents") && <button className="ats-btn-primary" onClick={() => setModal({ kind: "record_consent" })}><Plus size={15} /> Registrera samtycke</button>}
+    </div>
+    {!list.length ? <GCard><GEmpty icon={BadgeCheck} text="Inga registrerade samtycken." /></GCard> :
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{list.map((c) => <GCard key={c.id}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ minWidth: 150 }}><b>{candName(c.candidate_id)}</b><div style={{ fontSize: 11.5, color: "var(--muted)" }}>{AREA_LABEL[c.area] || c.area} · {BASIS_LABEL[c.lawful_basis] || c.lawful_basis}</div></div>
+          <GTag tone={c.status === "given" ? "green" : c.status === "withdrawn" ? "brick" : "amber"}>{CONSENT_STATUS[c.status] || c.status}</GTag>
+          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{c.status === "given" ? "Lämnat " + gdprDay(c.given_at) : c.status === "withdrawn" ? "Återkallat " + gdprDay(c.withdrawn_at) : ""}{c.definition_version ? " · v" + c.definition_version : ""}{c.lang ? " · " + c.lang : ""}</span>
+          <div style={{ flex: 1 }} />
+          {c.status === "given" && privCan(role, "manage_consents") && <button className="ats-ghost is-sm" onClick={() => withdraw(c)} style={{ color: "var(--brick)" }}>Återkalla</button>}
+        </div>
+        {c.purpose && <div style={{ fontSize: 12.5, color: "var(--sub)", marginTop: 6 }}>{c.purpose}</div>}
+      </GCard>)}</div>}
+  </div>;
+}
+
+/* ---- Retention ---- */
+function GRetention({ d, role, candName, showToast, reload, setModal }) {
+  const [running, setRunning] = useState(false);
+  const evaluate = async () => { setRunning(true); const r = await privacyCall("evaluate_retention"); setRunning(false); if (r.ok) { showToast({ kind: "ok", msg: "Utvärderade " + r.evaluated + " poster" }); reload(); } else showToast({ kind: "err", msg: r.error }); };
+  const queue = (d.evals || []).filter((e) => !e.resolved_at && e.status !== "ok").sort((a, b) => (a.due_at || "").localeCompare(b.due_at || ""));
+  const resolve = async (e, resolution) => { const ok = await sbPatch("retention_evaluations", "id=eq." + e.id, { resolved_at: new Date().toISOString(), resolution }); if (ok) { showToast({ kind: "ok", msg: "Markerad som hanterad" }); reload(); } else showToast({ kind: "err", msg: "Kunde inte spara." }); };
+  return <div>
+    <div style={{ display: "flex", gap: 8, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
+      <div style={{ fontSize: 13, color: "var(--sub)" }}>Retentionregler beräknas mot kandidaternas lagringstider. Kör utvärderingen för att uppdatera kön.</div>
+      <div style={{ flex: 1 }} />
+      <button className="ats-btn-primary" onClick={evaluate} disabled={running}><RotateCw size={15} /> {running ? "Utvärderar…" : "Utvärdera nu"}</button>
+    </div>
+
+    <h3 style={{ fontSize: 15, margin: "0 0 8px" }}>Retentionregler</h3>
+    {!d.policies || !d.policies.length ? <GCard><GEmpty icon={Clock} text="Inga retentionregler ännu. Skapa regler i Supabase eller be en admin lägga till dem." /></GCard> :
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>{d.policies.map((p) => { const v = (d.pvers || []).find((x) => x.policy_id === p.id); return <GCard key={p.id}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <b>{p.name}</b><GTag>{RET_DTYPE[p.data_type] || p.data_type}</GTag>
+          {v && <span style={{ fontSize: 12, color: "var(--muted)" }}>{v.retention_days} dagar från {v.start_point} · åtgärd: {RET_ACTION[v.action_on_expiry] || v.action_on_expiry}</span>}
+          {!p.active && <GTag tone="amber">Inaktiv</GTag>}
+        </div></GCard>; })}</div>}
+
+    <h3 style={{ fontSize: 15, margin: "0 0 8px" }}>Retentionkö <span style={{ fontSize: 12, color: "var(--muted)" }}>({queue.length})</span></h3>
+    {!queue.length ? <GCard><GEmpty icon={CheckCircle2} text="Inga poster kräver åtgärd." /></GCard> :
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{queue.map((e) => <GCard key={e.id}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ minWidth: 150 }}><b>{candName(e.candidate_id)}</b><div style={{ fontSize: 11.5, color: "var(--muted)" }}>{RET_DTYPE[e.data_type] || e.data_type}</div></div>
+          <GTag tone={RET_STATUS_TONE[e.status]}>{RET_STATUS[e.status] || e.status}</GTag>
+          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Förfaller {gdprDay(e.due_at)}{e.reason ? " · " + e.reason : ""}</span>
+          <div style={{ flex: 1 }} />
+          {privCan(role, "manage_requests") && <>
+            {privCan(role, "anonymize") && <button className="ats-ghost is-sm" onClick={() => setModal({ kind: "anonymize", candId: e.candidate_id })}><UserX size={13} /> Anonymisera</button>}
+            {privCan(role, "delete") && <button className="ats-ghost is-sm" onClick={() => setModal({ kind: "delete", candId: e.candidate_id })} style={{ color: "var(--brick)" }}><Trash2 size={13} /> Radera</button>}
+            {privCan(role, "legal_hold") && <button className="ats-ghost is-sm" onClick={() => setModal({ kind: "legal_hold", candId: e.candidate_id })}><Scale size={13} /> Legal hold</button>}
+            <button className="ats-ghost is-sm" onClick={() => resolve(e, "Förlängd/hanterad manuellt")}>Markera hanterad</button>
+          </>}
+        </div></GCard>)}</div>}
+  </div>;
+}
+
+/* ---- Legal hold & begränsning ---- */
+function GHolds({ d, role, cands, candName, showToast, reload, setModal }) {
+  const liftHold = async (h) => { const ok = await sbPatch("legal_holds", "id=eq." + h.id, { status: "lifted", lifted_at: new Date().toISOString(), lift_reason: "Hävd i integritetscentret" }); if (ok) { try { await sbRpc("privacy_event", { p_candidate: h.candidate_id, p_entity: "legal_hold", p_entity_id: h.id, p_kind: "hold_lifted", p_detail: null, p_meta: null }); } catch (e) {} showToast({ kind: "ok", msg: "Legal hold hävd" }); reload(); } else showToast({ kind: "err", msg: "Kunde inte häva." }); };
+  const liftRestr = async (r) => { const ok = await sbPatch("processing_restrictions", "id=eq." + r.id, { active: false, lifted_at: new Date().toISOString(), lift_reason: "Hävd i integritetscentret" }); if (ok) { showToast({ kind: "ok", msg: "Begränsning hävd" }); reload(); } else showToast({ kind: "err", msg: "Kunde inte häva." }); };
+  const holds = (d.holds || []).filter((h) => h.status === "active");
+  const restr = (d.restr || []).filter((r) => r.active);
+  return <div>
+    <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+      {privCan(role, "legal_hold") && <button className="ats-btn-primary" onClick={() => setModal({ kind: "legal_hold" })}><Scale size={15} /> Ny legal hold</button>}
+      {privCan(role, "restrict") && <button className="ats-ghost" onClick={() => setModal({ kind: "restrict" })}><Ban size={15} /> Ny begränsning</button>}
+    </div>
+    <h3 style={{ fontSize: 15, margin: "0 0 8px" }}>Aktiva legal holds ({holds.length})</h3>
+    {!holds.length ? <GCard><GEmpty icon={Scale} text="Inga aktiva legal holds." /></GCard> :
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>{holds.map((h) => <GCard key={h.id}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ minWidth: 150 }}><b>{candName(h.candidate_id)}</b><div style={{ fontSize: 11.5, color: "var(--muted)" }}>Från {gdprDay(h.starts_at)}{h.ends_at ? " till " + gdprDay(h.ends_at) : " · tills vidare"}</div></div>
+          <span style={{ flex: 1, fontSize: 12.5, color: "var(--sub)" }}>{h.reason}</span>
+          {privCan(role, "legal_hold") && <button className="ats-ghost is-sm" onClick={() => liftHold(h)}>Häv</button>}
+        </div></GCard>)}</div>}
+    <h3 style={{ fontSize: 15, margin: "0 0 8px" }}>Aktiva begränsningar ({restr.length})</h3>
+    {!restr.length ? <GCard><GEmpty icon={Ban} text="Inga aktiva begränsningar." /></GCard> :
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{restr.map((r) => <GCard key={r.id}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ minWidth: 150 }}><b>{candName(r.candidate_id)}</b><div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.kind === "objection" ? "Invändning" : "Begränsning"} · {Object.keys(r.scope || {}).filter((k) => r.scope[k]).join(", ") || "all"}</div></div>
+          <span style={{ flex: 1, fontSize: 12.5, color: "var(--sub)" }}>{r.reason}</span>
+          {privCan(role, "restrict") && <button className="ats-ghost is-sm" onClick={() => liftRestr(r)}>Häv</button>}
+        </div></GCard>)}</div>}
+  </div>;
+}
+
+/* ---- Åtkomstlogg ---- */
+function GAccess({ d, candName }) {
+  return <div><GCard>{!d.access || !d.access.length ? <GEmpty icon={ScrollText} text="Ingen känslig åtkomst loggad ännu." /> :
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>{d.access.map((a, i) => <div key={a.id} style={{ display: "flex", gap: 10, padding: "9px 2px", borderTop: i ? "1px solid var(--line2)" : "none", fontSize: 12.5, alignItems: "center" }}>
+      <span style={{ fontFamily: "monospace", color: "var(--muted)", fontSize: 11, minWidth: 116 }}>{gdprDate(a.at)}</span>
+      <GTag tone={a.result === "denied" ? "brick" : "neutral"}>{a.action}</GTag>
+      <span style={{ flex: 1 }}>{a.candidate_id ? candName(a.candidate_id) : "—"}{a.reason ? " · " + a.reason : ""}</span>
+      <span style={{ color: "var(--muted)", fontSize: 11 }}>{a.actor_email}</span></div>)}</div>}</GCard></div>;
+}
+
+/* ---- Modaler (skapande + destruktiva åtgärder) ---- */
+function PrivacyModals({ modal, setModal, role, cands, candName, showToast, reload, busy, setBusy }) {
+  const close = () => setModal(null);
+  const finish = (msg) => { showToast({ kind: "ok", msg }); close(); reload(); };
+  const fail = (e) => showToast({ kind: "err", msg: (e && e.message) || e });
+
+  if (modal.kind === "export") {
+    return <GConfirm title="Skapa registerutdrag" danger={false} confirmLabel="Skapa säkert paket"
+      body={<>Ett server-genererat, krypterat registerutdrag skapas för <b>{candName(modal.candId)}</b>. Länken är tidsbegränsad (72 h), oförutsägbar och kan återkallas. Interna anteckningar och andra personers uppgifter utesluts.</>}
+      onCancel={close} busy={busy}
+      onConfirm={async () => { setBusy(true); const r = await privacyCall("export", { candidate_id: modal.candId, request_id: modal.requestId || null }); setBusy(false); if (r.ok) { if (r.url) window.open(r.url, "_blank", "noopener"); if (modal.requestId) { try { await sbRpc("privacy_request_event", { p_request: modal.requestId, p_kind: "export_created", p_detail: "Registerutdrag skapat", p_new_status: null }); } catch (e) {} } finish("Registerutdrag skapat"); } else fail(r.error); }} />;
+  }
+  if (modal.kind === "anonymize") {
+    return <GConfirm title="Anonymisera kandidat" danger confirmWord={candName(modal.candId)} confirmLabel="Anonymisera"
+      body={<>Personuppgifter för <b>{candName(modal.candId)}</b> maskas eller tas bort i profil, formulärsvar, dokument, kommunikation och pooler. Anonym statistik bevaras. Åtgärden går inte att ångra.</>}
+      onCancel={close} busy={busy}
+      onConfirm={async () => { setBusy(true); const r = await privacyCall("anonymize", { candidate_id: modal.candId, request_id: modal.requestId || null }); setBusy(false); if (r.ok) { if (modal.requestId) { try { await sbRpc("privacy_request_event", { p_request: modal.requestId, p_kind: "anonymized", p_detail: "Kandidat anonymiserad", p_new_status: "completed" }); } catch (e) {} } finish(r.status === "partial" ? "Anonymiserad (vissa filer kvar — se jobblogg)" : "Kandidat anonymiserad"); } else fail(r.error); }} />;
+  }
+  if (modal.kind === "delete") {
+    return <GConfirm title="Radera kandidat permanent" danger confirmWord={candName(modal.candId)} confirmLabel="Radera permanent"
+      body={<>All identifierande data för <b>{candName(modal.candId)}</b> raderas. Systemet kontrollerar först legal hold, anställning, aktiv process och aktiva exporter — radering blockeras om något hindrar den. Åtgärden går inte att ångra.</>}
+      onCancel={close} busy={busy}
+      onConfirm={async () => { setBusy(true); const r = await privacyCall("delete", { candidate_id: modal.candId, request_id: modal.requestId || null }); setBusy(false); if (r.ok) { if (modal.requestId) { try { await sbRpc("privacy_request_event", { p_request: modal.requestId, p_kind: "deleted", p_detail: "Kandidat raderad", p_new_status: "completed" }); } catch (e) {} } finish("Kandidat raderad"); } else { close(); showToast({ kind: "warn", msg: (r.reasons && r.reasons[0]) || r.error }); } }} />;
+  }
+  if (modal.kind === "new_request") return <GRequestForm cands={cands} onCancel={close} onDone={finish} onFail={fail} />;
+  if (modal.kind === "record_consent") return <GConsentForm cands={cands} onCancel={close} onDone={finish} onFail={fail} />;
+  if (modal.kind === "legal_hold") return <GHoldForm cands={cands} presetCand={modal.candId} onCancel={close} onDone={finish} onFail={fail} />;
+  if (modal.kind === "restrict") return <GRestrictForm cands={cands} presetCand={modal.candId} requestId={modal.requestId} onCancel={close} onDone={finish} onFail={fail} />;
+  return null;
+}
+
+function CandPicker({ cands, value, onChange }) {
+  return <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inp(0), width: "100%" }}>
+    <option value="">Välj kandidat…</option>
+    {cands.map((c) => <option key={c.id} value={c.id}>{c.name || c.email || c.id}</option>)}
+  </select>;
+}
+function GModalShell({ title, children, onCancel, onSubmit, okLabel, okDisabled, busy }) {
+  return <div style={drawerWrap} onClick={onCancel}><div style={{ ...modalBox }} onClick={(e) => e.stopPropagation()}>
+    <h3 style={{ margin: "0 0 14px" }}>{title}</h3>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>{children}</div>
+    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+      <button className="ats-ghost" onClick={onCancel} disabled={busy}>Avbryt</button>
+      <button className="ats-btn-primary" onClick={onSubmit} disabled={okDisabled || busy}>{busy ? "Sparar…" : (okLabel || "Spara")}</button>
+    </div></div></div>;
+}
+function GLabel({ t, children }) { return <label style={{ display: "block" }}><span style={{ fontSize: 12, color: "var(--muted)", display: "block", marginBottom: 4 }}>{t}</span>{children}</label>; }
+
+function GRequestForm({ cands, onCancel, onDone, onFail }) {
+  const [cand, setCand] = useState(""); const [type, setType] = useState("access"); const [channel, setChannel] = useState("portal"); const [days, setDays] = useState(30); const [note, setNote] = useState(""); const [busy, setBusy] = useState(false);
+  const submit = async () => { if (!cand) return; setBusy(true); try { await sbRpc("privacy_open_request", { p_candidate: cand, p_type: type, p_channel: channel, p_deadline_days: Number(days) || 30, p_related_job: null, p_note: note || null }); onDone("Ärende skapat"); } catch (e) { onFail(e); setBusy(false); } };
+  return <GModalShell title="Nytt integritetsärende" onCancel={onCancel} onSubmit={submit} okDisabled={!cand} busy={busy}>
+    <GLabel t="Kandidat"><CandPicker cands={cands} value={cand} onChange={setCand} /></GLabel>
+    <GLabel t="Typ"><select value={type} onChange={(e) => setType(e.target.value)} style={{ ...inp(0), width: "100%" }}>{Object.entries(REQ_TYPE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></GLabel>
+    <div style={{ display: "flex", gap: 10 }}>
+      <GLabel t="Kanal"><select value={channel} onChange={(e) => setChannel(e.target.value)} style={{ ...inp(0), width: "100%" }}><option value="portal">Portal</option><option value="email">E-post</option><option value="phone">Telefon</option><option value="letter">Brev</option><option value="internal">Internt</option></select></GLabel>
+      <GLabel t="Svarsfrist (dagar)"><input type="number" value={days} onChange={(e) => setDays(e.target.value)} style={{ ...inp(0), width: "100%" }} /></GLabel>
+    </div>
+    <GLabel t="Intern anteckning"><input value={note} onChange={(e) => setNote(e.target.value)} style={{ ...inp(0), width: "100%" }} /></GLabel>
+  </GModalShell>;
+}
+function GConsentForm({ cands, onCancel, onDone, onFail }) {
+  const [cand, setCand] = useState(""); const [area, setArea] = useState("talent_pool"); const [basis, setBasis] = useState("consent"); const [purpose, setPurpose] = useState(""); const [status, setStatus] = useState("given"); const [months, setMonths] = useState(12); const [busy, setBusy] = useState(false);
+  const submit = async () => { if (!cand || !purpose.trim()) return; setBusy(true); const expires = Number(months) > 0 ? new Date(Date.now() + Number(months) * 30 * 864e5).toISOString() : null;
+    try { await sbRpc("privacy_record_consent", { p_candidate: cand, p_area: area, p_purpose: purpose, p_basis: basis, p_definition: null, p_version: 1, p_lang: "sv", p_status: status, p_source: "manual", p_expires: expires, p_related_job: null, p_related_pool: null, p_evidence: { method: "manuell registrering" } }); onDone("Samtycke registrerat"); } catch (e) { onFail(e); setBusy(false); } };
+  return <GModalShell title="Registrera samtycke" onCancel={onCancel} onSubmit={submit} okDisabled={!cand || !purpose.trim()} busy={busy}>
+    <GLabel t="Kandidat"><CandPicker cands={cands} value={cand} onChange={setCand} /></GLabel>
+    <div style={{ display: "flex", gap: 10 }}>
+      <GLabel t="Användningsområde"><select value={area} onChange={(e) => setArea(e.target.value)} style={{ ...inp(0), width: "100%" }}>{Object.entries(AREA_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></GLabel>
+      <GLabel t="Rättslig grund"><select value={basis} onChange={(e) => setBasis(e.target.value)} style={{ ...inp(0), width: "100%" }}>{Object.entries(BASIS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></GLabel>
+    </div>
+    <GLabel t="Ändamål"><input value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="t.ex. Lagra profil för framtida tjänster" style={{ ...inp(0), width: "100%" }} /></GLabel>
+    <div style={{ display: "flex", gap: 10 }}>
+      <GLabel t="Status"><select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...inp(0), width: "100%" }}><option value="given">Lämnat</option><option value="denied">Nekat</option></select></GLabel>
+      <GLabel t="Giltighet (månader, 0 = tills vidare)"><input type="number" value={months} onChange={(e) => setMonths(e.target.value)} style={{ ...inp(0), width: "100%" }} /></GLabel>
+    </div>
+  </GModalShell>;
+}
+function GHoldForm({ cands, presetCand, onCancel, onDone, onFail }) {
+  const [cand, setCand] = useState(presetCand || ""); const [reason, setReason] = useState(""); const [basis, setBasis] = useState("legal_obligation"); const [ends, setEnds] = useState(""); const [doc, setDoc] = useState(""); const [busy, setBusy] = useState(false);
+  const submit = async () => { if (!cand || !reason.trim()) return; setBusy(true);
+    try { await sbInsert("legal_holds", { org_id: SB_ORG, candidate_id: cand, reason, lawful_basis: basis, ends_at: ends ? new Date(ends).toISOString() : null, documentation: doc || null });
+      try { await sbRpc("privacy_event", { p_candidate: cand, p_entity: "legal_hold", p_entity_id: null, p_kind: "hold_created", p_detail: reason, p_meta: null }); } catch (e) {} onDone("Legal hold skapad"); } catch (e) { onFail(e); setBusy(false); } };
+  return <GModalShell title="Ny legal hold" onCancel={onCancel} onSubmit={submit} okDisabled={!cand || !reason.trim()} busy={busy}>
+    <GLabel t="Kandidat"><CandPicker cands={cands} value={cand} onChange={setCand} /></GLabel>
+    <GLabel t="Anledning"><input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="t.ex. Pågående tvist" style={{ ...inp(0), width: "100%" }} /></GLabel>
+    <div style={{ display: "flex", gap: 10 }}>
+      <GLabel t="Rättslig grund"><select value={basis} onChange={(e) => setBasis(e.target.value)} style={{ ...inp(0), width: "100%" }}>{Object.entries(BASIS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></GLabel>
+      <GLabel t="Slutdatum (tomt = tills vidare)"><input type="date" value={ends} onChange={(e) => setEnds(e.target.value)} style={{ ...inp(0), width: "100%" }} /></GLabel>
+    </div>
+    <GLabel t="Dokumentation"><input value={doc} onChange={(e) => setDoc(e.target.value)} style={{ ...inp(0), width: "100%" }} /></GLabel>
+  </GModalShell>;
+}
+function GRestrictForm({ cands, presetCand, requestId, onCancel, onDone, onFail }) {
+  const [cand, setCand] = useState(presetCand || ""); const [reason, setReason] = useState(""); const [kind, setKind] = useState("restriction"); const [busy, setBusy] = useState(false);
+  const [scope, setScope] = useState({ campaigns: true, pools: true, new_jobs: true, automation: true, scoring: false, profile_changes: false });
+  const tgl = (k) => setScope((s) => ({ ...s, [k]: !s[k] }));
+  const submit = async () => { if (!cand) return; setBusy(true);
+    try { await sbInsert("processing_restrictions", { org_id: SB_ORG, candidate_id: cand, active: true, scope, kind, reason: reason || null, request_id: requestId || null });
+      try { await sbRpc("privacy_event", { p_candidate: cand, p_entity: "restriction", p_entity_id: null, p_kind: "restriction_created", p_detail: reason || null, p_meta: null }); } catch (e) {} onDone("Begränsning skapad"); } catch (e) { onFail(e); setBusy(false); } };
+  const S = { campaigns: "Kampanjutskick", pools: "Talangpool", new_jobs: "Nya jobbkopplingar", automation: "Automation (Fas 2D)", scoring: "Scoring/omberäkning", profile_changes: "Profiländringar" };
+  return <GModalShell title="Ny begränsning / invändning" onCancel={onCancel} onSubmit={submit} okDisabled={!cand} busy={busy}>
+    <GLabel t="Kandidat"><CandPicker cands={cands} value={cand} onChange={setCand} /></GLabel>
+    <GLabel t="Typ"><select value={kind} onChange={(e) => setKind(e.target.value)} style={{ ...inp(0), width: "100%" }}><option value="restriction">Begränsning av behandling</option><option value="objection">Invändning</option></select></GLabel>
+    <GLabel t="Blockera behandling"><div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 2 }}>{Object.entries(S).map(([k, v]) => <button key={k} type="button" onClick={() => tgl(k)} style={{ padding: "6px 10px", borderRadius: 999, fontSize: 12, cursor: "pointer", border: "1px solid " + (scope[k] ? "var(--petrol)" : "var(--line)"), background: scope[k] ? "var(--petrol-soft)" : "var(--surface)", color: scope[k] ? "var(--petrol-deep)" : "var(--sub)" }}>{scope[k] ? "✓ " : ""}{v}</button>)}</div></GLabel>
+    <GLabel t="Anledning"><input value={reason} onChange={(e) => setReason(e.target.value)} style={{ ...inp(0), width: "100%" }} /></GLabel>
+  </GModalShell>;
+}
+
+const inp = (w) => ({ padding: "9px 11px", borderRadius: "var(--r-sm)", border: "1px solid var(--line)", fontSize: 13, background: "var(--surface)", color: "var(--ink)", width: w ? w : undefined });
+const rowBtn = { display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "12px 14px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r-md)", cursor: "pointer" };
+const drawerWrap = { position: "fixed", inset: 0, background: "rgba(10,20,18,.42)", display: "flex", justifyContent: "flex-end", zIndex: 88 };
+const drawerPanel = { background: "var(--paper)", width: "min(560px, 100%)", height: "100%", overflowY: "auto", padding: 22, boxShadow: "-20px 0 60px rgba(10,20,18,.18)" };
+const modalBox = { background: "var(--surface)", borderRadius: "var(--r-lg)", border: "1px solid var(--line)", maxWidth: 520, width: "100%", padding: 22, margin: "auto", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(10,20,18,.22)" };
+
 export default function App() {
   return <ErrorBoundary name="root"><AppInner /></ErrorBoundary>;
 }
@@ -1839,6 +2313,7 @@ function AppInner() {
             {view === "stats" && <StatsView {...shared} />}
             {view === "sources" && <SourceQualityView {...shared} />}
             {view === "team" && <TeamView {...shared} />}
+            {view === "privacy" && <PrivacyView {...shared} />}
             {view === "settings" && <SettingsView {...shared} />}
           </div>
         </main>
